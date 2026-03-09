@@ -1,3 +1,5 @@
+import type { Puter } from "@heyputer/puter.js";
+
 export type JsonValue =
   | string
   | number
@@ -79,17 +81,6 @@ export interface ParsedInviteInput {
   roomId?: string;
 }
 
-export interface PuterLike {
-  auth?: {
-    getUser?: () => Promise<{ username?: string; name?: string; id?: string }>;
-  };
-  whoAmI?: () => Promise<{ username?: string; name?: string; id?: string }>;
-  workers?: Record<string, (...args: any[]) => Promise<unknown>>;
-  ai?: {
-    chat?: (input: unknown) => Promise<unknown>;
-  };
-}
-
 export interface DeployWorkerArgs {
   owner: string;
   roomId: string;
@@ -99,7 +90,7 @@ export interface DeployWorkerArgs {
 }
 
 export interface PuterFedRoomsOptions {
-  puter?: PuterLike;
+  puter?: Puter;
   fetchFn?: typeof fetch;
   appBaseUrl?: string;
   workerBaseUrl?: string;

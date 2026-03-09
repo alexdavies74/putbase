@@ -20,7 +20,7 @@ interface RoomsLike {
 }
 
 interface PuterAI {
-  chat(input: unknown): Promise<{ message?: { content?: string } }>;
+  chat(input: unknown): Promise<unknown>;
 }
 
 export class WoofService {
@@ -125,6 +125,46 @@ export class WoofService {
       ],
     });
 
-    return response?.message?.content?.trim() || `${dogName} barks happily.`;
+    const extracted = extractAIText(response);
+    return extracted || `${dogName} barks happily.`;
   }
+}
+
+function extractAIText(response: unknown): string | null {
+  if (!response || typeof response !== "object") {
+    return null;
+  }
+
+  const message = (response as Record<string, unknown>).message;
+  if (!message || typeof message !== "object") {
+    return null;
+  }
+
+  const content = (message as Record<string, unknown>).content;
+  if (typeof content === "string" && content.trim()) {
+    return content.trim();
+  }
+
+  if (Array.isArray(content)) {
+    const joined = content
+      .map((part) => {
+        if (typeof part === "string") {
+          return part;
+        }
+
+        if (part && typeof part === "object") {
+          const maybeText = (part as Record<string, unknown>).text;
+          return typeof maybeText === "string" ? maybeText : "";
+        }
+
+        return "";
+      })
+      .filter((part) => part.length > 0)
+      .join(" ")
+      .trim();
+
+    return joined || null;
+  }
+
+  return null;
 }

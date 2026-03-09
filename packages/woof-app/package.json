@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@heyputer/puter.js": "^2.2.11",
     "puter-federation-sdk": "workspace:*"
   },
   "devDependencies": {

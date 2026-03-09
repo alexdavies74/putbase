@@ -20,12 +20,12 @@ import type {
   Message,
   ParsedInviteInput,
   PuterFedRoomsOptions,
-  PuterLike,
   Room,
   RoomSnapshot,
   RoomUser,
   SignedWriteEnvelope,
 } from "./types";
+import type { Puter } from "@heyputer/puter.js";
 
 interface RoomResponse extends Room {
   members: string[];
@@ -46,7 +46,7 @@ interface PollMessagesResponse {
 export class PuterFedRooms {
   private readonly options: PuterFedRoomsOptions;
 
-  private puter: PuterLike | undefined;
+  private puter: Puter | undefined;
 
   private fetchFn: typeof fetch;
 
@@ -62,7 +62,7 @@ export class PuterFedRooms {
   }
 
   async init(): Promise<void> {
-    this.puter = this.options.puter ?? ((globalThis as { puter?: PuterLike }).puter as PuterLike | undefined);
+    this.puter = this.options.puter ?? ((globalThis as { puter?: Puter }).puter as Puter | undefined);
     if (typeof this.fetchFn !== "function") {
       throw new Error("fetch is required");
     }
@@ -90,13 +90,33 @@ export class PuterFedRooms {
       return this.identity;
     }
 
-    const authUser = this.puter?.auth?.getUser ? await this.puter.auth.getUser() : null;
-    const fallbackUser = !authUser && this.puter?.whoAmI ? await this.puter.whoAmI() : null;
-    const candidate = authUser ?? fallbackUser;
+    const auth = this.puter?.auth;
+    let candidate: { username?: string; name?: string; id?: string } | null = null;
+
+    if (auth?.getUser) {
+      candidate = await auth.getUser().catch(() => null);
+    }
+
+    if (!candidate?.username && auth?.whoami) {
+      candidate = await auth.whoami().catch(() => candidate);
+    }
+
+    if (!candidate?.username && auth?.isSignedIn && auth?.signIn && !auth.isSignedIn()) {
+      await auth.signIn().catch(() => null);
+      candidate = await (auth.whoami?.() ?? auth.getUser?.() ?? Promise.resolve(null)).catch(
+        () => candidate,
+      );
+    }
+
+    if (!candidate && this.puter?.getUser) {
+      candidate = await this.puter.getUser().catch(() => null);
+    }
 
     const username = candidate?.username ?? candidate?.name ?? candidate?.id;
     if (!username) {
-      throw new Error("Unable to determine current Puter username");
+      throw new Error(
+        "Unable to determine current Puter username. Import @heyputer/puter.js in the frontend and pass { puter } to PuterFedRooms.",
+      );
     }
 
     this.identity = { username };
@@ -322,56 +342,19 @@ export class PuterFedRooms {
       return;
     }
 
-    const workers = this.puter?.workers;
-    if (!workers) {
-      throw new Error("Puter workers API is unavailable");
+    const puter = this.puter;
+    if (!puter) {
+      throw new Error("Puter SDK is unavailable");
     }
 
     const workerName = `${args.owner}-room-${args.roomId}`;
+    const workerFilePath = `~/puter-fed/workers/${workerName}.js`;
 
-    const candidates: Array<() => Promise<unknown>> = [
-      () =>
-        typeof workers.deploy === "function"
-          ? workers.deploy({
-              name: workerName,
-              script: args.script,
-              roomId: args.roomId,
-              owner: args.owner,
-              workerUrl: args.workerUrl,
-            })
-          : Promise.reject(new Error("workers.deploy unavailable")),
-      () =>
-        typeof workers.create === "function"
-          ? workers.create({
-              name: workerName,
-              script: args.script,
-              roomId: args.roomId,
-              owner: args.owner,
-              workerUrl: args.workerUrl,
-            })
-          : Promise.reject(new Error("workers.create unavailable")),
-      () =>
-        typeof workers.upsert === "function"
-          ? workers.upsert({
-              name: workerName,
-              script: args.script,
-              roomId: args.roomId,
-              owner: args.owner,
-              workerUrl: args.workerUrl,
-            })
-          : Promise.reject(new Error("workers.upsert unavailable")),
-    ];
-
-    for (const candidate of candidates) {
-      try {
-        await candidate();
-        return;
-      } catch {
-        // Try the next candidate.
-      }
-    }
-
-    throw new Error("Could not deploy worker; no supported workers API method was successful");
+    await puter.fs.write(workerFilePath, args.script, {
+      overwrite: true,
+      createMissingParents: true,
+    });
+    await puter.workers.create(workerName, workerFilePath);
   }
 
   private createId(prefix: string): string {

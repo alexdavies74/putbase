@@ -25,7 +25,6 @@ export type {
   ParsedInviteInput,
   PublicKeyProofDocument,
   PuterFedRoomsOptions,
-  PuterLike,
   Room,
   RoomSnapshot,
   RoomUser,

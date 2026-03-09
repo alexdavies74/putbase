@@ -19,5 +19,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
+  },
+  "dependencies": {
+    "@heyputer/puter.js": "^2.2.11"
   }
 }

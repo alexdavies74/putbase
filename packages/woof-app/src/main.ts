@@ -1,3 +1,4 @@
+import { puter } from "@heyputer/puter.js";
 import { PuterFedRooms, type Message } from "puter-federation-sdk";
 
 import type { DogProfile } from "./profile";
@@ -11,6 +12,7 @@ const app = appElement as HTMLDivElement;
 
 const rooms = new PuterFedRooms({
   appBaseUrl: window.location.origin,
+  puter,
 });
 const service = new WoofService(rooms);
 
@@ -145,7 +147,7 @@ async function renderChat(profile: DogProfile) {
     }
 
     try {
-      await service.sendTurn(currentProfile, content, window.puter?.ai);
+      await service.sendTurn(currentProfile, content, puter.ai);
 
       input.value = "";
       await refreshMessages();
