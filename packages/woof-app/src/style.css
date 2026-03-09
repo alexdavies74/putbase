@@ -1,0 +1,123 @@
+:root {
+  --bg: #fef6ed;
+  --bg-panel: #fffaf4;
+  --text: #22201d;
+  --accent: #b3541e;
+  --accent-soft: #f1d2bc;
+  --border: #e8c8af;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  color: var(--text);
+  background: radial-gradient(circle at top right, #f9dfc8, var(--bg));
+}
+
+#app {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.panel {
+  background: linear-gradient(180deg, var(--bg-panel), #fff);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 12px 30px rgba(179, 84, 30, 0.08);
+}
+
+h1 {
+  margin-top: 0;
+}
+
+label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+input,
+textarea,
+button {
+  font: inherit;
+}
+
+input,
+textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 12px;
+  background: white;
+}
+
+button {
+  border: none;
+  border-radius: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+button.primary {
+  background: var(--accent);
+  color: white;
+}
+
+button.secondary {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+#messages {
+  max-height: 340px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  background: #fff;
+  margin-bottom: 12px;
+}
+
+.message {
+  padding: 8px 10px;
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+
+.message.user {
+  background: #f4efe8;
+}
+
+.message.dog {
+  background: #ffe9d9;
+}
+
+.muted {
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+@media (max-width: 640px) {
+  #app {
+    padding: 12px;
+  }
+
+  .panel {
+    border-radius: 12px;
+    padding: 12px;
+  }
+}

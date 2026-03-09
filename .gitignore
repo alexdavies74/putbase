@@ -1,0 +1,8 @@
+node_modules
+.dist
+coverage
+.turbo
+pnpm-lock.yaml
+*.log
+packages/*/dist
+packages/*/.vite

@@ -1,0 +1,424 @@
+import {
+  canonicalize,
+  decodeDataUrlJson,
+  verifyEnvelope,
+} from "../crypto";
+import type {
+  ApiError,
+  InviteToken,
+  Message,
+  Room,
+  RoomSnapshot,
+  SignedWriteEnvelope,
+} from "../types";
+
+interface KvEntry {
+  key: string;
+  value: unknown;
+}
+
+export interface WorkerKv {
+  get<T = unknown>(key: string): Promise<T | null>;
+  set<T = unknown>(key: string, value: T): Promise<void>;
+  list(prefix: string): Promise<KvEntry[]>;
+}
+
+export interface RoomWorkerConfig {
+  roomId: string;
+  roomName: string;
+  owner: string;
+  workerUrl: string;
+}
+
+interface JoinRequest {
+  username: string;
+  publicKeyUrl: string;
+  inviteToken?: string;
+}
+
+interface InvitePayload {
+  token: string;
+  roomId: string;
+  invitedBy: string;
+  createdAt: number;
+}
+
+interface MessagePayload {
+  id: string;
+  roomId: string;
+  body: unknown;
+  createdAt: number;
+  signedBy: string;
+}
+
+export interface RoomWorkerDeps {
+  kv: WorkerKv;
+  fetchFn?: typeof fetch;
+  now?: () => number;
+}
+
+class WorkerApiError extends Error {
+  readonly status: number;
+  readonly apiError: ApiError;
+
+  constructor(status: number, apiError: ApiError) {
+    super(apiError.message);
+    this.name = "WorkerApiError";
+    this.status = status;
+    this.apiError = apiError;
+  }
+}
+
+const CORS_HEADERS = {
+  "content-type": "application/json",
+  "access-control-allow-origin": "*",
+  "access-control-allow-headers": "content-type,x-puter-username",
+};
+
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: CORS_HEADERS,
+  });
+}
+
+function isJsonWebKey(value: unknown): value is JsonWebKey {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    "kty" in (value as Record<string, unknown>)
+  );
+}
+
+function error(status: number, code: ApiError["code"], message: string): never {
+  throw new WorkerApiError(status, {
+    code,
+    message,
+  });
+}
+
+async function parseJson<T>(request: Request): Promise<T> {
+  try {
+    return (await request.json()) as T;
+  } catch {
+    error(400, "BAD_REQUEST", "Request body must be valid JSON");
+  }
+}
+
+function requesterFromHeader(request: Request): string {
+  const requester = request.headers.get("x-puter-username");
+  if (!requester) {
+    error(401, "UNAUTHORIZED", "Missing x-puter-username");
+  }
+
+  return requester;
+}
+
+function messageKey(roomId: string, message: Pick<Message, "createdAt" | "id">): string {
+  return `room:${roomId}:message:${message.createdAt}:${message.id}`;
+}
+
+function tokenKey(roomId: string, token: string): string {
+  return `room:${roomId}:invite_token:${token}`;
+}
+
+function memberKey(roomId: string, username: string): string {
+  return `room:${roomId}:memberkey:${username}`;
+}
+
+function roomMetaKey(roomId: string): string {
+  return `room:${roomId}:meta`;
+}
+
+function roomMembersKey(roomId: string): string {
+  return `room:${roomId}:members`;
+}
+
+function roomMessagePrefix(roomId: string): string {
+  return `room:${roomId}:message:`;
+}
+
+function sameJwk(left: JsonWebKey, right: JsonWebKey): boolean {
+  return canonicalize(left) === canonicalize(right);
+}
+
+export class RoomWorker {
+  private readonly kv: WorkerKv;
+
+  private readonly fetchFn: typeof fetch;
+
+  private readonly now: () => number;
+
+  constructor(
+    private readonly config: RoomWorkerConfig,
+    deps: RoomWorkerDeps,
+  ) {
+    this.kv = deps.kv;
+    this.fetchFn = deps.fetchFn ?? fetch;
+    this.now = deps.now ?? (() => Date.now());
+  }
+
+  async handle(request: Request): Promise<Response> {
+    try {
+      if (request.method === "OPTIONS") {
+        return new Response(null, {
+          status: 204,
+          headers: CORS_HEADERS,
+        });
+      }
+
+      const { pathname, searchParams } = new URL(request.url);
+
+      if (request.method === "GET" && pathname === "/room") {
+        return await this.getRoom(request);
+      }
+
+      if (request.method === "GET" && pathname === "/messages") {
+        const after = Number(searchParams.get("after") ?? 0);
+        return await this.getMessages(request, after);
+      }
+
+      if (request.method === "POST" && pathname === "/join") {
+        return await this.join(request);
+      }
+
+      if (request.method === "POST" && pathname === "/invite-token") {
+        return await this.createInviteToken(request);
+      }
+
+      if (request.method === "POST" && pathname === "/message") {
+        return await this.postMessage(request);
+      }
+
+      return jsonResponse(404, {
+        code: "BAD_REQUEST",
+        message: "Endpoint not found",
+      });
+    } catch (err) {
+      if (err instanceof WorkerApiError) {
+        return jsonResponse(err.status, err.apiError);
+      }
+
+      const message = err instanceof Error ? err.message : "Unknown server error";
+      return jsonResponse(500, {
+        code: "BAD_REQUEST",
+        message,
+      });
+    }
+  }
+
+  private async getRoom(request: Request): Promise<Response> {
+    const requester = requesterFromHeader(request);
+    await this.assertMember(requester);
+
+    const snapshot = await this.snapshot();
+    return jsonResponse(200, snapshot);
+  }
+
+  private async getMessages(request: Request, after: number): Promise<Response> {
+    const requester = requesterFromHeader(request);
+    await this.assertMember(requester);
+
+    const messageEntries = await this.kv.list(roomMessagePrefix(this.config.roomId));
+    const messages = messageEntries
+      .map((entry) => entry.value as Message)
+      .filter((message) => message.createdAt > after)
+      .sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id));
+
+    return jsonResponse(200, {
+      messages,
+    });
+  }
+
+  private async join(request: Request): Promise<Response> {
+    const body = await parseJson<JoinRequest>(request);
+    if (!body.username || !body.publicKeyUrl) {
+      error(400, "BAD_REQUEST", "username and publicKeyUrl are required");
+    }
+
+    await this.ensureRoomMeta();
+
+    const members = await this.getMembers();
+    const isOwner = body.username === this.config.owner;
+    const alreadyMember = members.includes(body.username);
+
+    const fetchedKey = await this.fetchPublicKeyJwk(body.publicKeyUrl, body.username);
+
+    if (alreadyMember) {
+      const existing = await this.kv.get<JsonWebKey>(memberKey(this.config.roomId, body.username));
+      if (!existing) {
+        error(401, "UNAUTHORIZED", "Member key missing");
+      }
+
+      if (!sameJwk(existing, fetchedKey)) {
+        error(409, "KEY_MISMATCH", "Public key cannot be changed for existing username");
+      }
+
+      return jsonResponse(200, await this.snapshot());
+    }
+
+    if (!isOwner) {
+      if (!body.inviteToken) {
+        error(401, "INVITE_REQUIRED", "Invite token is required for non-owner first join");
+      }
+
+      const invite = await this.kv.get<InviteToken>(tokenKey(this.config.roomId, body.inviteToken));
+      if (!invite || invite.roomId !== this.config.roomId) {
+        error(401, "INVITE_REQUIRED", "Invite token is invalid");
+      }
+    }
+
+    members.push(body.username);
+    await this.kv.set(roomMembersKey(this.config.roomId), members);
+    await this.kv.set(memberKey(this.config.roomId, body.username), fetchedKey);
+
+    return jsonResponse(200, await this.snapshot());
+  }
+
+  private async createInviteToken(request: Request): Promise<Response> {
+    const requester = requesterFromHeader(request);
+    const envelope = await parseJson<SignedWriteEnvelope<InvitePayload>>(request);
+
+    await this.assertWriteAuthorization(requester, envelope, envelope.payload.invitedBy);
+
+    if (envelope.payload.roomId !== this.config.roomId) {
+      error(400, "BAD_REQUEST", "Envelope roomId does not match worker roomId");
+    }
+
+    await this.kv.set(tokenKey(this.config.roomId, envelope.payload.token), envelope.payload);
+
+    return jsonResponse(200, {
+      inviteToken: envelope.payload,
+    });
+  }
+
+  private async postMessage(request: Request): Promise<Response> {
+    const requester = requesterFromHeader(request);
+    const envelope = await parseJson<SignedWriteEnvelope<MessagePayload>>(request);
+
+    await this.assertWriteAuthorization(requester, envelope, envelope.payload.signedBy);
+
+    if (envelope.payload.roomId !== this.config.roomId) {
+      error(400, "BAD_REQUEST", "Envelope roomId does not match worker roomId");
+    }
+
+    const message: Message = {
+      ...envelope.payload,
+      body: envelope.payload.body as Message["body"],
+    };
+
+    await this.kv.set(messageKey(this.config.roomId, message), message);
+
+    return jsonResponse(200, {
+      message,
+    });
+  }
+
+  private async assertWriteAuthorization<TPayload extends object>(
+    requester: string,
+    envelope: SignedWriteEnvelope<TPayload>,
+    signedBy: string,
+  ): Promise<void> {
+    if (requester !== envelope.signer.username) {
+      error(401, "UNAUTHORIZED", "Requester and signer do not match");
+    }
+
+    if (signedBy !== envelope.signer.username) {
+      error(401, "UNAUTHORIZED", "Payload signer claim does not match envelope signer");
+    }
+
+    await this.assertMember(envelope.signer.username);
+
+    const publicKeyJwk = await this.kv.get<JsonWebKey>(
+      memberKey(this.config.roomId, envelope.signer.username),
+    );
+
+    if (!publicKeyJwk) {
+      error(401, "UNAUTHORIZED", "Signer key not found");
+    }
+
+    const verified = await verifyEnvelope(envelope, publicKeyJwk);
+    if (!verified) {
+      error(401, "INVALID_SIGNATURE", "Signature verification failed");
+    }
+  }
+
+  private async assertMember(username: string): Promise<void> {
+    const members = await this.getMembers();
+    if (!members.includes(username)) {
+      error(401, "UNAUTHORIZED", "Members only");
+    }
+  }
+
+  private async getMembers(): Promise<string[]> {
+    const stored = await this.kv.get<string[]>(roomMembersKey(this.config.roomId));
+    return stored ?? [];
+  }
+
+  private async ensureRoomMeta(): Promise<void> {
+    const key = roomMetaKey(this.config.roomId);
+    const existing = await this.kv.get<Room>(key);
+    if (existing) {
+      return;
+    }
+
+    const room: Room = {
+      id: this.config.roomId,
+      name: this.config.roomName,
+      owner: this.config.owner,
+      workerUrl: this.config.workerUrl,
+      createdAt: this.now(),
+    };
+
+    await this.kv.set(key, room);
+  }
+
+  private async snapshot(): Promise<RoomSnapshot> {
+    await this.ensureRoomMeta();
+
+    const room = await this.kv.get<Room>(roomMetaKey(this.config.roomId));
+    if (!room) {
+      error(400, "BAD_REQUEST", "Room metadata missing");
+    }
+
+    const members = await this.getMembers();
+    return {
+      ...room,
+      members,
+    };
+  }
+
+  private async fetchPublicKeyJwk(publicKeyUrl: string, expectedUsername: string): Promise<JsonWebKey> {
+    let payload: unknown;
+
+    if (publicKeyUrl.startsWith("data:")) {
+      payload = decodeDataUrlJson<unknown>(publicKeyUrl);
+    } else {
+      const response = await this.fetchFn(publicKeyUrl);
+      if (!response.ok) {
+        error(400, "BAD_REQUEST", `Could not fetch public key document from ${publicKeyUrl}`);
+      }
+      payload = await response.json();
+    }
+
+    if (isJsonWebKey(payload)) {
+      return payload;
+    }
+
+    if (payload && typeof payload === "object") {
+      const record = payload as Record<string, unknown>;
+      if (
+        typeof record.username === "string" &&
+        record.username !== expectedUsername
+      ) {
+        error(401, "UNAUTHORIZED", "Public key document username does not match join username");
+      }
+
+      if (isJsonWebKey(record.publicKeyJwk)) {
+        return record.publicKeyJwk;
+      }
+    }
+
+    error(400, "BAD_REQUEST", "Public key document format is invalid");
+  }
+}

@@ -1,0 +1,113 @@
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: JsonValue }
+  | JsonValue[];
+
+export type ErrorCode =
+  | "UNAUTHORIZED"
+  | "INVALID_SIGNATURE"
+  | "INVITE_REQUIRED"
+  | "KEY_MISMATCH"
+  | "BAD_REQUEST";
+
+export interface ApiError {
+  code: ErrorCode;
+  message: string;
+}
+
+export interface RoomUser {
+  username: string;
+}
+
+export interface Room {
+  id: string;
+  name: string;
+  owner: string;
+  workerUrl: string;
+  createdAt: number;
+}
+
+export interface Message {
+  id: string;
+  roomId: string;
+  body: JsonValue;
+  createdAt: number;
+  signedBy: string;
+}
+
+export interface InviteToken {
+  token: string;
+  roomId: string;
+  invitedBy: string;
+  createdAt: number;
+}
+
+export interface JoinOptions {
+  inviteToken?: string;
+  publicKeyUrl: string;
+}
+
+export interface SignerIdentity {
+  username: string;
+  publicKeyUrl: string;
+}
+
+export type SignedAction = "message" | "invite-token";
+
+export interface SignedWriteEnvelope<TPayload extends object> {
+  action: SignedAction;
+  payload: TPayload;
+  signer: SignerIdentity;
+  signedAt: number;
+  algorithm: "ECDSA_P256_SHA256";
+  signature: string;
+}
+
+export interface PublicKeyProofDocument {
+  username: string;
+  createdAt: number;
+  publicKeyJwk: JsonWebKey;
+}
+
+export interface ParsedInviteInput {
+  workerUrl: string;
+  inviteToken?: string;
+  owner?: string;
+  roomId?: string;
+}
+
+export interface PuterLike {
+  auth?: {
+    getUser?: () => Promise<{ username?: string; name?: string; id?: string }>;
+  };
+  whoAmI?: () => Promise<{ username?: string; name?: string; id?: string }>;
+  workers?: Record<string, (...args: any[]) => Promise<unknown>>;
+  ai?: {
+    chat?: (input: unknown) => Promise<unknown>;
+  };
+}
+
+export interface DeployWorkerArgs {
+  owner: string;
+  roomId: string;
+  roomName: string;
+  workerUrl: string;
+  script: string;
+}
+
+export interface PuterFedRoomsOptions {
+  puter?: PuterLike;
+  fetchFn?: typeof fetch;
+  appBaseUrl?: string;
+  workerBaseUrl?: string;
+  identityProvider?: () => Promise<RoomUser>;
+  deployWorker?: (args: DeployWorkerArgs) => Promise<void>;
+  workerResolver?: (owner: string, roomId: string, workerBaseUrl?: string) => string;
+}
+
+export interface RoomSnapshot extends Room {
+  members: string[];
+}
