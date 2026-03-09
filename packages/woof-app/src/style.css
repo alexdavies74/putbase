@@ -111,6 +111,11 @@ button.secondary {
   opacity: 0.8;
 }
 
+.muted a {
+  color: inherit;
+  word-break: break-all;
+}
+
 @media (max-width: 640px) {
   #app {
     padding: 12px;

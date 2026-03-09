@@ -32,7 +32,7 @@ export function createInviteLink(
   inviteToken: string,
   appBaseUrl: string,
 ): string {
-  const url = new URL("/join", appBaseUrl);
+  const url = new URL("/", appBaseUrl);
   url.searchParams.set("owner", room.owner);
   url.searchParams.set("room", room.id);
   url.searchParams.set("token", inviteToken);

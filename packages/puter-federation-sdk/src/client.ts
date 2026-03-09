@@ -28,10 +28,6 @@ import type {
   SignedWriteEnvelope,
 } from "./types";
 
-interface RoomResponse extends Room {
-  members: string[];
-}
-
 interface PostInviteResponse {
   inviteToken: InviteToken;
 }
@@ -250,6 +246,12 @@ export class PuterFedRooms {
     return snapshot.members;
   }
 
+  async getRoom(workerUrl: string): Promise<RoomSnapshot> {
+    return this.requestJson<RoomSnapshot>(`${stripTrailingSlash(workerUrl)}/room`, {
+      method: "GET",
+    });
+  }
+
   async sendMessage(room: Room, body: Message["body"]): Promise<Message> {
     await this.init();
 
@@ -384,12 +386,6 @@ export class PuterFedRooms {
 
   private keyPairKvKey(username: string): string {
     return `${SIGNER_KEY_KV_PREFIX}:${username}`;
-  }
-
-  private async getRoom(workerUrl: string): Promise<RoomResponse> {
-    return this.requestJson<RoomResponse>(`${stripTrailingSlash(workerUrl)}/room`, {
-      method: "GET",
-    });
   }
 
   private async requestJson<T>(

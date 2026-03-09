@@ -2,9 +2,14 @@ import type {
   PuterFedRooms,
   Room,
 } from "puter-federation-sdk";
-import type { AI, ChatResponse } from "@heyputer/puter.js";
+import type { AI, ChatResponse, KV } from "@heyputer/puter.js";
 
-import { clearProfile, loadProfile, saveProfile, type DogProfile } from "./profile";
+import {
+  clearProfile,
+  loadStoredWorkerUrl,
+  saveStoredWorkerUrl,
+  type DogProfile,
+} from "./profile";
 
 type PollHandle = number;
 
@@ -16,6 +21,7 @@ interface TimerLike {
 type RoomsLike = Pick<
   PuterFedRooms,
   | "createRoom"
+  | "getRoom"
   | "joinRoom"
   | "parseInviteInput"
   | "getPublicKeyUrl"
@@ -24,6 +30,8 @@ type RoomsLike = Pick<
   | "createInviteLink"
 >;
 
+type KvLike = Pick<KV, "get" | "set" | "del">;
+
 type PuterAI = Pick<AI, "chat">;
 
 export class WoofService {
@@ -31,31 +39,54 @@ export class WoofService {
 
   constructor(
     private readonly rooms: RoomsLike,
-    private readonly storage: Storage = localStorage,
+    private readonly kv: KvLike,
     private readonly timer: TimerLike = {
       setInterval: (handler, ms) => globalThis.setInterval(handler, ms),
       clearInterval: (handle) => globalThis.clearInterval(handle),
     },
   ) {}
 
-  restoreProfile(): DogProfile | null {
-    return loadProfile(this.storage);
+  async restoreProfile(): Promise<DogProfile | null> {
+    const workerUrl = await loadStoredWorkerUrl(this.kv);
+    if (!workerUrl) {
+      return null;
+    }
+
+    try {
+      const room = await this.rooms.getRoom(workerUrl);
+      return { room };
+    } catch (error) {
+      await clearProfile(this.kv);
+      throw error;
+    }
   }
 
-  async enterChat(args: { dogName: string; inviteInput?: string }): Promise<DogProfile> {
-    const inviteInput = args.inviteInput?.trim();
+  async enterChat(args: { dogName: string }): Promise<DogProfile> {
+    const room = await this.rooms.createRoom(args.dogName);
+    await saveStoredWorkerUrl(room, this.kv);
+    return { room };
+  }
 
-    const room = inviteInput
-      ? await this.joinExistingRoom(inviteInput)
-      : await this.rooms.createRoom(args.dogName);
+  async joinFromInvite(inviteInput: string): Promise<DogProfile> {
+    const parsed = this.rooms.parseInviteInput(inviteInput.trim());
+    const room = await this.rooms.joinRoom(parsed.workerUrl, {
+      inviteToken: parsed.inviteToken,
+      publicKeyUrl: this.rooms.getPublicKeyUrl(),
+    });
 
-    const profile: DogProfile = {
-      dogName: args.dogName,
-      room,
-    };
+    await saveStoredWorkerUrl(room, this.kv);
+    return { room };
+  }
 
-    saveProfile(profile, this.storage);
-    return profile;
+  async refreshProfileCanonical(profile: DogProfile): Promise<DogProfile> {
+    try {
+      const snapshot = await this.rooms.getRoom(profile.room.workerUrl);
+      await saveStoredWorkerUrl(snapshot, this.kv);
+      return { room: snapshot };
+    } catch (error) {
+      await clearProfile(this.kv);
+      throw error;
+    }
   }
 
   async generateInviteLink(room: Room): Promise<string> {
@@ -69,7 +100,7 @@ export class WoofService {
       content,
     });
 
-    const dogReply = await this.getDogReply(content, profile.dogName, puterAI);
+    const dogReply = await this.getDogReply(content, profile.room.name, puterAI);
 
     await this.rooms.sendMessage(profile.room, {
       userType: "dog",
@@ -93,17 +124,9 @@ export class WoofService {
     }
   }
 
-  relinquish(): void {
+  async relinquish(): Promise<void> {
     this.stopPolling();
-    clearProfile(this.storage);
-  }
-
-  private async joinExistingRoom(inviteInput: string): Promise<Room> {
-    const parsed = this.rooms.parseInviteInput(inviteInput);
-    return this.rooms.joinRoom(parsed.workerUrl, {
-      inviteToken: parsed.inviteToken,
-      publicKeyUrl: this.rooms.getPublicKeyUrl(),
-    });
+    await clearProfile(this.kv);
   }
 
   private async getDogReply(
@@ -142,6 +165,7 @@ export class WoofService {
       return `${dogName} barks happily.`;
     }
   }
+
 }
 
 function extractAIText(response: ChatResponse): string | null {

@@ -18,7 +18,7 @@ describe("invite parsing", () => {
     );
 
     expect(link).toBe(
-      "https://woof.example/join?owner=alex&room=room_abc&token=invite_xyz",
+      "https://woof.example/?owner=alex&room=room_abc&token=invite_xyz",
     );
 
     const parsed = parseInviteInput(link);

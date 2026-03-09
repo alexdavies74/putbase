@@ -6,6 +6,51 @@ import { InMemoryKv } from "../src/worker/in-memory-kv";
 import { RoomWorker } from "../src/worker/core";
 
 describe("PuterFedRooms", () => {
+  it("gets room snapshot via public getRoom API", async () => {
+    const rooms = new PuterFedRooms({
+      identityProvider: async () => ({ username: "owner" }),
+      fetchFn: async (input: RequestInfo | URL): Promise<Response> => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+
+        if (url.endsWith("/room")) {
+          return new Response(
+            JSON.stringify({
+              id: "room_public",
+              name: "Rex",
+              owner: "owner",
+              workerUrl: "https://worker.example",
+              createdAt: 1,
+              members: ["owner", "friend"],
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          );
+        }
+
+        return new Response(JSON.stringify({ code: "BAD_REQUEST", message: "Unexpected URL" }), {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    await expect(rooms.getRoom("https://worker.example")).resolves.toEqual({
+      id: "room_public",
+      name: "Rex",
+      owner: "owner",
+      workerUrl: "https://worker.example",
+      createdAt: 1,
+      members: ["owner", "friend"],
+    });
+  });
+
   it("calls provided fetchFn without binding `this` to SDK instance", async () => {
     const contexts: unknown[] = [];
 

@@ -1,36 +1,26 @@
 import { describe, expect, it } from "vitest";
 
-import type { InviteToken, Message, Room } from "puter-federation-sdk";
+import type { InviteToken, Message, Room, RoomSnapshot } from "puter-federation-sdk";
 import type { ChatMessage } from "@heyputer/puter.js";
 
-import { loadProfile } from "../src/profile";
+import { loadStoredWorkerUrl } from "../src/profile";
 import { WoofService } from "../src/service";
 
-class MockStorage implements Storage {
-  private readonly map = new Map<string, string>();
+class MockKv {
+  private readonly map = new Map<string, unknown>();
 
-  get length(): number {
-    return this.map.size;
+  async get<T>(key: string): Promise<T | undefined> {
+    return this.map.get(key) as T | undefined;
   }
 
-  clear(): void {
-    this.map.clear();
-  }
-
-  getItem(key: string): string | null {
-    return this.map.get(key) ?? null;
-  }
-
-  key(index: number): string | null {
-    return Array.from(this.map.keys())[index] ?? null;
-  }
-
-  removeItem(key: string): void {
-    this.map.delete(key);
-  }
-
-  setItem(key: string, value: string): void {
+  async set<T>(key: string, value: T): Promise<boolean> {
     this.map.set(key, value);
+    return true;
+  }
+
+  async del(key: string): Promise<boolean> {
+    this.map.delete(key);
+    return true;
   }
 }
 
@@ -48,6 +38,7 @@ class MockTimer {
 
 class MockRooms {
   public sentMessages: Array<{ room: Room; body: Message["body"] }> = [];
+  public failGetRoom = false;
 
   async createRoom(name: string): Promise<Room> {
     return {
@@ -70,9 +61,27 @@ class MockRooms {
   }
 
   parseInviteInput(input: string): { workerUrl: string; inviteToken?: string } {
+    const url = new URL(input);
+    const roomId = url.searchParams.get("room") ?? "room_joined";
     return {
-      workerUrl: "https://workers.puter.site/alex/rooms/room_joined",
+      workerUrl: `https://workers.puter.site/alex/rooms/${roomId}`,
       inviteToken: input.includes("token") ? "invite_1" : undefined,
+    };
+  }
+
+  async getRoom(workerUrl: string): Promise<RoomSnapshot> {
+    if (this.failGetRoom) {
+      throw new Error("room lookup failed");
+    }
+
+    const joined = workerUrl.includes("room_joined");
+    return {
+      id: joined ? "room_joined" : "room_created",
+      name: joined ? "Joined Canonical" : "Rex Canonical",
+      owner: "alex",
+      workerUrl,
+      createdAt: joined ? 2 : 1,
+      members: ["alex"],
     };
   }
 
@@ -94,38 +103,87 @@ class MockRooms {
   }
 
   createInviteLink(room: Room, inviteToken: string): string {
-    return `https://woof.example/join?owner=${room.owner}&room=${room.id}&token=${inviteToken}`;
+    return `https://woof.example/?owner=${room.owner}&room=${room.id}&token=${inviteToken}`;
   }
 }
 
 describe("WoofService", () => {
   it("creates room on first-run adopt flow", async () => {
     const rooms = new MockRooms();
-    const storage = new MockStorage();
-    const service = new WoofService(rooms, storage);
+    const kv = new MockKv();
+    const service = new WoofService(rooms, kv);
 
     const profile = await service.enterChat({ dogName: "Rex" });
 
     expect(profile.room.id).toBe("room_created");
-    expect(loadProfile(storage)?.dogName).toBe("Rex");
+    await expect(loadStoredWorkerUrl(kv)).resolves.toBe("https://workers.puter.site/alex/rooms/room_created");
   });
 
   it("joins room from invite input", async () => {
     const rooms = new MockRooms();
-    const storage = new MockStorage();
-    const service = new WoofService(rooms, storage);
+    const kv = new MockKv();
+    const service = new WoofService(rooms, kv);
 
-    const profile = await service.enterChat({
-      dogName: "Rex",
-      inviteInput: "https://woof.example/join?owner=alex&room=room_joined&token=invite_1",
-    });
+    const profile = await service.joinFromInvite(
+      "https://woof.example/?owner=alex&room=room_joined&token=invite_1",
+    );
 
     expect(profile.room.id).toBe("room_joined");
+    await expect(loadStoredWorkerUrl(kv)).resolves.toBe("https://workers.puter.site/alex/rooms/room_joined");
+  });
+
+  it("restores profile by worker URL via canonical room fetch", async () => {
+    const rooms = new MockRooms();
+    const kv = new MockKv();
+    const service = new WoofService(rooms, kv);
+
+    await kv.set("woof:myDog", "https://workers.puter.site/alex/rooms/room_created");
+    const restored = await service.restoreProfile();
+
+    expect(restored?.room.name).toBe("Rex Canonical");
+  });
+
+  it("refreshes saved profile with canonical room metadata", async () => {
+    const rooms = new MockRooms();
+    const kv = new MockKv();
+    const service = new WoofService(rooms, kv);
+
+    const profile = await service.joinFromInvite(
+      "https://woof.example/?owner=alex&room=room_joined&token=invite_1",
+    );
+    const refreshed = await service.refreshProfileCanonical(profile);
+
+    expect(refreshed.room.name).toBe("Joined Canonical");
+    await expect(loadStoredWorkerUrl(kv)).resolves.toBe("https://workers.puter.site/alex/rooms/room_joined");
+  });
+
+  it("clears profile when canonical refresh fails", async () => {
+    const rooms = new MockRooms();
+    const kv = new MockKv();
+    const service = new WoofService(rooms, kv);
+
+    const profile = await service.enterChat({ dogName: "Rex" });
+    rooms.failGetRoom = true;
+
+    await expect(service.refreshProfileCanonical(profile)).rejects.toThrow("room lookup failed");
+    await expect(loadStoredWorkerUrl(kv)).resolves.toBeNull();
+  });
+
+  it("clears persisted worker URL when restore fails", async () => {
+    const rooms = new MockRooms();
+    const kv = new MockKv();
+    const service = new WoofService(rooms, kv);
+
+    await kv.set("woof:myDog", "https://workers.puter.site/alex/rooms/room_created");
+    rooms.failGetRoom = true;
+
+    await expect(service.restoreProfile()).rejects.toThrow("room lookup failed");
+    await expect(loadStoredWorkerUrl(kv)).resolves.toBeNull();
   });
 
   it("sends user and dog messages in one turn", async () => {
     const rooms = new MockRooms();
-    const service = new WoofService(rooms, new MockStorage());
+    const service = new WoofService(rooms, new MockKv());
     let chatInput: ChatMessage[] | undefined;
 
     const profile = await service.enterChat({ dogName: "Rex" });
@@ -156,9 +214,35 @@ describe("WoofService", () => {
     ]);
   });
 
+  it("uses canonical room name for dog persona", async () => {
+    const rooms = new MockRooms();
+    const service = new WoofService(rooms, new MockKv());
+    let chatInput: ChatMessage[] | undefined;
+
+    const profile = await service.joinFromInvite(
+      "https://woof.example/?owner=alex&room=room_joined&token=invite_1",
+    );
+
+    await service.sendTurn(profile, "hello", {
+      async chat(input: ChatMessage[]) {
+        chatInput = input;
+        return {
+          message: {
+            content: "woof!",
+          },
+        };
+      },
+    });
+
+    expect(chatInput?.[0]).toEqual({
+      role: "system",
+      content: "You are Joined, a friendly dog replying in short playful lines.",
+    });
+  });
+
   it("falls back to canned dog reply when AI call fails", async () => {
     const rooms = new MockRooms();
-    const service = new WoofService(rooms, new MockStorage());
+    const service = new WoofService(rooms, new MockKv());
 
     const profile = await service.enterChat({ dogName: "Rex" });
 
@@ -180,16 +264,16 @@ describe("WoofService", () => {
 
   it("relinquish clears profile and stops polling", async () => {
     const rooms = new MockRooms();
-    const storage = new MockStorage();
+    const kv = new MockKv();
     const timer = new MockTimer();
-    const service = new WoofService(rooms, storage, timer);
+    const service = new WoofService(rooms, kv, timer);
 
     await service.enterChat({ dogName: "Rex" });
 
     service.startPolling(async () => undefined, 5000);
-    service.relinquish();
+    await service.relinquish();
 
     expect(timer.clearCalls).toEqual([42]);
-    expect(loadProfile(storage)).toBeNull();
+    await expect(loadStoredWorkerUrl(kv)).resolves.toBeNull();
   });
 });

@@ -14,7 +14,7 @@ const rooms = new PuterFedRooms({
   appBaseUrl: window.location.origin,
   puter,
 });
-const service = new WoofService(rooms);
+const service = new WoofService(rooms, puter.kv);
 
 let currentProfile: DogProfile | null = null;
 let latestTimestamp = 0;
@@ -24,23 +24,61 @@ async function boot() {
     await rooms.init();
   } catch (error) {
     console.error("[woof-app] boot/init failed", error);
-    renderSetup();
+    renderSetup(getErrorMessage(error, "Could not initialize app."));
     return;
   }
 
-  const restored = service.restoreProfile();
-  if (restored) {
-    currentProfile = restored;
-    renderChat(restored);
-    await refreshMessages();
-    startPolling();
+  const inviteInput = getInviteInputFromLocation(window.location.href);
+  if (inviteInput) {
+    try {
+      const profile = await service.joinFromInvite(inviteInput);
+      clearInviteLocation();
+      currentProfile = profile;
+      latestTimestamp = 0;
+
+      await renderChat(profile);
+      await refreshMessages();
+      startPolling();
+      return;
+    } catch (error) {
+      console.error("[woof-app] invite join failed", {
+        error,
+        inviteInput,
+      });
+      await service.relinquish();
+      currentProfile = null;
+      latestTimestamp = 0;
+      renderSetup(getErrorMessage(error, "Failed to join invite link."));
+      return;
+    }
+  }
+
+  try {
+    const restored = await service.restoreProfile();
+    if (restored) {
+      currentProfile = restored;
+      latestTimestamp = 0;
+
+      await renderChat(restored);
+      await refreshMessages();
+      startPolling();
+      return;
+    }
+  } catch (error) {
+    console.error("[woof-app] profile restore failed", {
+      error,
+    });
+    await service.relinquish();
+    currentProfile = null;
+    latestTimestamp = 0;
+    renderSetup(getErrorMessage(error, "Could not restore saved room."));
     return;
   }
 
   renderSetup();
 }
 
-function renderSetup() {
+function renderSetup(initialError = "") {
   stopPolling();
 
   app.innerHTML = `
@@ -50,10 +88,6 @@ function renderSetup() {
       <form id="setup-form">
         <label for="dog-name">Dog name</label>
         <input id="dog-name" name="dogName" placeholder="Rex" required />
-
-        <label for="invite-input">Invite link or worker URL (optional)</label>
-        <input id="invite-input" name="invite" placeholder="https://..." />
-
         <button class="primary" type="submit">Enter chat</button>
       </form>
       <p id="setup-error" class="muted"></p>
@@ -69,7 +103,6 @@ function renderSetup() {
 
     const formData = new FormData(form);
     const dogName = String(formData.get("dogName") ?? "").trim();
-    const inviteInput = String(formData.get("invite") ?? "").trim();
 
     if (!dogName) {
       setupError.textContent = "Dog name is required.";
@@ -79,34 +112,39 @@ function renderSetup() {
     try {
       const profile = await service.enterChat({
         dogName,
-        inviteInput: inviteInput || undefined,
       });
       currentProfile = profile;
       latestTimestamp = 0;
 
-      renderChat(profile);
+      await renderChat(profile);
       await refreshMessages();
       startPolling();
     } catch (error) {
       console.error("[woof-app] enterChat failed", {
         error,
         dogName,
-        hasInviteInput: Boolean(inviteInput),
       });
       setupError.textContent = getErrorMessage(error, "Failed to enter chat.");
     }
   });
+
+  if (initialError) {
+    setupError.textContent = initialError;
+  }
 }
 
 async function renderChat(profile: DogProfile) {
   app.innerHTML = `
     <section class="panel">
-      <h1>${escapeHtml(profile.dogName)}'s Room</h1>
+      <h1>${escapeHtml(profile.room.name)}'s Room</h1>
       <div class="toolbar">
         <button id="copy-link" class="secondary" type="button">Copy link</button>
         <button id="relinquish" class="secondary" type="button">Relinquish Dog</button>
       </div>
-      <p id="invite-status" class="muted"></p>
+      <p class="muted">
+        <a id="invite-link" href="#"></a>
+        <span id="invite-status"></span>
+      </p>
       <div id="messages"></div>
       <form id="message-form">
         <label for="message-input">Message</label>
@@ -117,28 +155,33 @@ async function renderChat(profile: DogProfile) {
     </section>
   `;
 
-  const inviteStatus = document.getElementById("invite-status") as HTMLParagraphElement;
+  const inviteLinkElement = document.getElementById("invite-link") as HTMLAnchorElement;
+  const inviteStatus = document.getElementById("invite-status") as HTMLSpanElement;
   const copyButton = document.getElementById("copy-link") as HTMLButtonElement;
 
   try {
     const inviteLink = await service.generateInviteLink(profile.room);
-    inviteStatus.textContent = inviteLink;
+    inviteLinkElement.href = inviteLink;
+    inviteLinkElement.textContent = inviteLink;
+    inviteStatus.textContent = "";
 
     copyButton.addEventListener("click", async () => {
       try {
         await navigator.clipboard.writeText(inviteLink);
-        inviteStatus.textContent = "Invite link copied.";
+        inviteStatus.textContent = " Invite link copied.";
       } catch {
-        inviteStatus.textContent = inviteLink;
+        inviteStatus.textContent = " Could not copy invite link.";
       }
     });
   } catch {
-    inviteStatus.textContent = "Could not create invite link yet.";
+    inviteLinkElement.removeAttribute("href");
+    inviteLinkElement.textContent = "Could not create invite link yet.";
+    inviteStatus.textContent = "";
   }
 
   const relinquishButton = document.getElementById("relinquish") as HTMLButtonElement;
   relinquishButton.addEventListener("click", () => {
-    service.relinquish();
+    void service.relinquish();
     latestTimestamp = 0;
     currentProfile = null;
     renderSetup();
@@ -270,6 +313,23 @@ function hasStringMessage(value: unknown): value is { message: string } {
     typeof (value as { message?: unknown }).message === "string" &&
     Boolean((value as { message: string }).message.trim())
   );
+}
+
+function getInviteInputFromLocation(href: string): string | null {
+  const url = new URL(href);
+  const hasToken = url.searchParams.has("token");
+  const hasWorker = url.searchParams.has("worker");
+  const hasOwnerRoom = url.searchParams.has("owner") && url.searchParams.has("room");
+
+  return hasToken || hasWorker || hasOwnerRoom ? url.toString() : null;
+}
+
+function clearInviteLocation() {
+  const clean = new URL(window.location.href);
+  clean.pathname = clean.pathname === "/join" ? "/" : clean.pathname;
+  clean.search = "";
+  clean.hash = "";
+  window.history.replaceState({}, "", clean.toString());
 }
 
 void boot();

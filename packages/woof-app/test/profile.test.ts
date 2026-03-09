@@ -1,54 +1,38 @@
 import { describe, expect, it } from "vitest";
 
-import { clearProfile, loadProfile, saveProfile, type DogProfile } from "../src/profile";
+import { clearProfile, loadStoredWorkerUrl, saveStoredWorkerUrl } from "../src/profile";
 
-class MockStorage implements Storage {
-  private readonly map = new Map<string, string>();
+class MockKv {
+  private readonly map = new Map<string, unknown>();
 
-  get length(): number {
-    return this.map.size;
+  async get<T>(key: string): Promise<T | undefined> {
+    return this.map.get(key) as T | undefined;
   }
 
-  clear(): void {
-    this.map.clear();
-  }
-
-  getItem(key: string): string | null {
-    return this.map.get(key) ?? null;
-  }
-
-  key(index: number): string | null {
-    return Array.from(this.map.keys())[index] ?? null;
-  }
-
-  removeItem(key: string): void {
-    this.map.delete(key);
-  }
-
-  setItem(key: string, value: string): void {
+  async set<T>(key: string, value: T): Promise<boolean> {
     this.map.set(key, value);
+    return true;
+  }
+
+  async del(key: string): Promise<boolean> {
+    this.map.delete(key);
+    return true;
   }
 }
 
 describe("profile persistence", () => {
-  it("saves, loads, and clears dog profile", () => {
-    const storage = new MockStorage();
+  it("saves, loads, and clears worker URL in puter kv", async () => {
+    const kv = new MockKv();
 
-    const profile: DogProfile = {
-      dogName: "Rex",
-      room: {
-        id: "room_1",
-        name: "Rex",
-        owner: "alex",
+    await saveStoredWorkerUrl(
+      {
         workerUrl: "https://workers.puter.site/alex/rooms/room_1",
-        createdAt: 1,
       },
-    };
+      kv,
+    );
+    await expect(loadStoredWorkerUrl(kv)).resolves.toBe("https://workers.puter.site/alex/rooms/room_1");
 
-    saveProfile(profile, storage);
-    expect(loadProfile(storage)).toEqual(profile);
-
-    clearProfile(storage);
-    expect(loadProfile(storage)).toBeNull();
+    await clearProfile(kv);
+    await expect(loadStoredWorkerUrl(kv)).resolves.toBeNull();
   });
 });

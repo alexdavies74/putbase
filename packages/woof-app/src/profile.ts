@@ -1,29 +1,28 @@
+import type { KV } from "@heyputer/puter.js";
 import type { Room } from "puter-federation-sdk";
 
 export interface DogProfile {
-  dogName: string;
   room: Room;
 }
 
 const PROFILE_KEY = "woof:myDog";
 
-export function loadProfile(storage: Storage = localStorage): DogProfile | null {
-  const raw = storage.getItem(PROFILE_KEY);
-  if (!raw) {
+type KvLike = Pick<KV, "get" | "set" | "del">;
+
+export async function loadStoredWorkerUrl(kv: KvLike): Promise<string | null> {
+  const value = await kv.get<unknown>(PROFILE_KEY);
+  if (typeof value !== "string") {
     return null;
   }
 
-  try {
-    return JSON.parse(raw) as DogProfile;
-  } catch {
-    return null;
-  }
+  const workerUrl = value.trim();
+  return workerUrl || null;
 }
 
-export function saveProfile(profile: DogProfile, storage: Storage = localStorage): void {
-  storage.setItem(PROFILE_KEY, JSON.stringify(profile));
+export async function saveStoredWorkerUrl(room: Pick<Room, "workerUrl">, kv: KvLike): Promise<void> {
+  await kv.set(PROFILE_KEY, room.workerUrl);
 }
 
-export function clearProfile(storage: Storage = localStorage): void {
-  storage.removeItem(PROFILE_KEY);
+export async function clearProfile(kv: KvLike): Promise<void> {
+  await kv.del(PROFILE_KEY);
 }
