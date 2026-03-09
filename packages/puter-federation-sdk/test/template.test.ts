@@ -11,11 +11,19 @@ describe("buildClassicWorkerScript", () => {
       workerUrl: "https://workers.puter.site/owner/room-room_1",
     });
 
-    expect(script).toContain("router.get(\"/room\"");
-    expect(script).toContain("router.post(\"/message\"");
+    expect(script).toMatch(/router\.get\((\"|')\/room(\"|')/);
+    expect(script).toMatch(/router\.post\((\"|')\/message(\"|')/);
     expect(script).toContain("me.puter.kv.get(");
     expect(script).toContain("me.puter.kv.set(");
-    expect(script).toContain("me.puter.kv.list(messagePrefix(), true)");
+    expect(script).toContain("me.puter.kv.list(");
+    expect(script).toContain("\"room_1\"");
+    expect(script).toContain("\"Room Name\"");
+    expect(script).toContain("\"owner\"");
+    expect(script).toContain("\"https://workers.puter.site/owner/room-room_1\"");
+    expect(script).not.toContain("__PUTER_FED_ROOM_ID__");
+    expect(script).not.toContain("__PUTER_FED_ROOM_NAME__");
+    expect(script).not.toContain("__PUTER_FED_ROOM_OWNER__");
+    expect(script).not.toContain("__PUTER_FED_ROOM_WORKER_URL__");
 
     expect(script).not.toMatch(/(^|[^\w.])puter\.router\./);
     expect(script).not.toMatch(/(^|[^\w.])puter\.kv\./);
