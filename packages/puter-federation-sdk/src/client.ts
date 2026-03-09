@@ -316,8 +316,9 @@ export class PuterFedRooms {
     },
   ): Promise<T> {
     const user = await this.whoAmI();
+    const fetchFn = this.fetchFn;
 
-    const response = await this.fetchFn(url, {
+    const response = await fetchFn(url, {
       method: options.method,
       headers: {
         "content-type": "application/json",

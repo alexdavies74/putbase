@@ -394,7 +394,8 @@ export class RoomWorker {
     if (publicKeyUrl.startsWith("data:")) {
       payload = decodeDataUrlJson<unknown>(publicKeyUrl);
     } else {
-      const response = await this.fetchFn(publicKeyUrl);
+      const fetchFn = this.fetchFn;
+      const response = await fetchFn(publicKeyUrl);
       if (!response.ok) {
         error(400, "BAD_REQUEST", `Could not fetch public key document from ${publicKeyUrl}`);
       }
