@@ -93,6 +93,10 @@ export async function exportPublicJwk(publicKey: CryptoKey): Promise<JsonWebKey>
   return crypto.subtle.exportKey("jwk", publicKey);
 }
 
+export async function exportPrivateJwk(privateKey: CryptoKey): Promise<JsonWebKey> {
+  return crypto.subtle.exportKey("jwk", privateKey);
+}
+
 export async function importPublicKey(jwk: JsonWebKey): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     "jwk",
@@ -104,6 +108,34 @@ export async function importPublicKey(jwk: JsonWebKey): Promise<CryptoKey> {
     true,
     ["verify"],
   );
+}
+
+export async function importPrivateKey(jwk: JsonWebKey): Promise<CryptoKey> {
+  return crypto.subtle.importKey(
+    "jwk",
+    jwk,
+    {
+      name: "ECDSA",
+      namedCurve: "P-256",
+    },
+    true,
+    ["sign"],
+  );
+}
+
+export async function importP256KeyPair(jwkPair: {
+  publicKeyJwk: JsonWebKey;
+  privateKeyJwk: JsonWebKey;
+}): Promise<CryptoKeyPair> {
+  const [publicKey, privateKey] = await Promise.all([
+    importPublicKey(jwkPair.publicKeyJwk),
+    importPrivateKey(jwkPair.privateKeyJwk),
+  ]);
+
+  return {
+    publicKey,
+    privateKey,
+  };
 }
 
 export async function signCanonicalValue(value: unknown, privateKey: CryptoKey): Promise<string> {

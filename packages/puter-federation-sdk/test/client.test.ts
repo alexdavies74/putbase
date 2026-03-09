@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { PuterFedRooms } from "../src/client";
 import type { PuterFedRoomsOptions } from "../src/types";
+import { InMemoryKv } from "../src/worker/in-memory-kv";
+import { RoomWorker } from "../src/worker/core";
 
 describe("PuterFedRooms", () => {
   it("calls provided fetchFn without binding `this` to SDK instance", async () => {
@@ -138,5 +140,63 @@ describe("PuterFedRooms", () => {
     expect(requestedUrls).toContain(`${deployedWorkerUrl}/join`);
     expect(requestedUrls).toContain(`${deployedWorkerUrl}/room`);
     expect(requestedUrls.every((url) => !url.includes("room_should_not_be_used"))).toBe(true);
+  });
+
+  it("reuses signer keys from puter.kv so writes still work after client re-init", async () => {
+    const worker = new RoomWorker(
+      {
+        roomId: "room_reload",
+        roomName: "Rex",
+        owner: "owner",
+        workerUrl: "https://worker.example",
+      },
+      { kv: new InMemoryKv() },
+    );
+
+    const signerKeyStore = new Map<string, unknown>();
+    const puter = {
+      kv: {
+        get: async <T>(key: string): Promise<T | undefined> => signerKeyStore.get(key) as T | undefined,
+        set: async <T>(key: string, value: T): Promise<boolean> => {
+          signerKeyStore.set(key, value);
+          return true;
+        },
+      },
+    } as PuterFedRoomsOptions["puter"];
+
+    const fetchFn = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const request = new Request(
+        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url,
+        init,
+      );
+      return worker.handle(request);
+    };
+
+    const firstClient = new PuterFedRooms({
+      identityProvider: async () => ({ username: "owner" }),
+      puter,
+      fetchFn: fetchFn as typeof fetch,
+    });
+    await firstClient.init();
+
+    const room = await firstClient.joinRoom("https://worker.example", {
+      publicKeyUrl: firstClient.getPublicKeyUrl(),
+    });
+    await firstClient.sendMessage(room, { userType: "user", content: "first" });
+
+    const secondClient = new PuterFedRooms({
+      identityProvider: async () => ({ username: "owner" }),
+      puter,
+      fetchFn: fetchFn as typeof fetch,
+    });
+    await secondClient.init();
+
+    await expect(
+      secondClient.sendMessage(room, { userType: "user", content: "second" }),
+    ).resolves.toMatchObject({
+      roomId: room.id,
+      signedBy: "owner",
+    });
+    expect(signerKeyStore.size).toBeGreaterThan(0);
   });
 });

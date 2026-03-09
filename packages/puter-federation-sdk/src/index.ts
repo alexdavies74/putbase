@@ -11,6 +11,10 @@ export {
   verifyEnvelope,
   generateP256KeyPair,
   exportPublicJwk,
+  exportPrivateJwk,
+  importPublicKey,
+  importPrivateKey,
+  importP256KeyPair,
   buildPublicKeyProofDocument,
   encodeProofDocumentAsDataUrl,
 } from "./crypto";
