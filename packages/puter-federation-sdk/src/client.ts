@@ -348,13 +348,30 @@ export class PuterFedRooms {
     }
 
     const workerName = `${args.owner}-room-${args.roomId}`;
-    const workerFilePath = `~/puter-fed/workers/${workerName}.js`;
+    const workerDir = "puter-fed/workers";
+    const workerFilePath = `${workerDir}/${workerName}.js`;
 
-    await puter.fs.write(workerFilePath, args.script, {
-      overwrite: true,
-      createMissingParents: true,
-    });
-    await puter.workers.create(workerName, workerFilePath);
+    try {
+      await puter.fs.mkdir(workerDir, {
+        recursive: true,
+        createMissingParents: true,
+        overwrite: true,
+        dedupeName: false,
+      });
+      await puter.fs.write(workerFilePath, args.script, {
+        overwrite: true,
+        createMissingParents: true,
+        createMissingAncestors: true,
+      });
+      await puter.workers.create(workerName, workerFilePath);
+    } catch (error) {
+      console.error("[puter-fed-sdk] deployWorker failed", {
+        error,
+        workerName,
+        workerFilePath,
+      });
+      throw error;
+    }
   }
 
   private createId(prefix: string): string {

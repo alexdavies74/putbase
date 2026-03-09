@@ -20,7 +20,13 @@ let currentProfile: DogProfile | null = null;
 let latestTimestamp = 0;
 
 async function boot() {
-  await rooms.init();
+  try {
+    await rooms.init();
+  } catch (error) {
+    console.error("[woof-app] boot/init failed", error);
+    renderSetup();
+    return;
+  }
 
   const restored = service.restoreProfile();
   if (restored) {
@@ -82,7 +88,12 @@ function renderSetup() {
       await refreshMessages();
       startPolling();
     } catch (error) {
-      setupError.textContent = error instanceof Error ? error.message : "Failed to enter chat.";
+      console.error("[woof-app] enterChat failed", {
+        error,
+        dogName,
+        hasInviteInput: Boolean(inviteInput),
+      });
+      setupError.textContent = getErrorMessage(error, "Failed to enter chat.");
     }
   });
 }
@@ -220,6 +231,30 @@ function escapeHtml(value: string): string {
     .replace(/>/g, "&gt;")
     .replace(/\"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) {
+    const code = (error as { code?: unknown }).code;
+    const status = (error as { status?: unknown }).status;
+    if (typeof code === "string" || typeof status === "number") {
+      return `${error.message} (${[code, status].filter(Boolean).join(", ")})`;
+    }
+    return error.message;
+  }
+
+  if (typeof error === "string" && error.trim()) {
+    return error;
+  }
+
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) {
+      return message;
+    }
+  }
+
+  return fallback;
 }
 
 void boot();
