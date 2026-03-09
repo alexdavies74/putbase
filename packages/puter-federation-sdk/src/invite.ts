@@ -1,9 +1,17 @@
 import type { ParsedInviteInput, Room } from "./types";
 
-const DEFAULT_WORKER_BASE_URL = "https://workers.puter.site";
+const DEFAULT_WORKER_BASE_URL = "https://puter.work";
 
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/g, "");
+}
+
+function normalizeWorkerUrl(workerUrl: string): string {
+  return workerUrl.replace(/\/+$/g, "");
+}
+
+function workerName(owner: string, roomId: string): string {
+  return `${owner}-room-${roomId}`.toLocaleLowerCase();
 }
 
 export function resolveWorkerUrl(
@@ -12,7 +20,11 @@ export function resolveWorkerUrl(
   workerBaseUrl = DEFAULT_WORKER_BASE_URL,
 ): string {
   const normalized = normalizeBaseUrl(workerBaseUrl);
-  return `${normalized}/${encodeURIComponent(owner)}/rooms/${encodeURIComponent(roomId)}`;
+  const base = new URL(
+    normalized.includes("://") ? normalized : `https://${normalized}`,
+  );
+  const host = `${workerName(owner, roomId)}.${base.host}`;
+  return `${base.protocol}//${host}`;
 }
 
 export function createInviteLink(
@@ -38,13 +50,23 @@ export function parseInviteInput(
   const owner = url.searchParams.get("owner");
   const roomId = url.searchParams.get("room");
   const inviteToken = url.searchParams.get("token") ?? undefined;
+  const workerUrl = url.searchParams.get("worker");
+
+  if (workerUrl) {
+    return {
+      workerUrl: normalizeWorkerUrl(workerUrl),
+      inviteToken,
+      owner: owner ?? undefined,
+      roomId: roomId ?? undefined,
+    };
+  }
 
   if (owner && roomId) {
     return {
       owner,
       roomId,
       inviteToken,
-      workerUrl: workerResolver(owner, roomId),
+      workerUrl: normalizeWorkerUrl(workerResolver(owner, roomId)),
     };
   }
 
@@ -52,12 +74,12 @@ export function parseInviteInput(
     const workerUrl = new URL(url.toString());
     workerUrl.searchParams.delete("token");
     return {
-      workerUrl: workerUrl.toString(),
+      workerUrl: normalizeWorkerUrl(workerUrl.toString()),
       inviteToken,
     };
   }
 
   return {
-    workerUrl: url.toString(),
+    workerUrl: normalizeWorkerUrl(url.toString()),
   };
 }

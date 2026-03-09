@@ -75,6 +75,14 @@ const CORS_HEADERS = {
   "access-control-allow-headers": "content-type,x-puter-username",
 };
 
+const CORS_PREFLIGHT_HEADERS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-headers": "content-type,x-puter-username",
+  "access-control-allow-methods": "GET,POST,OPTIONS",
+};
+
+const WORKER_ROUTE_SEGMENTS = new Set(["room", "messages", "join", "invite-token", "message"]);
+
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -142,6 +150,18 @@ function sameJwk(left: JsonWebKey, right: JsonWebKey): boolean {
   return canonicalize(left) === canonicalize(right);
 }
 
+function inferWorkerUrlFromRequest(requestUrl: string): string {
+  const url = new URL(requestUrl);
+  const segments = url.pathname.split("/").filter(Boolean);
+  const lastSegment = segments[segments.length - 1];
+  if (lastSegment && WORKER_ROUTE_SEGMENTS.has(lastSegment)) {
+    segments.pop();
+  }
+
+  const workerPath = segments.length > 0 ? `/${segments.join("/")}` : "";
+  return `${url.origin}${workerPath}`;
+}
+
 export class RoomWorker {
   private readonly kv: WorkerKv;
 
@@ -163,7 +183,7 @@ export class RoomWorker {
       if (request.method === "OPTIONS") {
         return new Response(null, {
           status: 204,
-          headers: CORS_HEADERS,
+          headers: CORS_PREFLIGHT_HEADERS,
         });
       }
 
@@ -211,7 +231,7 @@ export class RoomWorker {
     const requester = requesterFromHeader(request);
     await this.assertMember(requester);
 
-    const snapshot = await this.snapshot();
+    const snapshot = await this.snapshot(request.url);
     return jsonResponse(200, snapshot);
   }
 
@@ -236,7 +256,7 @@ export class RoomWorker {
       error(400, "BAD_REQUEST", "username and publicKeyUrl are required");
     }
 
-    await this.ensureRoomMeta();
+    await this.ensureRoomMeta(request.url);
 
     const members = await this.getMembers();
     const isOwner = body.username === this.config.owner;
@@ -254,7 +274,7 @@ export class RoomWorker {
         error(409, "KEY_MISMATCH", "Public key cannot be changed for existing username");
       }
 
-      return jsonResponse(200, await this.snapshot());
+      return jsonResponse(200, await this.snapshot(request.url));
     }
 
     if (!isOwner) {
@@ -272,7 +292,7 @@ export class RoomWorker {
     await this.kv.set(roomMembersKey(this.config.roomId), members);
     await this.kv.set(memberKey(this.config.roomId, body.username), fetchedKey);
 
-    return jsonResponse(200, await this.snapshot());
+    return jsonResponse(200, await this.snapshot(request.url));
   }
 
   private async createInviteToken(request: Request): Promise<Response> {
@@ -355,10 +375,17 @@ export class RoomWorker {
     return stored ?? [];
   }
 
-  private async ensureRoomMeta(): Promise<void> {
+  private async ensureRoomMeta(requestUrl?: string): Promise<void> {
     const key = roomMetaKey(this.config.roomId);
+    const inferredWorkerUrl = requestUrl ? inferWorkerUrlFromRequest(requestUrl) : undefined;
     const existing = await this.kv.get<Room>(key);
     if (existing) {
+      if (inferredWorkerUrl && existing.workerUrl !== inferredWorkerUrl) {
+        await this.kv.set(key, {
+          ...existing,
+          workerUrl: inferredWorkerUrl,
+        });
+      }
       return;
     }
 
@@ -366,15 +393,15 @@ export class RoomWorker {
       id: this.config.roomId,
       name: this.config.roomName,
       owner: this.config.owner,
-      workerUrl: this.config.workerUrl,
+      workerUrl: inferredWorkerUrl ?? this.config.workerUrl,
       createdAt: this.now(),
     };
 
     await this.kv.set(key, room);
   }
 
-  private async snapshot(): Promise<RoomSnapshot> {
-    await this.ensureRoomMeta();
+  private async snapshot(requestUrl?: string): Promise<RoomSnapshot> {
+    await this.ensureRoomMeta(requestUrl);
 
     const room = await this.kv.get<Room>(roomMetaKey(this.config.roomId));
     if (!room) {

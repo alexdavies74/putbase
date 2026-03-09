@@ -136,7 +136,7 @@ export class PuterFedRooms {
 
     const user = await this.whoAmI();
     const roomId = this.createId("room");
-    const workerUrl = (this.options.workerResolver ?? resolveWorkerUrl)(
+    const resolvedWorkerUrl = (this.options.workerResolver ?? resolveWorkerUrl)(
       user.username,
       roomId,
       this.options.workerBaseUrl,
@@ -146,22 +146,24 @@ export class PuterFedRooms {
       owner: user.username,
       roomId,
       roomName: name,
-      workerUrl,
+      workerUrl: resolvedWorkerUrl,
     });
 
-    await this.deployWorker({
+    const deployedWorkerUrl = await this.deployWorker({
       owner: user.username,
       roomId,
       roomName: name,
-      workerUrl,
+      workerUrl: resolvedWorkerUrl,
       script,
     });
 
-    await this.joinRoom(workerUrl, {
+    const activeWorkerUrl = stripTrailingSlash(deployedWorkerUrl ?? resolvedWorkerUrl);
+
+    await this.joinRoom(activeWorkerUrl, {
       publicKeyUrl: this.getPublicKeyUrl(),
     });
 
-    const room = await this.getRoom(workerUrl);
+    const room = await this.getRoom(activeWorkerUrl);
     return {
       id: room.id,
       name: room.name,
@@ -337,10 +339,10 @@ export class PuterFedRooms {
     return (await response.json()) as T;
   }
 
-  private async deployWorker(args: DeployWorkerArgs): Promise<void> {
+  private async deployWorker(args: DeployWorkerArgs): Promise<string | undefined> {
     if (this.options.deployWorker) {
       await this.options.deployWorker(args);
-      return;
+      return undefined;
     }
 
     const puter = this.puter;
@@ -364,7 +366,8 @@ export class PuterFedRooms {
         createMissingParents: true,
         createMissingAncestors: true,
       });
-      await puter.workers.create(workerName, workerFilePath);
+      const deployment = await puter.workers.create(workerName, workerFilePath);
+      return typeof deployment.url === "string" ? stripTrailingSlash(deployment.url) : undefined;
     } catch (error) {
       console.error("[puter-fed-sdk] deployWorker failed", {
         error,

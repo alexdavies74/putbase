@@ -51,6 +51,7 @@ describe("RoomWorker", () => {
       }),
     );
     expect(ownerJoin.status).toBe(200);
+    expect((await jsonBody(ownerJoin)).workerUrl).toBe("https://worker.example");
 
     const guestJoinWithoutInvite = await worker.handle(
       new Request("https://worker.example/join", {

@@ -29,19 +29,30 @@ describe("invite parsing", () => {
     expect(parsed.workerUrl).toBe(resolveWorkerUrl("alex", "room_abc"));
   });
 
-  it("supports worker URL input with token", () => {
+  it("parses worker-param invites for backwards compatibility", () => {
     const parsed = parseInviteInput(
-      "https://workers.puter.site/alex/rooms/room_abc?token=invite_xyz",
+      "https://woof.example/join?worker=https%3A%2F%2Falex-room-room_abc.puter.work&token=invite_xyz",
     );
 
-    expect(parsed.workerUrl).toBe("https://workers.puter.site/alex/rooms/room_abc");
+    expect(parsed.workerUrl).toBe("https://alex-room-room_abc.puter.work");
+    expect(parsed.inviteToken).toBe("invite_xyz");
+    expect(parsed.owner).toBeUndefined();
+    expect(parsed.roomId).toBeUndefined();
+  });
+
+  it("supports worker URL input with token", () => {
+    const parsed = parseInviteInput(
+      "https://alex-room-room_abc.puter.work?token=invite_xyz",
+    );
+
+    expect(parsed.workerUrl).toBe("https://alex-room-room_abc.puter.work");
     expect(parsed.inviteToken).toBe("invite_xyz");
   });
 
   it("supports plain worker URL input", () => {
-    const parsed = parseInviteInput("https://workers.puter.site/alex/rooms/room_abc");
+    const parsed = parseInviteInput("https://alex-room-room_abc.puter.work");
 
-    expect(parsed.workerUrl).toBe("https://workers.puter.site/alex/rooms/room_abc");
+    expect(parsed.workerUrl).toBe("https://alex-room-room_abc.puter.work");
     expect(parsed.inviteToken).toBeUndefined();
   });
 });
