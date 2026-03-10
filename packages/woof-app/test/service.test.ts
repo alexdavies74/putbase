@@ -248,13 +248,16 @@ describe("WoofService", () => {
     expect(chatInput?.[0]).toEqual({
       role: "system",
       content:
-        "You are Rex, a friendly dog in a shared room with separate 1:1 threads. You can reply to multiple users, but you must always reply to the trigger user. Return STRICT JSON only: {\"replies\":[{\"toUser\":\"username\",\"content\":\"message\"}]} Keep content short and playful.",
+        "You are Rex, a friendly dog in a shared room with separate 1:1 threads. You can reply to multiple users, but you must always reply to the trigger user. Return STRICT JSON only: {\"triggerUserReply\":\"message\",\"otherReplies\":[{\"toUser\":\"username\",\"content\":\"message\"}]} Keep content short and playful.",
     });
-    expect(chatInput?.[1].role).toBe("user");
-    const promptPayload = JSON.parse(String(chatInput?.[1].content));
-    expect(promptPayload.triggerUser).toBe("alex");
-    expect(promptPayload.latestUserMessage).toBe("hello");
-    expect(promptPayload.members).toEqual(["alex", "friend"]);
+    expect(chatInput?.[1]).toEqual({
+      role: "system",
+      content: "Room members: alex, friend. Trigger user: alex.",
+    });
+    expect(chatInput?.[2]).toEqual({
+      role: "user",
+      content: "[alex \u2192 Rex] hello",
+    });
   });
 
   it("uses canonical room name for dog persona", async () => {
@@ -280,8 +283,44 @@ describe("WoofService", () => {
     expect(chatInput?.[0]).toEqual({
       role: "system",
       content:
-        "You are Joined, a friendly dog in a shared room with separate 1:1 threads. You can reply to multiple users, but you must always reply to the trigger user. Return STRICT JSON only: {\"replies\":[{\"toUser\":\"username\",\"content\":\"message\"}]} Keep content short and playful.",
+        "You are Joined, a friendly dog in a shared room with separate 1:1 threads. You can reply to multiple users, but you must always reply to the trigger user. Return STRICT JSON only: {\"triggerUserReply\":\"message\",\"otherReplies\":[{\"toUser\":\"username\",\"content\":\"message\"}]} Keep content short and playful.",
     });
+  });
+
+  it("formats history as chronological user and assistant messages", async () => {
+    const rooms = new MockRooms();
+    const service = new WoofService(rooms, new MockKv());
+    const profile = await service.enterChat({ dogName: "Rex" });
+    let secondTurnChatInput: ChatMessage[] | undefined;
+
+    await service.sendTurn(profile, "first", {
+      async chat() {
+        return {
+          message: {
+            content: JSON.stringify({
+              triggerUserReply: "first bark",
+            }),
+          },
+        };
+      },
+    });
+
+    await service.sendTurn(profile, "second", {
+      async chat(input: ChatMessage[]) {
+        secondTurnChatInput = input;
+        return {
+          message: {
+            content: "second bark",
+          },
+        };
+      },
+    });
+
+    expect(secondTurnChatInput?.slice(2)).toEqual([
+      { role: "user", content: "[alex \u2192 Rex] first" },
+      { role: "assistant", content: "[Rex \u2192 alex] first bark" },
+      { role: "user", content: "[alex \u2192 Rex] second" },
+    ]);
   });
 
   it("falls back to canned dog reply when AI call fails", async () => {
@@ -318,9 +357,9 @@ describe("WoofService", () => {
         return {
           message: {
             content: JSON.stringify({
-              replies: [
-                { toUser: "alex", content: "woof for alex" },
-                { toUser: "friend", content: "woof for friend" },
+              triggerUserReply: "[Rex \u2192 alex] woof for alex",
+              otherReplies: [
+                { toUser: "friend", content: "[Rex \u2192 friend] woof for friend" },
               ],
             }),
           },
@@ -339,6 +378,28 @@ describe("WoofService", () => {
     });
   });
 
+  it("strips address prefix from plain-text AI replies", async () => {
+    const rooms = new MockRooms();
+    const service = new WoofService(rooms, new MockKv());
+    const profile = await service.enterChat({ dogName: "Rex" });
+
+    await service.sendTurn(profile, "hello", {
+      async chat() {
+        return {
+          message: {
+            content: "[Rex \u2192 alex] plain woof",
+          },
+        };
+      },
+    });
+
+    expect(rooms.sentMessages).toHaveLength(2);
+    expect(rooms.sentMessages[1]).toMatchObject({
+      body: { userType: "dog", content: "plain woof", toUser: "alex" },
+      options: { threadUser: "alex" },
+    });
+  });
+
   it("forces a reply to actor when AI omits it", async () => {
     const rooms = new MockRooms();
     const service = new WoofService(rooms, new MockKv());
@@ -349,7 +410,7 @@ describe("WoofService", () => {
         return {
           message: {
             content: JSON.stringify({
-              replies: [{ toUser: "friend", content: "hello friend" }],
+              otherReplies: [{ toUser: "friend", content: "hello friend" }],
             }),
           },
         };

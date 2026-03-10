@@ -114,7 +114,6 @@ export class WoofService {
 
     const replies = await this.getDogReplies({
       actor,
-      userMessage: content,
       dogName: profile.room.name,
       messages,
       members,
@@ -159,7 +158,6 @@ export class WoofService {
 
   private async getDogReplies(args: {
     actor: RoomUser;
-    userMessage: string;
     dogName: string;
     messages: Message[];
     members: string[];
@@ -183,11 +181,12 @@ export class WoofService {
 
     try {
       const response = await args.puterAI.chat(buildDogPrompt(args));
+      console.log({response})
 
       const extracted = extractAIText(response);
       if (extracted) {
         const plan = parseDogReplyPlan(extracted);
-        const sanitized = sanitizeDogReplyPlan(plan, args.members);
+        const sanitized = sanitizeDogReplyPlan(plan, args.actor.username, args.members);
 
         if (sanitized.length > 0) {
           const hasActorReply = sanitized.some((item) => item.toUser === args.actor.username);
@@ -207,7 +206,7 @@ export class WoofService {
         return [
           {
             toUser: args.actor.username,
-            content: extracted,
+            content: stripConversationAddressPrefix(extracted) || extracted,
           },
         ];
       }
@@ -227,7 +226,6 @@ export class WoofService {
 
 function buildDogPrompt(args: {
   actor: RoomUser;
-  userMessage: string;
   dogName: string;
   messages: Message[];
   members: string[];
@@ -236,50 +234,62 @@ function buildDogPrompt(args: {
     .sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id))
     .map((message) => {
       const payload = normalizeMessageBody(message.body);
+      const isDogMessage = payload.userType === "dog";
       return {
         id: message.id,
         at: message.createdAt,
-        fromUser: message.signedBy,
-        toUser: message.threadUser ?? message.signedBy,
+        fromUser: isDogMessage ? args.dogName : message.signedBy,
+        toUser: isDogMessage
+          ? payload.toUser || message.threadUser || args.actor.username
+          : args.dogName,
         userType: payload.userType,
         content: payload.content,
       };
     });
 
-  return [
+  const promptPieces: ChatMessage[] = [
     {
       role: "system",
       content: [
         `You are ${args.dogName}, a friendly dog in a shared room with separate 1:1 threads.`,
         "You can reply to multiple users, but you must always reply to the trigger user.",
-        "Return STRICT JSON only: {\"replies\":[{\"toUser\":\"username\",\"content\":\"message\"}]}",
+        "Return STRICT JSON only: {\"triggerUserReply\":\"message\",\"otherReplies\":[{\"toUser\":\"username\",\"content\":\"message\"}]}",
         "Keep content short and playful.",
       ].join(" "),
     },
     {
-      role: "user",
-      content: JSON.stringify({
-        triggerUser: args.actor.username,
-        latestUserMessage: args.userMessage,
-        members: args.members,
-        history: normalizedHistory,
-      }),
+      role: "system",
+      content: `Room members: ${args.members.join(", ")}. Trigger user: ${args.actor.username}.`,
     },
+    ...normalizedHistory.map((item) => ({
+      role: item.userType === "dog" ? "assistant" : "user",
+      content: `[${item.fromUser} \u2192 ${item.toUser}] ${item.content}`,
+    })),
   ];
+
+  console.log({promptPieces})
+
+  return promptPieces;
 }
 
-function normalizeMessageBody(body: Message["body"]): { userType: string; content: string } {
+function normalizeMessageBody(body: Message["body"]): {
+  userType: string;
+  content: string;
+  toUser: string;
+} {
   if (body && typeof body === "object" && !Array.isArray(body)) {
     const record = body as Record<string, Message["body"]>;
     return {
       userType: String(record.userType ?? "user"),
       content: String(record.content ?? ""),
+      toUser: typeof record.toUser === "string" ? record.toUser : "",
     };
   }
 
   return {
     userType: "user",
     content: String(body),
+    toUser: "",
   };
 }
 
@@ -297,21 +307,37 @@ function parseDogReplyPlan(value: string): unknown {
 
 function sanitizeDogReplyPlan(
   plan: unknown,
+  triggerUser: string,
   roomMembers: string[],
 ): Array<{ toUser: string; content: string }> {
-  if (!plan || typeof plan !== "object" || !("replies" in plan)) {
+  if (!plan || typeof plan !== "object") {
     return [];
   }
 
-  const replies = (plan as { replies?: unknown }).replies;
-  if (!Array.isArray(replies)) {
-    return [];
-  }
+  const record = plan as {
+    triggerUserReply?: unknown;
+    otherReplies?: unknown;
+    replies?: unknown;
+  };
 
   const memberSet = new Set(roomMembers);
   const sanitized: Array<{ toUser: string; content: string }> = [];
 
-  for (const item of replies) {
+  const triggerUserReply =
+    typeof record.triggerUserReply === "string"
+      ? stripConversationAddressPrefix(record.triggerUserReply)
+      : "";
+  if (triggerUserReply && memberSet.has(triggerUser)) {
+    sanitized.push({ toUser: triggerUser, content: triggerUserReply });
+  }
+
+  const otherReplies = Array.isArray(record.otherReplies)
+    ? record.otherReplies
+    : Array.isArray(record.replies)
+      ? record.replies
+      : [];
+
+  for (const item of otherReplies) {
     if (!item || typeof item !== "object") {
       continue;
     }
@@ -320,10 +346,10 @@ function sanitizeDogReplyPlan(
       ? (item as { toUser: string }).toUser.trim()
       : "";
     const content = typeof (item as { content?: unknown }).content === "string"
-      ? (item as { content: string }).content.trim()
+      ? stripConversationAddressPrefix((item as { content: string }).content)
       : "";
 
-    if (!toUser || !content || !memberSet.has(toUser)) {
+    if (!toUser || !content || !memberSet.has(toUser) || toUser === triggerUser) {
       continue;
     }
 
@@ -331,6 +357,13 @@ function sanitizeDogReplyPlan(
   }
 
   return sanitized;
+}
+
+function stripConversationAddressPrefix(content: string): string {
+  return content
+    .trim()
+    .replace(/^\[[^\]\r\n]+(?:\u2192|->)[^\]\r\n]+\]\s*/u, "")
+    .trim();
 }
 
 function extractAIText(response: ChatResponse): string | null {
