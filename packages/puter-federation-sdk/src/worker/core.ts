@@ -64,12 +64,12 @@ class WorkerApiError extends Error {
 const CORS_HEADERS = {
   "content-type": "application/json",
   "access-control-allow-origin": "*",
-  "access-control-allow-headers": "content-type,x-puter-username",
+  "access-control-allow-headers": "content-type,x-puter-username,puter-auth",
 };
 
 const CORS_PREFLIGHT_HEADERS = {
   "access-control-allow-origin": "*",
-  "access-control-allow-headers": "content-type,x-puter-username",
+  "access-control-allow-headers": "content-type,x-puter-username,puter-auth",
   "access-control-allow-methods": "GET,POST,OPTIONS",
 };
 

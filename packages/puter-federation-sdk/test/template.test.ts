@@ -17,6 +17,7 @@ describe("buildClassicWorkerScript", () => {
     expect(script).toContain("me.puter.kv.set(");
     expect(script).toContain("me.puter.kv.incr(");
     expect(script).toContain("me.puter.kv.list(");
+    expect(script).toContain("content-type,x-puter-username,puter-auth");
     expect(script).toContain("\"room_1\"");
     expect(script).toContain("\"Room Name\"");
     expect(script).toContain("\"owner\"");

@@ -449,4 +449,30 @@ describe("RoomWorker", () => {
       expect(payload.messages.map((message) => message.id)).toEqual(["msg_guest", "msg_owner"]);
     }
   });
+
+  it("allows puter-auth in CORS preflight", async () => {
+    const worker = new RoomWorker(
+      {
+        roomId: "room_cors",
+        roomName: "Rex",
+        owner: "owner",
+        workerUrl: "https://workers.puter.site/owner/rooms/room_cors",
+      },
+      { kv: new InMemoryKv() },
+    );
+
+    const response = await worker.handle(
+      new Request("https://worker.example/join", {
+        method: "OPTIONS",
+        headers: {
+          "access-control-request-method": "POST",
+          "access-control-request-headers": "content-type,puter-auth",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(204);
+    const allowHeaders = response.headers.get("access-control-allow-headers");
+    expect(allowHeaders).toContain("puter-auth");
+  });
 });

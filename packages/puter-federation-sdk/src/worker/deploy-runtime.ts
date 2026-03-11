@@ -40,7 +40,7 @@ const ROOM_WORKER_URL = "__PUTER_FED_ROOM_WORKER_URL__";
 
 const CORS_PREFLIGHT_HEADERS = {
   "access-control-allow-origin": "*",
-  "access-control-allow-headers": "content-type,x-puter-username",
+  "access-control-allow-headers": "content-type,x-puter-username,puter-auth",
   "access-control-allow-methods": "GET,POST,OPTIONS",
 };
 
