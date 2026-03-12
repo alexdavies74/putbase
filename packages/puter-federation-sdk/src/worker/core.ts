@@ -73,7 +73,7 @@ const CORS_PREFLIGHT_HEADERS = {
   "access-control-allow-methods": "GET,POST,OPTIONS",
 };
 
-const WORKER_ROUTE_SEGMENTS = new Set(["room", "messages", "join", "invite-token", "message", "parent-rooms"]);
+const WORKER_ROUTE_SEGMENTS = new Set(["room", "messages", "join", "invite-token", "message"]);
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
