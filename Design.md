@@ -33,6 +33,7 @@ SDK for Puter federated rooms with signed writes (append message), worker-backed
 
 - `room:{roomId}:meta` -> `{ id, name, owner, createdAt }`
 - `room:{roomId}:members` -> `string[]`
+- `room:{roomId}:parent_rooms` -> `string[]` (worker URLs of parent rooms)
 - `room:{roomId}:worker_url` -> `string`
 - `room:{roomId}:memberkey:{username}` -> public key JWK
 - `room:{roomId}:message:{createdAt}:{messageId}` -> message object
@@ -93,14 +94,21 @@ const messages = await rooms.pollMessages(room, 0);
 - `listMembers(room)`
 - `sendMessage(room, body)`
 - `pollMessages(room, sinceSequence)`
+- `listParentRooms(room)` — deferred, coming with UI changes
+- `setParentRooms(room, parentWorkerUrls)` — deferred, coming with UI changes
 
 ## Worker endpoints
 
-- `GET /room`
+- `GET /room` — returns room snapshot including `members` and `parentRooms`
 - `GET /messages?sinceSequence=...`
+- `GET /is-member?ttl=N` — returns `{ isMember: true }` (200) or 401; checks parent rooms recursively up to TTL hops (default 5)
 - `POST /join`
 - `POST /invite-token`
 - `POST /message`
+
+### Parent rooms
+
+A room can declare other rooms as "parents" by storing their worker URLs in `room:{roomId}:parent_rooms`. Any member of a parent room is treated as a member of the child room. Membership checks fan out concurrently to all parent worker URLs via `puter.workers.exec` (which propagates the current user's identity). The TTL param on `/is-member` bounds recursion depth to prevent infinite cycles.
 
 # woof-app
 
