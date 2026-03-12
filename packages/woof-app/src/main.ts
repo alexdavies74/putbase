@@ -406,11 +406,8 @@ function hasStringMessage(value: unknown): value is { message: string } {
 
 function getInviteInputFromLocation(href: string): string | null {
   const url = new URL(href);
-  const hasToken = url.searchParams.has("token");
   const hasWorker = url.searchParams.has("worker");
-  const hasOwnerRoom = url.searchParams.has("owner") && url.searchParams.has("room");
-
-  return hasToken || hasWorker || hasOwnerRoom ? url.toString() : null;
+  return hasWorker ? url.toString() : null;
 }
 
 function clearInviteLocation() {

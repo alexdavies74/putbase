@@ -7,7 +7,6 @@ import type {
   Room,
   RoomUser,
 } from "puter-federation-sdk";
-import { resolveWorkerUrl } from "puter-federation-sdk";
 import type { AI, ChatMessage, ChatResponse, KV } from "@heyputer/puter.js";
 
 import {
@@ -303,7 +302,7 @@ export class WoofService {
       id: profile.room.id,
       collection: "dogs",
       owner: profile.room.owner,
-      workerUrl: resolveWorkerUrl(profile.room.owner, profile.room.id),
+      workerUrl: profile.room.workerUrl,
     };
   }
 

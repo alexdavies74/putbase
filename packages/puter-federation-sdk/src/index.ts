@@ -5,7 +5,6 @@ export { PuterFedError } from "./errors";
 export {
   createInviteLink,
   parseInviteInput,
-  resolveWorkerUrl,
 } from "./invite";
 export {
   canonicalize,

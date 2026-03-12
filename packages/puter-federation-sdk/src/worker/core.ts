@@ -23,7 +23,7 @@ export interface WorkerKv {
 
 export interface RoomWorkerConfig {
   owner: string;
-  workerUrl: string;
+  workerUrl?: string;
 }
 
 interface CreateRoomRequest {
@@ -330,16 +330,31 @@ function isRoomsCollectionPath(pathname: string): boolean {
 
 function inferRoomWorkerUrlFromRequest(
   requestUrl: string,
-  fallbackWorkerUrl: string,
   roomId: string,
+  fallbackWorkerUrl?: string,
+): string {
+  const baseUrl = inferFederationWorkerBaseUrlFromRequest(requestUrl, fallbackWorkerUrl);
+  return buildRoomWorkerUrl(baseUrl, roomId);
+}
+
+function inferFederationWorkerBaseUrlFromRequest(
+  requestUrl: string,
+  fallbackWorkerUrl?: string,
 ): string {
   const url = new URL(requestUrl);
   const route = parseRoomRoute(url.pathname);
-  if (!route) {
-    return buildRoomWorkerUrl(fallbackWorkerUrl, roomId);
+  if (route) {
+    return stripTrailingSlash(`${url.origin}${route.workerBasePath}`);
   }
 
-  return buildRoomWorkerUrl(`${url.origin}${route.workerBasePath}`, route.roomId);
+  if (isRoomsCollectionPath(url.pathname)) {
+    const segments = url.pathname.split("/").filter(Boolean);
+    const roomsIndex = segments.indexOf("rooms");
+    const basePath = roomsIndex > 0 ? `/${segments.slice(0, roomsIndex).join("/")}` : "";
+    return stripTrailingSlash(`${url.origin}${basePath}`);
+  }
+
+  return stripTrailingSlash(fallbackWorkerUrl ?? url.origin);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -383,17 +398,6 @@ function roleRank(role: MemberRole | null): number {
 
 function maxRole(left: MemberRole | null, right: MemberRole | null): MemberRole | null {
   return roleRank(right) > roleRank(left) ? right : left;
-}
-
-function parseWorkerUrlRef(workerUrl: string): { id: string; owner: string } {
-  const segments = workerUrl.split("/").filter(Boolean);
-  const roomsIndex = segments.indexOf("rooms");
-  const id = roomsIndex >= 0 && roomsIndex + 1 < segments.length
-    ? decodeURIComponent(segments[roomsIndex + 1])
-    : "";
-  const hostname = new URL(workerUrl).hostname;
-  const owner = hostname.split("-")[0] ?? "";
-  return { id, owner };
 }
 
 function deepEqualJson(left: JsonValue, right: JsonValue): boolean {
@@ -1237,7 +1241,19 @@ export class RoomWorker {
           }
 
           const payload = (await response.json()) as { members?: EffectiveMember[] };
-          const parentRef = parseWorkerUrlRef(parentWorkerUrl);
+          const parentRoomResponse = await ctx.workersExec!(
+            `${stripTrailingSlash(parentWorkerUrl)}/room`,
+            {
+              method: "GET",
+              headers: {
+                "x-puter-username": requester,
+              },
+            },
+          );
+          if (!parentRoomResponse.ok) {
+            return;
+          }
+          const parentRoom = (await parentRoomResponse.json()) as RoomSnapshot;
 
           for (const member of payload.members ?? []) {
             const existing = members.get(member.username);
@@ -1246,10 +1262,10 @@ export class RoomWorker {
                 username: member.username,
                 role: member.role,
                 via: {
-                  id: parentRef.id,
+                  id: parentRoom.id,
                   collection: "unknown",
-                  owner: parentRef.owner,
-                  workerUrl: stripTrailingSlash(parentWorkerUrl),
+                  owner: parentRoom.owner,
+                  workerUrl: stripTrailingSlash(parentRoom.workerUrl),
                 },
               });
             }
@@ -1609,7 +1625,9 @@ export class RoomWorker {
   }): Promise<void> {
     const key = roomMetaKey(args.roomId);
     const inferredRoomUrl = args.requestUrl
-      ? inferRoomWorkerUrlFromRequest(args.requestUrl, this.config.workerUrl, args.roomId)
+      ? inferRoomWorkerUrlFromRequest(args.requestUrl, args.roomId, this.config.workerUrl)
+      : this.config.workerUrl
+        ? buildRoomWorkerUrl(this.config.workerUrl, args.roomId)
       : undefined;
     const existing = await this.kv.get<Room>(key);
 
@@ -1626,12 +1644,15 @@ export class RoomWorker {
     if (!args.roomName) {
       error(404, "BAD_REQUEST", `Room ${args.roomId} does not exist`);
     }
+    if (!inferredRoomUrl) {
+      error(500, "BAD_REQUEST", `Unable to infer worker URL for room ${args.roomId}`);
+    }
 
     const room: Room = {
       id: args.roomId,
       name: args.roomName,
       owner: this.config.owner,
-      workerUrl: inferredRoomUrl ?? buildRoomWorkerUrl(this.config.workerUrl, args.roomId),
+      workerUrl: inferredRoomUrl,
       createdAt: this.now(),
     };
 

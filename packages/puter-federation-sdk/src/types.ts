@@ -91,28 +91,25 @@ export interface PublicKeyProofDocument {
 export interface ParsedInviteInput {
   workerUrl: string;
   inviteToken?: string;
-  owner?: string;
-  roomId?: string;
 }
 
 export interface DeployWorkerArgs {
   owner: string;
   roomId: string;
   roomName: string;
-  workerUrl: string;
   script: string;
   workerName?: string;
   workerVersion?: number;
+  appHostname?: string;
+  appHostHash?: string;
 }
 
 export interface PuterFedRoomsOptions {
   puter?: Pick<Puter, "auth" | "getUser" | "fs" | "workers" | "kv">;
   fetchFn?: typeof fetch;
   appBaseUrl?: string;
-  workerBaseUrl?: string;
   identityProvider?: () => Promise<RoomUser>;
-  deployWorker?: (args: DeployWorkerArgs) => Promise<void>;
-  workerResolver?: (owner: string, roomId: string, workerBaseUrl?: string) => string;
+  deployWorker?: (args: DeployWorkerArgs) => Promise<string | void>;
 }
 
 export interface RoomSnapshot extends Room {

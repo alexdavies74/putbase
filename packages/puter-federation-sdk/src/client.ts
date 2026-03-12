@@ -2,7 +2,6 @@ import { PuterFedError, toApiError } from "./errors";
 import {
   createInviteLink,
   parseInviteInput,
-  resolveWorkerUrl,
 } from "./invite";
 import { buildClassicWorkerScript } from "./worker/template";
 import type {
@@ -44,9 +43,9 @@ type PuterWorkersExec = (
 ) => Promise<Response>;
 
 const FEDERATION_WORKER_ROOM_SENTINEL = "bootstrap";
-const FEDERATION_WORKER_VERSION = 11;
-const FEDERATION_WORKER_VERSION_KV_PREFIX = "puter-fed:federation-worker-version:v1";
-const FEDERATION_WORKER_URL_KV_PREFIX = "puter-fed:federation-worker-url:v1";
+const FEDERATION_WORKER_VERSION = 12;
+const FEDERATION_WORKER_VERSION_KV_PREFIX = "puter-fed:federation-worker-version:v2";
+const FEDERATION_WORKER_URL_KV_PREFIX = "puter-fed:federation-worker-url:v2";
 
 export class PuterFedRooms {
   private readonly options: PuterFedRoomsOptions;
@@ -314,9 +313,7 @@ export class PuterFedRooms {
   }
 
   parseInviteInput(input: string): ParsedInviteInput {
-    return parseInviteInput(input, (owner, roomId) =>
-      (this.options.workerResolver ?? resolveWorkerUrl)(owner, roomId, this.options.workerBaseUrl),
-    );
+    return parseInviteInput(input);
   }
 
   private async requestJson<T>(
@@ -381,39 +378,37 @@ export class PuterFedRooms {
       return this.federationWorkerUrl;
     }
 
-    this.federationWorkerUrl = await this.ensureFederationWorkerUrl(username);
+    const appHostname = this.resolveAppHostname();
+    const appHostHash = hashHostname(appHostname);
+
+    this.federationWorkerUrl = await this.ensureFederationWorkerUrl(username, appHostname, appHostHash);
     return this.federationWorkerUrl;
   }
 
-  private async ensureFederationWorkerUrl(username: string): Promise<string> {
-    const resolvedRoomUrl = (this.options.workerResolver ?? resolveWorkerUrl)(
-      username,
-      FEDERATION_WORKER_ROOM_SENTINEL,
-      this.options.workerBaseUrl,
-    );
-    const resolvedBaseUrl = extractFederationWorkerBaseUrl(resolvedRoomUrl);
-    const workerName = `${username}-federation`;
+  private async ensureFederationWorkerUrl(
+    username: string,
+    appHostname: string,
+    appHostHash: string,
+  ): Promise<string> {
+    const workerName = this.federationWorkerName(username, appHostHash);
 
-    const storedVersion = await this.loadFederationWorkerVersion(username);
-    if (storedVersion >= FEDERATION_WORKER_VERSION) {
-      const existingWorkerUrl = await this.loadExistingFederationWorkerUrl(workerName);
-      if (existingWorkerUrl) {
-        await this.saveFederationWorkerMetadata(username, existingWorkerUrl);
-        return stripTrailingSlash(existingWorkerUrl);
-      }
-
-      const storedUrl = await this.loadFederationWorkerUrl(username);
-      if (storedUrl) {
-        return stripTrailingSlash(storedUrl);
-      }
-
-      return stripTrailingSlash(resolvedBaseUrl);
+    const storedVersion = await this.loadFederationWorkerVersion(username, appHostHash);
+    const storedUrl = await this.loadFederationWorkerUrl(username, appHostHash);
+    if (storedUrl && storedVersion >= FEDERATION_WORKER_VERSION) {
+      return stripTrailingSlash(storedUrl);
     }
 
-    const script = buildClassicWorkerScript({
-      owner: username,
-      workerUrl: resolvedBaseUrl,
-    });
+    const existingWorkerUrl = await this.loadExistingFederationWorkerUrl(workerName);
+    if (existingWorkerUrl) {
+      await this.saveFederationWorkerMetadata(username, appHostHash, existingWorkerUrl);
+      return stripTrailingSlash(existingWorkerUrl);
+    }
+
+    if (!this.canDeployFederationWorker()) {
+      throw new Error("Unable to provision federation worker: puter.workers.create is unavailable.");
+    }
+
+    const script = buildClassicWorkerScript({ owner: username });
 
     const deployedWorkerUrl = await this.deployWorker({
       owner: username,
@@ -421,12 +416,19 @@ export class PuterFedRooms {
       roomName: "federation",
       workerName,
       workerVersion: FEDERATION_WORKER_VERSION,
-      workerUrl: resolvedBaseUrl,
       script,
+      appHostname,
+      appHostHash,
     });
 
-    const activeWorkerUrl = stripTrailingSlash(deployedWorkerUrl ?? resolvedBaseUrl);
-    await this.saveFederationWorkerMetadata(username, activeWorkerUrl);
+    if (!deployedWorkerUrl) {
+      throw new Error(
+        `Unable to discover federation worker URL after deployment for "${workerName}" (${appHostname}, ${appHostHash}).`,
+      );
+    }
+
+    const activeWorkerUrl = stripTrailingSlash(deployedWorkerUrl);
+    await this.saveFederationWorkerMetadata(username, appHostHash, activeWorkerUrl);
     return activeWorkerUrl;
   }
 
@@ -436,7 +438,7 @@ export class PuterFedRooms {
     }
 
     try {
-      this.federationWorkerUrl = await this.ensureFederationWorkerUrl(username);
+      await this.getFederationWorkerUrl(username);
     } catch (error) {
       console.warn("[puter-fed-sdk] failed to ensure federation worker during init", {
         username,
@@ -456,7 +458,15 @@ export class PuterFedRooms {
 
   private async deployWorker(args: DeployWorkerArgs): Promise<string | undefined> {
     if (this.options.deployWorker) {
-      await this.options.deployWorker(args);
+      const maybeWorkerUrl = await this.options.deployWorker(args);
+      if (typeof maybeWorkerUrl === "string" && maybeWorkerUrl.trim()) {
+        return stripTrailingSlash(maybeWorkerUrl);
+      }
+
+      if (args.workerName) {
+        return (await this.loadExistingFederationWorkerUrl(args.workerName)) ?? undefined;
+      }
+
       return undefined;
     }
 
@@ -472,7 +482,7 @@ export class PuterFedRooms {
     const workers = puter.workers as
       | {
           create?: (name: string, filePath: string) => Promise<{ url?: unknown }>;
-          delete?: (name: string) => Promise<unknown>;
+          get?: (name: string) => Promise<{ url?: unknown } | null>;
         }
       | undefined;
 
@@ -497,15 +507,29 @@ export class PuterFedRooms {
       try {
         deployment = await workers.create(workerName, workerFilePath);
       } catch (error) {
-        if (!workers.delete) {
-          throw error;
+        if (isAlreadyInUseError(error)) {
+          throw new Error(
+            `Federation worker name collision for "${workerName}" (${args.appHostname ?? "unknown-host"}, ${args.appHostHash ?? "unknown-hash"}).`,
+          );
         }
 
-        await workers.delete(workerName).catch(() => undefined);
-        deployment = await workers.create(workerName, workerFilePath);
+        throw error;
       }
 
-      return typeof deployment.url === "string" ? stripTrailingSlash(deployment.url) : undefined;
+      if (isAlreadyInUseError(deployment)) {
+        throw new Error(
+          `Federation worker name collision for "${workerName}" (${args.appHostname ?? "unknown-host"}, ${args.appHostHash ?? "unknown-hash"}).`,
+        );
+      }
+
+      if (typeof deployment.url === "string" && deployment.url.trim()) {
+        return stripTrailingSlash(deployment.url);
+      }
+
+      const discovered = workers.get
+        ? await this.loadExistingFederationWorkerUrl(workerName)
+        : null;
+      return discovered ?? undefined;
     } catch (error) {
       console.error("[puter-fed-sdk] deployWorker failed", {
         error,
@@ -521,21 +545,34 @@ export class PuterFedRooms {
     return `${prefix}_${random}`;
   }
 
-  private federationWorkerVersionKey(username: string): string {
-    return `${FEDERATION_WORKER_VERSION_KV_PREFIX}:${username}`;
+  private resolveAppHostname(): string {
+    const appBaseUrl =
+      this.options.appBaseUrl
+      ?? (typeof window !== "undefined" ? window.location.origin : "http://localhost:5173");
+    const normalized = appBaseUrl.includes("://") ? appBaseUrl : `https://${appBaseUrl}`;
+    return new URL(normalized).hostname.toLowerCase();
   }
 
-  private federationWorkerUrlKey(username: string): string {
-    return `${FEDERATION_WORKER_URL_KV_PREFIX}:${username}`;
+  private federationWorkerName(username: string, appHostHash: string): string {
+    return `${username}-${appHostHash}-federation`.toLowerCase();
   }
 
-  private async loadFederationWorkerVersion(username: string): Promise<number> {
+  private federationWorkerVersionKey(username: string, appHostHash: string): string {
+    return `${FEDERATION_WORKER_VERSION_KV_PREFIX}:${username}:${appHostHash}`;
+  }
+
+  private federationWorkerUrlKey(username: string, appHostHash: string): string {
+    return `${FEDERATION_WORKER_URL_KV_PREFIX}:${username}:${appHostHash}`;
+  }
+
+  private async loadFederationWorkerVersion(username: string, appHostHash: string): Promise<number> {
     const kv = this.puter?.kv;
     if (!kv?.get) {
       return 0;
     }
 
-    const value = await kv.get<unknown>(this.federationWorkerVersionKey(username)).catch(() => undefined);
+    const value = await kv.get<unknown>(this.federationWorkerVersionKey(username, appHostHash))
+      .catch(() => undefined);
     if (typeof value === "number" && Number.isFinite(value)) {
       return Math.max(0, Math.floor(value));
     }
@@ -543,13 +580,13 @@ export class PuterFedRooms {
     return 0;
   }
 
-  private async loadFederationWorkerUrl(username: string): Promise<string | null> {
+  private async loadFederationWorkerUrl(username: string, appHostHash: string): Promise<string | null> {
     const kv = this.puter?.kv;
     if (!kv?.get) {
       return null;
     }
 
-    const value = await kv.get<unknown>(this.federationWorkerUrlKey(username)).catch(() => undefined);
+    const value = await kv.get<unknown>(this.federationWorkerUrlKey(username, appHostHash)).catch(() => undefined);
     if (typeof value === "string" && value.trim()) {
       return stripTrailingSlash(value.trim());
     }
@@ -577,15 +614,19 @@ export class PuterFedRooms {
     return null;
   }
 
-  private async saveFederationWorkerMetadata(username: string, workerUrl: string): Promise<void> {
+  private async saveFederationWorkerMetadata(
+    username: string,
+    appHostHash: string,
+    workerUrl: string,
+  ): Promise<void> {
     const kv = this.puter?.kv;
     if (!kv?.set) {
       return;
     }
 
     await Promise.all([
-      kv.set(this.federationWorkerVersionKey(username), FEDERATION_WORKER_VERSION),
-      kv.set(this.federationWorkerUrlKey(username), stripTrailingSlash(workerUrl)),
+      kv.set(this.federationWorkerVersionKey(username, appHostHash), FEDERATION_WORKER_VERSION),
+      kv.set(this.federationWorkerUrlKey(username, appHostHash), stripTrailingSlash(workerUrl)),
     ]).catch(() => undefined);
   }
 }
@@ -594,17 +635,35 @@ function buildRoomWorkerUrl(federationWorkerBaseUrl: string, roomId: string): st
   return `${stripTrailingSlash(federationWorkerBaseUrl)}/rooms/${encodeURIComponent(roomId)}`;
 }
 
-function extractFederationWorkerBaseUrl(roomWorkerUrl: string): string {
-  const trimmed = stripTrailingSlash(roomWorkerUrl);
-  const marker = "/rooms/";
-  const index = trimmed.indexOf(marker);
-  if (index < 0) {
-    return trimmed;
-  }
-
-  return trimmed.slice(0, index);
-}
-
 function stripTrailingSlash(input: string): string {
   return input.replace(/\/+$/g, "");
+}
+
+function hashHostname(hostname: string): string {
+  let hash = 0x811c9dc5;
+  for (const char of hostname.toLowerCase()) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
+function isAlreadyInUseError(value: unknown): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  const code = record.code;
+  if (typeof code === "string" && code.toLowerCase() === "already_in_use") {
+    return true;
+  }
+
+  const nested = record.error;
+  if (!nested || typeof nested !== "object") {
+    return false;
+  }
+
+  const nestedCode = (nested as { code?: unknown }).code;
+  return typeof nestedCode === "string" && nestedCode.toLowerCase() === "already_in_use";
 }

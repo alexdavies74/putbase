@@ -41,7 +41,6 @@ interface RouterContext {
 }
 
 const ROOM_OWNER = "__PUTER_FED_ROOM_OWNER__";
-const ROOM_WORKER_URL = "__PUTER_FED_ROOM_WORKER_URL__";
 
 const CORS_PREFLIGHT_HEADERS = {
   "access-control-allow-origin": "*",
@@ -75,7 +74,6 @@ const kv: WorkerKv = {
 const worker = new RoomWorker(
   {
     owner: ROOM_OWNER,
-    workerUrl: ROOM_WORKER_URL,
   },
   { kv },
 );

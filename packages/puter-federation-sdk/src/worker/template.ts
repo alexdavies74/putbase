@@ -6,9 +6,7 @@ function escapeForLiteral(input: string): string {
 
 export function buildClassicWorkerScript(args: {
   owner: string;
-  workerUrl: string;
 }): string {
   return CLASSIC_WORKER_RUNTIME
-    .replaceAll("__PUTER_FED_ROOM_OWNER__", escapeForLiteral(args.owner))
-    .replaceAll("__PUTER_FED_ROOM_WORKER_URL__", escapeForLiteral(args.workerUrl));
+    .replaceAll("__PUTER_FED_ROOM_OWNER__", escapeForLiteral(args.owner));
 }

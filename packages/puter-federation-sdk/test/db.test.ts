@@ -100,8 +100,8 @@ function buildDb(args: {
     schema,
     identityProvider: async () => ({ username: args.username }),
     fetchFn: args.network.fetch as typeof fetch,
-    workerResolver: (owner, roomId) => `https://${owner}-federation.example/rooms/${roomId}`,
-    deployWorker: async () => undefined,
+    appBaseUrl: `https://app.${args.username}.example`,
+    deployWorker: async () => workerBase,
   });
 }
 

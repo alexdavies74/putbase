@@ -56,9 +56,10 @@ class MockRooms {
 
   parseInviteInput(input: string): { workerUrl: string; inviteToken?: string } {
     const url = new URL(input);
+    const workerUrl = url.searchParams.get("worker");
     const roomId = url.searchParams.get("room") ?? "room_joined";
     return {
-      workerUrl: `https://workers.puter.site/alex/rooms/${roomId}`,
+      workerUrl: workerUrl ?? `https://workers.puter.site/alex/rooms/${roomId}`,
       inviteToken: input.includes("token") ? "invite_1" : undefined,
     };
   }
@@ -93,7 +94,7 @@ class MockRooms {
   }
 
   createInviteLink(room: Room, inviteToken: string): string {
-    return `https://woof.example/?owner=${room.owner}&room=${room.id}&token=${inviteToken}`;
+    return `https://woof.example/?worker=${encodeURIComponent(room.workerUrl)}&token=${inviteToken}`;
   }
 
   connectCrdt(_room: Room, callbacks: CrdtConnectCallbacks) {
@@ -149,7 +150,7 @@ describe("WoofService", () => {
     const service = new WoofService(rooms, kv);
 
     const profile = await service.joinFromInvite(
-      "https://woof.example/?owner=alex&room=room_joined&token=invite_1",
+      "https://woof.example/?worker=https%3A%2F%2Fworkers.puter.site%2Falex%2Frooms%2Froom_joined&token=invite_1",
     );
 
     expect(profile.room.id).toBe("room_joined");
@@ -182,7 +183,7 @@ describe("WoofService", () => {
       id: profile.room.id,
       collection: "dogs",
       owner: profile.room.owner,
-      workerUrl: "https://alex-federation.puter.work/rooms/room_created",
+      workerUrl: "https://workers.puter.site/alex/rooms/room_created",
     });
   });
 
@@ -225,7 +226,7 @@ describe("WoofService", () => {
     const service = new WoofService(rooms, kv);
 
     const profile = await service.joinFromInvite(
-      "https://woof.example/?owner=alex&room=room_joined&token=invite_1",
+      "https://woof.example/?worker=https%3A%2F%2Fworkers.puter.site%2Falex%2Frooms%2Froom_joined&token=invite_1",
     );
     const refreshed = await service.refreshProfileCanonical(profile);
 
@@ -302,7 +303,7 @@ describe("WoofService", () => {
     let chatInput: ChatMessage[] | undefined;
 
     const profile = await service.joinFromInvite(
-      "https://woof.example/?owner=alex&room=room_joined&token=invite_1",
+      "https://woof.example/?worker=https%3A%2F%2Fworkers.puter.site%2Falex%2Frooms%2Froom_joined&token=invite_1",
     );
     service.connectToRoom(profile);
 

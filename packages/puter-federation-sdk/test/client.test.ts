@@ -13,6 +13,15 @@ function asUrl(input: RequestInfo | URL): string {
       : input.url;
 }
 
+function hashHostname(hostname: string): string {
+  let hash = 0x811c9dc5;
+  for (const char of hostname.toLowerCase()) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
 class MapKv {
   private readonly store = new Map<string, unknown>();
 
@@ -124,9 +133,45 @@ describe("PuterFedRooms", () => {
     expect(contexts.every((value) => value === undefined)).toBe(true);
   });
 
+  it("provisions a host-scoped federation worker during init", async () => {
+    const kv = new MapKv();
+    const appHost = "woof.example";
+    const hostHash = hashHostname(appHost);
+    const expectedWorkerName = `owner-${hostHash}-federation`;
+    const deployedWorkerBase = `https://workers.example/${expectedWorkerName}`;
+    let createdName: string | null = null;
+
+    const puter: NonNullable<PuterFedRoomsOptions["puter"]> = {
+      fs: {
+        mkdir: async () => undefined,
+        write: async () => undefined,
+      },
+      workers: {
+        create: async (name: string) => {
+          createdName = name;
+          return { success: true, url: deployedWorkerBase };
+        },
+      },
+      kv,
+    };
+
+    const rooms = new PuterFedRooms({
+      identityProvider: async () => ({ username: "owner" }),
+      appBaseUrl: `https://${appHost}`,
+      puter,
+      fetchFn: (() => Promise.reject(new Error("fetch should not be used in init"))) as typeof fetch,
+    });
+
+    await rooms.init();
+
+    expect(createdName).toBe(expectedWorkerName);
+    await expect(kv.get(`puter-fed:federation-worker-version:v2:owner:${hostHash}`)).resolves.toBe(12);
+    await expect(kv.get(`puter-fed:federation-worker-url:v2:owner:${hostHash}`)).resolves.toBe(deployedWorkerBase);
+  });
+
   it("uses deployed shared worker URL returned by puter.workers.create", async () => {
     const requestedUrls: string[] = [];
-    const deployedWorkerBase = "https://workers.example/owner-federation";
+    const deployedWorkerBase = "https://workers.example/owner-1234abcd-federation";
     let roomId: string | null = null;
 
     const fetchFn = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -190,9 +235,9 @@ describe("PuterFedRooms", () => {
 
     const rooms = new PuterFedRooms({
       identityProvider: async () => ({ username: "owner" }),
+      appBaseUrl: "https://woof.example",
       puter,
       fetchFn: fetchFn as typeof fetch,
-      workerResolver: () => "https://workers.puter.site/owner-federation/rooms/room_should_not_be_used",
     });
 
     const room = await rooms.createRoom("Rex");
@@ -201,13 +246,12 @@ describe("PuterFedRooms", () => {
     expect(requestedUrls).toContain(`${deployedWorkerBase}/rooms`);
     expect(requestedUrls.some((url) => url.endsWith("/join"))).toBe(true);
     expect(requestedUrls.some((url) => url.endsWith("/room"))).toBe(true);
-    expect(requestedUrls.every((url) => !url.includes("room_should_not_be_used"))).toBe(true);
   });
 
-  it("reuses shared worker from KV across SDK instances when version matches", async () => {
+  it("reuses shared worker from KV across SDK instances for same app host", async () => {
     const workerKv = new InMemoryKv();
     const kv = new MapKv();
-    const deployedWorkerBase = "https://workers.example/owner-federation";
+    const deployedWorkerBase = "https://workers.example/owner-1234abcd-federation";
     let deployCalls = 0;
 
     const worker = new RoomWorker(
@@ -239,12 +283,14 @@ describe("PuterFedRooms", () => {
 
     const firstClient = new PuterFedRooms({
       identityProvider: async () => ({ username: "owner" }),
+      appBaseUrl: "https://woof.example",
       puter,
       fetchFn: fetchFn as typeof fetch,
     });
 
     const secondClient = new PuterFedRooms({
       identityProvider: async () => ({ username: "owner" }),
+      appBaseUrl: "https://woof.example",
       puter,
       fetchFn: fetchFn as typeof fetch,
     });
@@ -258,19 +304,17 @@ describe("PuterFedRooms", () => {
     expect(secondRoom.workerUrl.startsWith(`${deployedWorkerBase}/rooms/`)).toBe(true);
   });
 
-  it("redeploys shared worker when stored version is stale", async () => {
+  it("reuses existing scoped worker via workers.get before creating", async () => {
     const workerKv = new InMemoryKv();
     const kv = new MapKv();
-    const deployedWorkerBase = "https://workers.example/owner-federation";
+    const existingWorkerBase = "https://workers.example/owner-deadbeef-federation";
     let deployCalls = 0;
-
-    await kv.set("puter-fed:federation-worker-version:v1:owner", 0);
-    await kv.set("puter-fed:federation-worker-url:v1:owner", "https://workers.example/old-worker");
+    let getCalls = 0;
 
     const worker = new RoomWorker(
       {
         owner: "owner",
-        workerUrl: deployedWorkerBase,
+        workerUrl: existingWorkerBase,
       },
       { kv: workerKv },
     );
@@ -286,9 +330,13 @@ describe("PuterFedRooms", () => {
         write: async () => undefined,
       },
       workers: {
+        get: async () => {
+          getCalls += 1;
+          return { url: existingWorkerBase };
+        },
         create: async () => {
           deployCalls += 1;
-          return { success: true, url: deployedWorkerBase };
+          return { url: "https://workers.example/unexpected" };
         },
       },
       kv,
@@ -296,25 +344,20 @@ describe("PuterFedRooms", () => {
 
     const rooms = new PuterFedRooms({
       identityProvider: async () => ({ username: "owner" }),
+      appBaseUrl: "https://woof.example",
       puter,
       fetchFn: fetchFn as typeof fetch,
     });
 
-    await rooms.createRoom("Rex");
+    const room = await rooms.createRoom("Rex");
 
-    expect(deployCalls).toBe(1);
-    await expect(kv.get("puter-fed:federation-worker-version:v1:owner")).resolves.toBe(7);
-    await expect(kv.get("puter-fed:federation-worker-url:v1:owner")).resolves.toBe(deployedWorkerBase);
+    expect(getCalls).toBeGreaterThan(0);
+    expect(deployCalls).toBe(0);
+    expect(room.workerUrl.startsWith(`${existingWorkerBase}/rooms/`)).toBe(true);
   });
 
-  it("redeploys worker during init when stored version is stale", async () => {
+  it("fails hard when scoped worker name collides", async () => {
     const kv = new MapKv();
-    const deployedWorkerBase = "https://workers.example/owner-federation";
-    let deployCalls = 0;
-
-    await kv.set("puter-fed:federation-worker-version:v1:owner", 0);
-    await kv.set("puter-fed:federation-worker-url:v1:owner", "https://workers.example/old-worker");
-
     const puter: NonNullable<PuterFedRoomsOptions["puter"]> = {
       fs: {
         mkdir: async () => undefined,
@@ -322,8 +365,14 @@ describe("PuterFedRooms", () => {
       },
       workers: {
         create: async () => {
-          deployCalls += 1;
-          return { success: true, url: deployedWorkerBase };
+          throw {
+            success: false,
+            error: {
+              code: "already_in_use",
+              message: "already in use",
+              status: 409,
+            },
+          };
         },
       },
       kv,
@@ -331,15 +380,12 @@ describe("PuterFedRooms", () => {
 
     const rooms = new PuterFedRooms({
       identityProvider: async () => ({ username: "owner" }),
+      appBaseUrl: "https://woof.example",
       puter,
-      fetchFn: (() => Promise.reject(new Error("fetch should not be used in init"))) as typeof fetch,
+      fetchFn: (() => Promise.reject(new Error("fetch should not be used"))) as typeof fetch,
     });
 
-    await rooms.init();
-
-    expect(deployCalls).toBe(1);
-    await expect(kv.get("puter-fed:federation-worker-version:v1:owner")).resolves.toBe(7);
-    await expect(kv.get("puter-fed:federation-worker-url:v1:owner")).resolves.toBe(deployedWorkerBase);
+    await expect(rooms.createRoom("Rex")).rejects.toThrow("Federation worker name collision");
   });
 
   it("uses puter.workers.exec when available", async () => {

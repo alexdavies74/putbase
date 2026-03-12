@@ -1,6 +1,5 @@
 import { PuterFedRooms } from "../client";
 import { PuterFedError, toApiError } from "../errors";
-import { resolveWorkerUrl } from "../invite";
 import type { JsonValue, PuterFedRoomsOptions } from "../types";
 import { encodeFieldValue } from "./key-encoding";
 import { RowHandle, type RowHandleBackend } from "./row-handle";
@@ -80,18 +79,6 @@ function roomEndpointUrl(
   return workerUrl.toString();
 }
 
-function parseRoomRefFromWorkerUrl(workerUrl: string): Pick<DbRowRef, "id" | "owner"> {
-  const url = new URL(workerUrl);
-  const segments = url.pathname.split("/").filter(Boolean);
-  const roomsIndex = segments.indexOf("rooms");
-  const id = roomsIndex >= 0 && roomsIndex + 1 < segments.length
-    ? decodeURIComponent(segments[roomsIndex + 1])
-    : "";
-
-  const owner = url.hostname.split("-")[0] ?? "";
-  return { id, owner };
-}
-
 export class PuterDb<Schema extends DbSchema = DbSchema> implements RowHandleBackend {
   private readonly schema: Schema;
 
@@ -101,14 +88,11 @@ export class PuterDb<Schema extends DbSchema = DbSchema> implements RowHandleBac
 
   private readonly fetchFn: typeof fetch;
 
-  private readonly workerBaseUrl?: string;
-
   constructor(private readonly options: PuterDbOptions<Schema>) {
     this.schema = options.schema;
     this.rooms = options.rooms ?? new PuterFedRooms(options);
     this.puter = options.puter ?? (globalThis as { puter?: PuterFedRoomsOptions["puter"] }).puter;
     this.fetchFn = options.fetchFn ?? fetch;
-    this.workerBaseUrl = options.workerBaseUrl;
   }
 
   async init(): Promise<void> {
@@ -153,11 +137,14 @@ export class PuterDb<Schema extends DbSchema = DbSchema> implements RowHandleBac
 
   async update(
     collection: keyof Schema & string,
-    row: string | DbRowRef,
+    row: DbRowRef,
     fields: Record<string, JsonValue>,
   ): Promise<RowHandle> {
     await this.init();
-    const rowRef = await this.resolveRowRef(collection, row);
+    const rowRef: DbRowRef = {
+      ...row,
+      collection,
+    };
     await this.requestRoomJson(roomEndpointUrl(rowRef, "fields"), "POST", {
       fields,
       merge: true,
@@ -167,9 +154,12 @@ export class PuterDb<Schema extends DbSchema = DbSchema> implements RowHandleBac
     return this.getRow(collection, rowRef);
   }
 
-  async getRow(collection: keyof Schema & string, row: string | DbRowRef): Promise<RowHandle> {
+  async getRow(collection: keyof Schema & string, row: DbRowRef): Promise<RowHandle> {
     await this.init();
-    const rowRef = await this.resolveRowRef(collection, row);
+    const rowRef: DbRowRef = {
+      ...row,
+      collection,
+    };
     const fields = await this.refreshFields(rowRef);
     return new RowHandle(this, rowRef, fields);
   }
@@ -277,15 +267,16 @@ export class PuterDb<Schema extends DbSchema = DbSchema> implements RowHandleBac
     await this.init();
     const room = await this.rooms.getRoom(child.workerUrl);
 
-    return room.parentRooms.map((workerUrl) => {
-      const parsed = parseRoomRefFromWorkerUrl(workerUrl);
-      return {
-        id: parsed.id,
-        owner: parsed.owner,
-        workerUrl: stripTrailingSlash(workerUrl),
-        collection: "unknown",
-      } satisfies DbRowRef;
-    });
+    const parentSnapshots = await Promise.all(
+      room.parentRooms.map((workerUrl) => this.rooms.getRoom(workerUrl)),
+    );
+
+    return parentSnapshots.map((parentRoom) => ({
+      id: parentRoom.id,
+      owner: parentRoom.owner,
+      workerUrl: stripTrailingSlash(parentRoom.workerUrl),
+      collection: "unknown",
+    } satisfies DbRowRef));
   }
 
   async addMember(row: DbRowRef, username: string, role: MemberRole): Promise<void> {
@@ -480,20 +471,4 @@ export class PuterDb<Schema extends DbSchema = DbSchema> implements RowHandleBac
     return null;
   }
 
-  private async resolveRowRef(collection: string, row: string | DbRowRef): Promise<DbRowRef> {
-    if (typeof row !== "string") {
-      return {
-        ...row,
-        collection,
-      };
-    }
-
-    const user = await this.rooms.whoAmI();
-    return {
-      id: row,
-      collection,
-      owner: user.username,
-      workerUrl: resolveWorkerUrl(user.username, row, this.workerBaseUrl),
-    };
-  }
 }
