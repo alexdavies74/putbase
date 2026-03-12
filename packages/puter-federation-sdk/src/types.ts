@@ -30,7 +30,6 @@ export interface Room {
   owner: string;
   workerUrl: string;
   createdAt: number;
-  parentRooms?: string[];
 }
 
 export interface Message {
