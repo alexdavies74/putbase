@@ -169,6 +169,7 @@ router.get("/rooms/:roomId/db-query", route);
 router.get("/rooms/:roomId/members-direct", route);
 router.get("/rooms/:roomId/members-effective", route);
 router.post("/rooms/:roomId/join", route);
+router.get("/rooms/:roomId/invite-token", route);
 router.post("/rooms/:roomId/invite-token", route);
 router.post("/rooms/:roomId/message", route);
 router.post("/rooms/:roomId/fields", route);

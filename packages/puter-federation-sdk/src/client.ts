@@ -21,6 +21,10 @@ import type {
   RoomUser,
 } from "./types";
 
+interface GetInviteResponse {
+  inviteToken: InviteToken | null;
+}
+
 interface PostInviteResponse {
   inviteToken: InviteToken;
 }
@@ -40,7 +44,7 @@ type PuterWorkersExec = (
 ) => Promise<Response>;
 
 const FEDERATION_WORKER_ROOM_SENTINEL = "bootstrap";
-const FEDERATION_WORKER_VERSION = 7;
+const FEDERATION_WORKER_VERSION = 11;
 const FEDERATION_WORKER_VERSION_KV_PREFIX = "puter-fed:federation-worker-version:v1";
 const FEDERATION_WORKER_URL_KV_PREFIX = "puter-fed:federation-worker-url:v1";
 
@@ -162,6 +166,15 @@ export class PuterFedRooms {
       workerUrl: room.workerUrl,
       createdAt: room.createdAt,
     };
+  }
+
+  async getExistingInviteToken(room: Room): Promise<InviteToken | null> {
+    await this.init();
+    const response = await this.requestJson<GetInviteResponse>(
+      `${stripTrailingSlash(room.workerUrl)}/invite-token`,
+      { method: "GET" },
+    );
+    return response.inviteToken;
   }
 
   async createInviteToken(room: Room): Promise<InviteToken> {

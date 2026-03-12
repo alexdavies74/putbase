@@ -25,6 +25,7 @@ type RoomsLike = Pick<
   | "whoAmI"
   | "parseInviteInput"
   | "listMembers"
+  | "getExistingInviteToken"
   | "createInviteToken"
   | "createInviteLink"
   | "connectCrdt"
@@ -160,7 +161,8 @@ export class WoofService {
   }
 
   async generateInviteLink(room: Room): Promise<string> {
-    const invite = await this.rooms.createInviteToken(room);
+    const existing = await this.rooms.getExistingInviteToken(room);
+    const invite = existing ?? await this.rooms.createInviteToken(room);
     return this.rooms.createInviteLink(room, invite.token);
   }
 

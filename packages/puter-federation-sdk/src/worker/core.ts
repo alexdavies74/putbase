@@ -201,6 +201,10 @@ function tokenKey(roomId: string, token: string): string {
   return `room:${roomId}:invite_token:${token}`;
 }
 
+function tokenKeyPrefix(roomId: string): string {
+  return `room:${roomId}:invite_token:`;
+}
+
 function roomMetaKey(roomId: string): string {
   return `room:${roomId}:meta`;
 }
@@ -500,6 +504,10 @@ export class RoomWorker {
         return await this.join(request, roomRoute.roomId);
       }
 
+      if (request.method === "GET" && roomRoute.endpoint === "invite-token") {
+        return await this.getInviteToken(request, roomRoute.roomId, ctx);
+      }
+
       if (request.method === "POST" && roomRoute.endpoint === "invite-token") {
         return await this.createInviteToken(request, roomRoute.roomId, ctx);
       }
@@ -693,6 +701,22 @@ export class RoomWorker {
     }
 
     return jsonResponse(200, await this.snapshot(roomId, request.url));
+  }
+
+  private async getInviteToken(
+    request: Request,
+    roomId: string,
+    ctx: WorkerRequestContext,
+  ): Promise<Response> {
+    const requester = requesterFromHeader(request);
+    await this.assertMember(roomId, requester, ctx);
+
+    const entries = await this.kv.list(tokenKeyPrefix(roomId));
+    const existing = entries
+      .map((e) => e.value as InviteToken)
+      .find((t) => t.invitedBy === requester && t.roomId === roomId);
+
+    return jsonResponse(200, { inviteToken: existing ?? null });
   }
 
   private async createInviteToken(
