@@ -10,8 +10,8 @@ function normalizeWorkerUrl(workerUrl: string): string {
   return workerUrl.replace(/\/+$/g, "");
 }
 
-function workerName(owner: string, roomId: string): string {
-  return `${owner}-room-${roomId}`.toLocaleLowerCase();
+function workerName(owner: string): string {
+  return `${owner}-federation`.toLocaleLowerCase();
 }
 
 export function resolveWorkerUrl(
@@ -23,8 +23,8 @@ export function resolveWorkerUrl(
   const base = new URL(
     normalized.includes("://") ? normalized : `https://${normalized}`,
   );
-  const host = `${workerName(owner, roomId)}.${base.host}`;
-  return `${base.protocol}//${host}`;
+  const host = `${workerName(owner)}.${base.host}`;
+  return `${base.protocol}//${host}/rooms/${encodeURIComponent(roomId)}`;
 }
 
 export function createInviteLink(

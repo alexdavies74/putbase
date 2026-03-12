@@ -7,6 +7,10 @@ async function jsonBody(response: Response) {
   return response.json() as Promise<Record<string, unknown>>;
 }
 
+function roomEndpoint(roomId: string, endpoint: string): string {
+  return `https://worker.example/rooms/${encodeURIComponent(roomId)}/${endpoint}`;
+}
+
 function authedRequest(args: {
   url: string;
   username: string;
@@ -23,6 +27,20 @@ function authedRequest(args: {
   });
 }
 
+async function createRoom(worker: RoomWorker, roomId: string, roomName = "Rex"): Promise<Response> {
+  return worker.handle(
+    authedRequest({
+      url: "https://worker.example/rooms",
+      method: "POST",
+      username: "owner",
+      body: {
+        roomId,
+        roomName,
+      },
+    }),
+  );
+}
+
 class CountingKv extends InMemoryKv {
   public listCalls = 0;
 
@@ -36,28 +54,29 @@ describe("RoomWorker", () => {
   it("enforces invite and members-only reads", async () => {
     const worker = new RoomWorker(
       {
-        roomId: "room_1",
-        roomName: "Rex",
         owner: "owner",
-        workerUrl: "https://workers.puter.site/owner/rooms/room_1",
+        workerUrl: "https://worker.example",
       },
       { kv: new InMemoryKv() },
     );
 
+    const created = await createRoom(worker, "room_1");
+    expect(created.status).toBe(200);
+
     const ownerJoin = await worker.handle(
       authedRequest({
-        url: "https://worker.example/join",
+        url: roomEndpoint("room_1", "join"),
         method: "POST",
         username: "owner",
         body: { username: "owner" },
       }),
     );
     expect(ownerJoin.status).toBe(200);
-    expect((await jsonBody(ownerJoin)).workerUrl).toBe("https://worker.example");
+    expect((await jsonBody(ownerJoin)).workerUrl).toBe("https://worker.example/rooms/room_1");
 
     const guestJoinWithoutInvite = await worker.handle(
       authedRequest({
-        url: "https://worker.example/join",
+        url: roomEndpoint("room_1", "join"),
         method: "POST",
         username: "guest",
         body: { username: "guest" },
@@ -69,7 +88,7 @@ describe("RoomWorker", () => {
 
     const inviteResponse = await worker.handle(
       authedRequest({
-        url: "https://worker.example/invite-token",
+        url: roomEndpoint("room_1", "invite-token"),
         method: "POST",
         username: "owner",
         body: {
@@ -90,7 +109,7 @@ describe("RoomWorker", () => {
 
     const guestJoin = await worker.handle(
       authedRequest({
-        url: "https://worker.example/join",
+        url: roomEndpoint("room_1", "join"),
         method: "POST",
         username: "guest",
         body: {
@@ -104,7 +123,7 @@ describe("RoomWorker", () => {
 
     const outsiderRead = await worker.handle(
       authedRequest({
-        url: "https://worker.example/messages?sinceSequence=0",
+        url: `${roomEndpoint("room_1", "messages")}?sinceSequence=0`,
         method: "GET",
         username: "outsider",
       }),
@@ -114,20 +133,45 @@ describe("RoomWorker", () => {
     expect((await jsonBody(outsiderRead)).code).toBe("UNAUTHORIZED");
   });
 
-  it("rejects join username spoofing", async () => {
+  it("requires owner auth for room creation", async () => {
     const worker = new RoomWorker(
       {
-        roomId: "room_auth",
-        roomName: "Rex",
         owner: "owner",
-        workerUrl: "https://workers.puter.site/owner/rooms/room_auth",
+        workerUrl: "https://worker.example",
       },
       { kv: new InMemoryKv() },
     );
 
+    const response = await worker.handle(
+      authedRequest({
+        url: "https://worker.example/rooms",
+        method: "POST",
+        username: "guest",
+        body: {
+          roomId: "room_auth",
+          roomName: "Rex",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(401);
+    expect((await jsonBody(response)).code).toBe("UNAUTHORIZED");
+  });
+
+  it("rejects join username spoofing", async () => {
+    const worker = new RoomWorker(
+      {
+        owner: "owner",
+        workerUrl: "https://worker.example",
+      },
+      { kv: new InMemoryKv() },
+    );
+
+    await createRoom(worker, "room_auth");
+
     const spoofedJoin = await worker.handle(
       authedRequest({
-        url: "https://worker.example/join",
+        url: roomEndpoint("room_auth", "join"),
         method: "POST",
         username: "owner",
         body: { username: "guest" },
@@ -141,17 +185,17 @@ describe("RoomWorker", () => {
   it("stamps message sender from authenticated requester", async () => {
     const worker = new RoomWorker(
       {
-        roomId: "room_2",
-        roomName: "Rex",
         owner: "owner",
-        workerUrl: "https://workers.puter.site/owner/rooms/room_2",
+        workerUrl: "https://worker.example",
       },
       { kv: new InMemoryKv() },
     );
 
+    await createRoom(worker, "room_2");
+
     await worker.handle(
       authedRequest({
-        url: "https://worker.example/join",
+        url: roomEndpoint("room_2", "join"),
         method: "POST",
         username: "owner",
         body: { username: "owner" },
@@ -160,7 +204,7 @@ describe("RoomWorker", () => {
 
     await worker.handle(
       authedRequest({
-        url: "https://worker.example/invite-token",
+        url: roomEndpoint("room_2", "invite-token"),
         method: "POST",
         username: "owner",
         body: {
@@ -174,7 +218,7 @@ describe("RoomWorker", () => {
 
     await worker.handle(
       authedRequest({
-        url: "https://worker.example/join",
+        url: roomEndpoint("room_2", "join"),
         method: "POST",
         username: "guest",
         body: {
@@ -186,7 +230,7 @@ describe("RoomWorker", () => {
 
     const post = await worker.handle(
       authedRequest({
-        url: "https://worker.example/message",
+        url: roomEndpoint("room_2", "message"),
         method: "POST",
         username: "guest",
         body: {
@@ -211,17 +255,17 @@ describe("RoomWorker", () => {
   it("returns messages sorted by createdAt and id", async () => {
     const worker = new RoomWorker(
       {
-        roomId: "room_3",
-        roomName: "Rex",
         owner: "owner",
-        workerUrl: "https://workers.puter.site/owner/rooms/room_3",
+        workerUrl: "https://worker.example",
       },
       { kv: new InMemoryKv() },
     );
 
+    await createRoom(worker, "room_3");
+
     await worker.handle(
       authedRequest({
-        url: "https://worker.example/join",
+        url: roomEndpoint("room_3", "join"),
         method: "POST",
         username: "owner",
         body: { username: "owner" },
@@ -230,7 +274,7 @@ describe("RoomWorker", () => {
 
     await worker.handle(
       authedRequest({
-        url: "https://worker.example/message",
+        url: roomEndpoint("room_3", "message"),
         method: "POST",
         username: "owner",
         body: {
@@ -244,7 +288,7 @@ describe("RoomWorker", () => {
 
     await worker.handle(
       authedRequest({
-        url: "https://worker.example/message",
+        url: roomEndpoint("room_3", "message"),
         method: "POST",
         username: "owner",
         body: {
@@ -258,7 +302,7 @@ describe("RoomWorker", () => {
 
     const response = await worker.handle(
       authedRequest({
-        url: "https://worker.example/messages?sinceSequence=0",
+        url: `${roomEndpoint("room_3", "messages")}?sinceSequence=0`,
         method: "GET",
         username: "owner",
       }),
@@ -272,17 +316,17 @@ describe("RoomWorker", () => {
   it("requires sinceSequence for message polling", async () => {
     const worker = new RoomWorker(
       {
-        roomId: "room_req_seq",
-        roomName: "Rex",
         owner: "owner",
-        workerUrl: "https://workers.puter.site/owner/rooms/room_req_seq",
+        workerUrl: "https://worker.example",
       },
       { kv: new InMemoryKv() },
     );
 
+    await createRoom(worker, "room_req_seq");
+
     await worker.handle(
       authedRequest({
-        url: "https://worker.example/join",
+        url: roomEndpoint("room_req_seq", "join"),
         method: "POST",
         username: "owner",
         body: { username: "owner" },
@@ -291,31 +335,31 @@ describe("RoomWorker", () => {
 
     const response = await worker.handle(
       authedRequest({
-        url: "https://worker.example/messages",
+        url: roomEndpoint("room_req_seq", "messages"),
         method: "GET",
         username: "owner",
       }),
     );
 
     expect(response.status).toBe(400);
-    expect((await response.json())["code"]).toBe("BAD_REQUEST");
+    expect((await response.json()).code).toBe("BAD_REQUEST");
   });
 
   it("uses room sequence to skip list reads when nothing changed", async () => {
     const kv = new CountingKv();
     const worker = new RoomWorker(
       {
-        roomId: "room_seq",
-        roomName: "Rex",
         owner: "owner",
-        workerUrl: "https://workers.puter.site/owner/rooms/room_seq",
+        workerUrl: "https://worker.example",
       },
       { kv },
     );
 
+    await createRoom(worker, "room_seq");
+
     await worker.handle(
       authedRequest({
-        url: "https://worker.example/join",
+        url: roomEndpoint("room_seq", "join"),
         method: "POST",
         username: "owner",
         body: { username: "owner" },
@@ -324,7 +368,7 @@ describe("RoomWorker", () => {
 
     await worker.handle(
       authedRequest({
-        url: "https://worker.example/message",
+        url: roomEndpoint("room_seq", "message"),
         method: "POST",
         username: "owner",
         body: {
@@ -338,7 +382,7 @@ describe("RoomWorker", () => {
 
     const noChangeResponse = await worker.handle(
       authedRequest({
-        url: "https://worker.example/messages?sinceSequence=1",
+        url: `${roomEndpoint("room_seq", "messages")}?sinceSequence=1`,
         method: "GET",
         username: "owner",
       }),
@@ -354,7 +398,7 @@ describe("RoomWorker", () => {
 
     const changedResponse = await worker.handle(
       authedRequest({
-        url: "https://worker.example/messages?sinceSequence=0",
+        url: `${roomEndpoint("room_seq", "messages")}?sinceSequence=0`,
         method: "GET",
         username: "owner",
       }),
@@ -366,17 +410,17 @@ describe("RoomWorker", () => {
   it("all members see all messages globally", async () => {
     const worker = new RoomWorker(
       {
-        roomId: "room_4",
-        roomName: "Rex",
         owner: "owner",
-        workerUrl: "https://workers.puter.site/owner/rooms/room_4",
+        workerUrl: "https://worker.example",
       },
       { kv: new InMemoryKv() },
     );
 
+    await createRoom(worker, "room_4");
+
     await worker.handle(
       authedRequest({
-        url: "https://worker.example/join",
+        url: roomEndpoint("room_4", "join"),
         method: "POST",
         username: "owner",
         body: { username: "owner" },
@@ -385,7 +429,7 @@ describe("RoomWorker", () => {
 
     await worker.handle(
       authedRequest({
-        url: "https://worker.example/invite-token",
+        url: roomEndpoint("room_4", "invite-token"),
         method: "POST",
         username: "owner",
         body: {
@@ -399,7 +443,7 @@ describe("RoomWorker", () => {
 
     await worker.handle(
       authedRequest({
-        url: "https://worker.example/join",
+        url: roomEndpoint("room_4", "join"),
         method: "POST",
         username: "guest",
         body: {
@@ -411,7 +455,7 @@ describe("RoomWorker", () => {
 
     await worker.handle(
       authedRequest({
-        url: "https://worker.example/message",
+        url: roomEndpoint("room_4", "message"),
         method: "POST",
         username: "guest",
         body: {
@@ -425,7 +469,7 @@ describe("RoomWorker", () => {
 
     await worker.handle(
       authedRequest({
-        url: "https://worker.example/message",
+        url: roomEndpoint("room_4", "message"),
         method: "POST",
         username: "owner",
         body: {
@@ -440,7 +484,7 @@ describe("RoomWorker", () => {
     for (const username of ["guest", "owner"]) {
       const response = await worker.handle(
         authedRequest({
-          url: "https://worker.example/messages?sinceSequence=0",
+          url: `${roomEndpoint("room_4", "messages")}?sinceSequence=0`,
           method: "GET",
           username,
         }),
@@ -453,16 +497,14 @@ describe("RoomWorker", () => {
   it("allows puter-auth in CORS preflight", async () => {
     const worker = new RoomWorker(
       {
-        roomId: "room_cors",
-        roomName: "Rex",
         owner: "owner",
-        workerUrl: "https://workers.puter.site/owner/rooms/room_cors",
+        workerUrl: "https://worker.example",
       },
       { kv: new InMemoryKv() },
     );
 
     const response = await worker.handle(
-      new Request("https://worker.example/join", {
+      new Request(roomEndpoint("room_cors", "join"), {
         method: "OPTIONS",
         headers: {
           "access-control-request-method": "POST",

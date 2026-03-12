@@ -9,7 +9,7 @@ Monorepo for a Puter-backed federated message room SDK plus a working example ap
 
 ## Current design
 
-- Each room is backed by a dedicated Puter worker + KV namespace.
+- Each owner is backed by one Puter worker that manages all of their rooms.
 - Writes (`/message`, `/invite-token`) are signed with ECDSA P-256.
 - Users publish a public key proof document; worker caches it on join.
 - Messages are stored as per-message KV records (not a single append array).
@@ -24,7 +24,7 @@ SDK for Puter federated rooms with signed writes (append message), worker-backed
 
 ## Core design
 
-- One room = one deployed worker endpoint. Puter workers use classic script files, not ES modules, and you access kv through globals. Read examples carefully. Use puter router routes, so you can add options to add CORS headers for the endpoints clients hit.
+- One owner = one deployed worker endpoint. Each room is addressed under `/rooms/:roomId` on that worker. Puter workers use classic script files, not ES modules, and you access kv through globals. Read examples carefully. Use puter router routes, so you can add options to add CORS headers for the endpoints clients hit.
 - Room data is stored in owner KV under `room:{roomId}:*`.
 - Members join by submitting username + + public-key URL.
 - Worker verifies signatures for writes and ignores client identity claims unless verified.
@@ -99,12 +99,13 @@ const messages = await rooms.pollMessages(room, 0);
 
 ## Worker endpoints
 
-- `GET /room` — returns room snapshot including `members` and `parentRooms`
-- `GET /messages?sinceSequence=...`
-- `GET /is-member?ttl=N` — returns `{ isMember: true }` (200) or 401; checks parent rooms recursively up to TTL hops (default 5)
-- `POST /join`
-- `POST /invite-token`
-- `POST /message`
+- `POST /rooms` — create room metadata (`roomId`, `roomName`) on the owner worker
+- `GET /rooms/:roomId/room` — returns room snapshot including `members` and `parentRooms`
+- `GET /rooms/:roomId/messages?sinceSequence=...`
+- `GET /rooms/:roomId/is-member?ttl=N` — returns `{ isMember: true }` (200) or 401; checks parent rooms recursively up to TTL hops (default 5)
+- `POST /rooms/:roomId/join`
+- `POST /rooms/:roomId/invite-token`
+- `POST /rooms/:roomId/message`
 
 ### Parent rooms
 

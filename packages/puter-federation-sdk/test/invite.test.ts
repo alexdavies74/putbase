@@ -55,4 +55,10 @@ describe("invite parsing", () => {
     expect(parsed.workerUrl).toBe("https://alex-room-room_abc.puter.work");
     expect(parsed.inviteToken).toBeUndefined();
   });
+
+  it("resolves shared federation worker URLs for owner+room links", () => {
+    expect(resolveWorkerUrl("alex", "room_abc")).toBe(
+      "https://alex-federation.puter.work/rooms/room_abc",
+    );
+  });
 });

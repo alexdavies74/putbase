@@ -101,6 +101,8 @@ export interface DeployWorkerArgs {
   roomName: string;
   workerUrl: string;
   script: string;
+  workerName?: string;
+  workerVersion?: number;
 }
 
 export interface PuterFedRoomsOptions {

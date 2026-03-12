@@ -5,17 +5,32 @@ import type { PuterFedRoomsOptions } from "../src/types";
 import { InMemoryKv } from "../src/worker/in-memory-kv";
 import { RoomWorker } from "../src/worker/core";
 
+function asUrl(input: RequestInfo | URL): string {
+  return typeof input === "string"
+    ? input
+    : input instanceof URL
+      ? input.toString()
+      : input.url;
+}
+
+class MapKv {
+  private readonly store = new Map<string, unknown>();
+
+  async get<T = unknown>(key: string): Promise<T | null> {
+    return this.store.has(key) ? (this.store.get(key) as T) : null;
+  }
+
+  async set<T = unknown>(key: string, value: T): Promise<void> {
+    this.store.set(key, value);
+  }
+}
+
 describe("PuterFedRooms", () => {
   it("gets room snapshot via public getRoom API", async () => {
     const rooms = new PuterFedRooms({
       identityProvider: async () => ({ username: "owner" }),
       fetchFn: async (input: RequestInfo | URL): Promise<Response> => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.toString()
-              : input.url;
+        const url = asUrl(input);
 
         if (url.endsWith("/room")) {
           return new Response(
@@ -23,7 +38,7 @@ describe("PuterFedRooms", () => {
               id: "room_public",
               name: "Rex",
               owner: "owner",
-              workerUrl: "https://worker.example",
+              workerUrl: "https://worker.example/rooms/room_public",
               createdAt: 1,
               members: ["owner", "friend"],
             }),
@@ -41,11 +56,11 @@ describe("PuterFedRooms", () => {
       },
     });
 
-    await expect(rooms.getRoom("https://worker.example")).resolves.toEqual({
+    await expect(rooms.getRoom("https://worker.example/rooms/room_public")).resolves.toEqual({
       id: "room_public",
       name: "Rex",
       owner: "owner",
-      workerUrl: "https://worker.example",
+      workerUrl: "https://worker.example/rooms/room_public",
       createdAt: 1,
       members: ["owner", "friend"],
     });
@@ -57,16 +72,9 @@ describe("PuterFedRooms", () => {
     const fetchFn = function (
       this: unknown,
       input: RequestInfo | URL,
-      init?: RequestInit,
     ): Promise<Response> {
       contexts.push(this);
-
-      const url =
-        typeof input === "string"
-          ? input
-          : input instanceof URL
-            ? input.toString()
-            : input.url;
+      const url = asUrl(input);
 
       if (url.endsWith("/join")) {
         return Promise.resolve(
@@ -84,7 +92,7 @@ describe("PuterFedRooms", () => {
               id: "room_1",
               name: "Rex",
               owner: "owner",
-              workerUrl: "https://workers.puter.site/owner/room-room_1",
+              workerUrl: "https://workers.puter.site/owner-federation/rooms/room_1",
               createdAt: 1,
               members: ["owner"],
             }),
@@ -109,48 +117,57 @@ describe("PuterFedRooms", () => {
       fetchFn,
     });
 
-    const room = await rooms.joinRoom("https://workers.puter.site/owner/room-room_1");
+    const room = await rooms.joinRoom("https://workers.puter.site/owner-federation/rooms/room_1");
 
     expect(room.id).toBe("room_1");
     expect(contexts.length).toBeGreaterThan(0);
     expect(contexts.every((value) => value === undefined)).toBe(true);
   });
 
-  it("uses deployed worker URL returned by puter.workers.create", async () => {
+  it("uses deployed shared worker URL returned by puter.workers.create", async () => {
     const requestedUrls: string[] = [];
-    const deployedWorkerUrl = "https://workers.example/owner/real-worker";
+    const deployedWorkerBase = "https://workers.example/owner-federation";
+    let roomId: string | null = null;
 
-    const fetchFn = async (input: RequestInfo | URL): Promise<Response> => {
-      const url =
-        typeof input === "string"
-          ? input
-          : input instanceof URL
-            ? input.toString()
-            : input.url;
-
+    const fetchFn = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = asUrl(input);
       requestedUrls.push(url);
 
-      if (url === `${deployedWorkerUrl}/join`) {
+      if (url === `${deployedWorkerBase}/rooms` && init?.body && typeof init.body === "string") {
+        roomId = (JSON.parse(init.body) as { roomId: string }).roomId;
+        return new Response(
+          JSON.stringify({
+            id: roomId,
+            name: "Rex",
+            owner: "owner",
+            workerUrl: `${deployedWorkerBase}/rooms/${roomId}`,
+            createdAt: 1,
+            members: [],
+            parentRooms: [],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+
+      if (roomId && url === `${deployedWorkerBase}/rooms/${roomId}/join`) {
         return new Response(JSON.stringify({ ok: true }), {
           status: 200,
           headers: { "content-type": "application/json" },
         });
       }
 
-      if (url === `${deployedWorkerUrl}/room`) {
+      if (roomId && url === `${deployedWorkerBase}/rooms/${roomId}/room`) {
         return new Response(
           JSON.stringify({
-            id: "room_test",
+            id: roomId,
             name: "Rex",
             owner: "owner",
-            workerUrl: deployedWorkerUrl,
+            workerUrl: `${deployedWorkerBase}/rooms/${roomId}`,
             createdAt: 1,
             members: ["owner"],
+            parentRooms: [],
           }),
-          {
-            status: 200,
-            headers: { "content-type": "application/json" },
-          },
+          { status: 200, headers: { "content-type": "application/json" } },
         );
       }
 
@@ -166,23 +183,128 @@ describe("PuterFedRooms", () => {
         write: async () => undefined,
       },
       workers: {
-        create: async () => ({ success: true, url: deployedWorkerUrl }),
+        create: async () => ({ success: true, url: deployedWorkerBase }),
       },
+      kv: new MapKv(),
     };
 
     const rooms = new PuterFedRooms({
       identityProvider: async () => ({ username: "owner" }),
       puter,
       fetchFn: fetchFn as typeof fetch,
-      workerResolver: () => "https://workers.puter.site/owner/rooms/room_should_not_be_used",
+      workerResolver: () => "https://workers.puter.site/owner-federation/rooms/room_should_not_be_used",
     });
 
     const room = await rooms.createRoom("Rex");
 
-    expect(room.workerUrl).toBe(deployedWorkerUrl);
-    expect(requestedUrls).toContain(`${deployedWorkerUrl}/join`);
-    expect(requestedUrls).toContain(`${deployedWorkerUrl}/room`);
+    expect(room.workerUrl.startsWith(`${deployedWorkerBase}/rooms/`)).toBe(true);
+    expect(requestedUrls).toContain(`${deployedWorkerBase}/rooms`);
+    expect(requestedUrls.some((url) => url.endsWith("/join"))).toBe(true);
+    expect(requestedUrls.some((url) => url.endsWith("/room"))).toBe(true);
     expect(requestedUrls.every((url) => !url.includes("room_should_not_be_used"))).toBe(true);
+  });
+
+  it("reuses shared worker from KV across SDK instances when version matches", async () => {
+    const workerKv = new InMemoryKv();
+    const kv = new MapKv();
+    const deployedWorkerBase = "https://workers.example/owner-federation";
+    let deployCalls = 0;
+
+    const worker = new RoomWorker(
+      {
+        owner: "owner",
+        workerUrl: deployedWorkerBase,
+      },
+      { kv: workerKv },
+    );
+
+    const fetchFn = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const request = new Request(asUrl(input), init);
+      return worker.handle(request);
+    };
+
+    const puter: NonNullable<PuterFedRoomsOptions["puter"]> = {
+      fs: {
+        mkdir: async () => undefined,
+        write: async () => undefined,
+      },
+      workers: {
+        create: async () => {
+          deployCalls += 1;
+          return { success: true, url: deployedWorkerBase };
+        },
+      },
+      kv,
+    };
+
+    const firstClient = new PuterFedRooms({
+      identityProvider: async () => ({ username: "owner" }),
+      puter,
+      fetchFn: fetchFn as typeof fetch,
+    });
+
+    const secondClient = new PuterFedRooms({
+      identityProvider: async () => ({ username: "owner" }),
+      puter,
+      fetchFn: fetchFn as typeof fetch,
+    });
+
+    const firstRoom = await firstClient.createRoom("Rex");
+    const secondRoom = await secondClient.createRoom("Spot");
+
+    expect(deployCalls).toBe(1);
+    expect(firstRoom.workerUrl).not.toBe(secondRoom.workerUrl);
+    expect(firstRoom.workerUrl.startsWith(`${deployedWorkerBase}/rooms/`)).toBe(true);
+    expect(secondRoom.workerUrl.startsWith(`${deployedWorkerBase}/rooms/`)).toBe(true);
+  });
+
+  it("redeploys shared worker when stored version is stale", async () => {
+    const workerKv = new InMemoryKv();
+    const kv = new MapKv();
+    const deployedWorkerBase = "https://workers.example/owner-federation";
+    let deployCalls = 0;
+
+    await kv.set("puter-fed:federation-worker-version:v1:owner", 0);
+    await kv.set("puter-fed:federation-worker-url:v1:owner", "https://workers.example/old-worker");
+
+    const worker = new RoomWorker(
+      {
+        owner: "owner",
+        workerUrl: deployedWorkerBase,
+      },
+      { kv: workerKv },
+    );
+
+    const fetchFn = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const request = new Request(asUrl(input), init);
+      return worker.handle(request);
+    };
+
+    const puter: NonNullable<PuterFedRoomsOptions["puter"]> = {
+      fs: {
+        mkdir: async () => undefined,
+        write: async () => undefined,
+      },
+      workers: {
+        create: async () => {
+          deployCalls += 1;
+          return { success: true, url: deployedWorkerBase };
+        },
+      },
+      kv,
+    };
+
+    const rooms = new PuterFedRooms({
+      identityProvider: async () => ({ username: "owner" }),
+      puter,
+      fetchFn: fetchFn as typeof fetch,
+    });
+
+    await rooms.createRoom("Rex");
+
+    expect(deployCalls).toBe(1);
+    await expect(kv.get("puter-fed:federation-worker-version:v1:owner")).resolves.toBe(1);
+    await expect(kv.get("puter-fed:federation-worker-url:v1:owner")).resolves.toBe(deployedWorkerBase);
   });
 
   it("uses puter.workers.exec when available", async () => {
@@ -199,9 +321,10 @@ describe("PuterFedRooms", () => {
                 id: "room_exec",
                 name: "Rex",
                 owner: "owner",
-                workerUrl: "https://worker.example",
+                workerUrl: "https://worker.example/rooms/room_exec",
                 createdAt: 1,
                 members: ["owner"],
+                parentRooms: [],
               }),
               { status: 200, headers: { "content-type": "application/json" } },
             );
@@ -225,29 +348,38 @@ describe("PuterFedRooms", () => {
       fetchFn: fetchFn as typeof fetch,
     });
 
-    const room = await rooms.getRoom("https://worker.example");
+    const room = await rooms.getRoom("https://worker.example/rooms/room_exec");
     expect(room.id).toBe("room_exec");
     expect(execCalls).toHaveLength(1);
-    expect(execCalls[0].url).toBe("https://worker.example/room");
+    expect(execCalls[0].url).toBe("https://worker.example/rooms/room_exec/room");
     expect(new Headers(execCalls[0].init?.headers).get("x-puter-username")).toBeNull();
   });
 
   it("sends unsigned writes after client re-init", async () => {
     const worker = new RoomWorker(
       {
-        roomId: "room_reload",
-        roomName: "Rex",
         owner: "owner",
         workerUrl: "https://worker.example",
       },
       { kv: new InMemoryKv() },
     );
 
+    await worker.handle(
+      new Request("https://worker.example/rooms", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-puter-username": "owner",
+        },
+        body: JSON.stringify({
+          roomId: "room_reload",
+          roomName: "Rex",
+        }),
+      }),
+    );
+
     const fetchFn = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-      const request = new Request(
-        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url,
-        init,
-      );
+      const request = new Request(asUrl(input), init);
       return worker.handle(request);
     };
 
@@ -257,7 +389,7 @@ describe("PuterFedRooms", () => {
     });
     await firstClient.init();
 
-    const room = await firstClient.joinRoom("https://worker.example");
+    const room = await firstClient.joinRoom("https://worker.example/rooms/room_reload");
     await firstClient.sendMessage(room, { userType: "user", content: "first" });
 
     const secondClient = new PuterFedRooms({
@@ -282,7 +414,7 @@ describe("PuterFedRooms", () => {
       id: "room_1",
       name: "Rex",
       owner: "owner",
-      workerUrl: "https://worker.example",
+      workerUrl: "https://worker.example/rooms/room_1",
       createdAt: 1,
     };
 
@@ -298,13 +430,7 @@ describe("PuterFedRooms", () => {
     const rooms = new PuterFedRooms({
       identityProvider: async () => ({ username: "owner" }),
       fetchFn: async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.toString()
-              : input.url;
-
+        const url = asUrl(input);
         requestedUrls.push(url);
 
         if (init?.body && typeof init.body === "string") {
@@ -348,22 +474,18 @@ describe("PuterFedRooms", () => {
       },
     });
 
-    // First tick runs immediately — wait for it to complete
     await connection.flush();
     await connection.flush();
     connection.disconnect();
 
-    // Remote message body was delivered to applyRemoteUpdate
     expect(receivedUpdates).toHaveLength(1);
     expect(receivedUpdates[0]).toEqual(remoteMessage.body);
 
-    // Local update was sent as a message
     const sentMessage = capturedBodies.find(
       (b) => (b as { body?: unknown }).body !== undefined,
     ) as { body: unknown } | undefined;
     expect(sentMessage?.body).toEqual({ type: "crdt-update", data: "BBBB" });
 
-    // Poll URL carries sequence cursor
     expect(requestedUrls.some((u) => u.includes("/messages?sinceSequence=0"))).toBe(true);
     expect(requestedUrls.some((u) => u.includes("sinceSequence=2"))).toBe(true);
   });

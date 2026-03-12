@@ -39,6 +39,11 @@ type PuterWorkersExec = (
   init?: RequestInit,
 ) => Promise<Response>;
 
+const FEDERATION_WORKER_ROOM_SENTINEL = "bootstrap";
+const FEDERATION_WORKER_VERSION = 1;
+const FEDERATION_WORKER_VERSION_KV_PREFIX = "puter-fed:federation-worker-version:v1";
+const FEDERATION_WORKER_URL_KV_PREFIX = "puter-fed:federation-worker-url:v1";
+
 export class PuterFedRooms {
   private readonly options: PuterFedRoomsOptions;
 
@@ -47,6 +52,8 @@ export class PuterFedRooms {
   private fetchFn: typeof fetch;
 
   private identity: RoomUser | null = null;
+
+  private federationWorkerUrl: string | null = null;
 
   constructor(options: PuterFedRoomsOptions = {}) {
     this.options = options;
@@ -109,33 +116,21 @@ export class PuterFedRooms {
     await this.init();
 
     const user = await this.whoAmI();
+    const federationWorkerUrl = await this.getFederationWorkerUrl(user.username);
     const roomId = this.createId("room");
-    const resolvedWorkerUrl = (this.options.workerResolver ?? resolveWorkerUrl)(
-      user.username,
-      roomId,
-      this.options.workerBaseUrl,
-    );
+    const roomWorkerUrl = buildRoomWorkerUrl(federationWorkerUrl, roomId);
 
-    const script = buildClassicWorkerScript({
-      owner: user.username,
-      roomId,
-      roomName: name,
-      workerUrl: resolvedWorkerUrl,
+    await this.requestJson(`${federationWorkerUrl}/rooms`, {
+      method: "POST",
+      body: {
+        roomId,
+        roomName: name,
+      },
     });
 
-    const deployedWorkerUrl = await this.deployWorker({
-      owner: user.username,
-      roomId,
-      roomName: name,
-      workerUrl: resolvedWorkerUrl,
-      script,
-    });
+    await this.joinRoom(roomWorkerUrl, {});
 
-    const activeWorkerUrl = stripTrailingSlash(deployedWorkerUrl ?? resolvedWorkerUrl);
-
-    await this.joinRoom(activeWorkerUrl, {});
-
-    const room = await this.getRoom(activeWorkerUrl);
+    const room = await this.getRoom(roomWorkerUrl);
     return {
       id: room.id,
       name: room.name,
@@ -367,6 +362,60 @@ export class PuterFedRooms {
     return typeof exec === "function" ? (exec as PuterWorkersExec) : null;
   }
 
+  private async getFederationWorkerUrl(username: string): Promise<string> {
+    if (this.federationWorkerUrl) {
+      return this.federationWorkerUrl;
+    }
+
+    this.federationWorkerUrl = await this.ensureFederationWorkerUrl(username);
+    return this.federationWorkerUrl;
+  }
+
+  private async ensureFederationWorkerUrl(username: string): Promise<string> {
+    const resolvedRoomUrl = (this.options.workerResolver ?? resolveWorkerUrl)(
+      username,
+      FEDERATION_WORKER_ROOM_SENTINEL,
+      this.options.workerBaseUrl,
+    );
+    const resolvedBaseUrl = extractFederationWorkerBaseUrl(resolvedRoomUrl);
+    const workerName = `${username}-federation`;
+
+    const storedVersion = await this.loadFederationWorkerVersion(username);
+    if (storedVersion >= FEDERATION_WORKER_VERSION) {
+      const existingWorkerUrl = await this.loadExistingFederationWorkerUrl(workerName);
+      if (existingWorkerUrl) {
+        await this.saveFederationWorkerMetadata(username, existingWorkerUrl);
+        return stripTrailingSlash(existingWorkerUrl);
+      }
+
+      const storedUrl = await this.loadFederationWorkerUrl(username);
+      if (storedUrl) {
+        return stripTrailingSlash(storedUrl);
+      }
+
+      return stripTrailingSlash(resolvedBaseUrl);
+    }
+
+    const script = buildClassicWorkerScript({
+      owner: username,
+      workerUrl: resolvedBaseUrl,
+    });
+
+    const deployedWorkerUrl = await this.deployWorker({
+      owner: username,
+      roomId: FEDERATION_WORKER_ROOM_SENTINEL,
+      roomName: "federation",
+      workerName,
+      workerVersion: FEDERATION_WORKER_VERSION,
+      workerUrl: resolvedBaseUrl,
+      script,
+    });
+
+    const activeWorkerUrl = stripTrailingSlash(deployedWorkerUrl ?? resolvedBaseUrl);
+    await this.saveFederationWorkerMetadata(username, activeWorkerUrl);
+    return activeWorkerUrl;
+  }
+
   private async deployWorker(args: DeployWorkerArgs): Promise<string | undefined> {
     if (this.options.deployWorker) {
       await this.options.deployWorker(args);
@@ -378,9 +427,20 @@ export class PuterFedRooms {
       throw new Error("Puter SDK is unavailable");
     }
 
-    const workerName = `${args.owner}-room-${args.roomId}`;
+    const workerName = args.workerName ?? `${args.owner}-federation`;
     const workerDir = "puter-fed/workers";
     const workerFilePath = `${workerDir}/${workerName}.js`;
+
+    const workers = puter.workers as
+      | {
+          create?: (name: string, filePath: string) => Promise<{ url?: unknown }>;
+          delete?: (name: string) => Promise<unknown>;
+        }
+      | undefined;
+
+    if (!workers?.create) {
+      throw new Error("Puter workers.create is unavailable");
+    }
 
     try {
       await puter.fs.mkdir(workerDir, {
@@ -394,7 +454,19 @@ export class PuterFedRooms {
         createMissingParents: true,
         createMissingAncestors: true,
       });
-      const deployment = await puter.workers.create(workerName, workerFilePath);
+
+      let deployment: { url?: unknown };
+      try {
+        deployment = await workers.create(workerName, workerFilePath);
+      } catch (error) {
+        if (!workers.delete) {
+          throw error;
+        }
+
+        await workers.delete(workerName).catch(() => undefined);
+        deployment = await workers.create(workerName, workerFilePath);
+      }
+
       return typeof deployment.url === "string" ? stripTrailingSlash(deployment.url) : undefined;
     } catch (error) {
       console.error("[puter-fed-sdk] deployWorker failed", {
@@ -410,6 +482,89 @@ export class PuterFedRooms {
     const random = crypto.randomUUID().replace(/-/g, "");
     return `${prefix}_${random}`;
   }
+
+  private federationWorkerVersionKey(username: string): string {
+    return `${FEDERATION_WORKER_VERSION_KV_PREFIX}:${username}`;
+  }
+
+  private federationWorkerUrlKey(username: string): string {
+    return `${FEDERATION_WORKER_URL_KV_PREFIX}:${username}`;
+  }
+
+  private async loadFederationWorkerVersion(username: string): Promise<number> {
+    const kv = this.puter?.kv;
+    if (!kv?.get) {
+      return 0;
+    }
+
+    const value = await kv.get<unknown>(this.federationWorkerVersionKey(username)).catch(() => undefined);
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return Math.max(0, Math.floor(value));
+    }
+
+    return 0;
+  }
+
+  private async loadFederationWorkerUrl(username: string): Promise<string | null> {
+    const kv = this.puter?.kv;
+    if (!kv?.get) {
+      return null;
+    }
+
+    const value = await kv.get<unknown>(this.federationWorkerUrlKey(username)).catch(() => undefined);
+    if (typeof value === "string" && value.trim()) {
+      return stripTrailingSlash(value.trim());
+    }
+
+    return null;
+  }
+
+  private async loadExistingFederationWorkerUrl(workerName: string): Promise<string | null> {
+    const puter = this.puter;
+    const workers = puter?.workers as
+      | {
+          get?: (name: string) => Promise<{ url?: unknown } | null>;
+        }
+      | undefined;
+
+    if (!workers?.get) {
+      return null;
+    }
+
+    const existing = await workers.get(workerName).catch(() => null);
+    if (existing && typeof existing.url === "string" && existing.url.trim()) {
+      return stripTrailingSlash(existing.url);
+    }
+
+    return null;
+  }
+
+  private async saveFederationWorkerMetadata(username: string, workerUrl: string): Promise<void> {
+    const kv = this.puter?.kv;
+    if (!kv?.set) {
+      return;
+    }
+
+    await Promise.all([
+      kv.set(this.federationWorkerVersionKey(username), FEDERATION_WORKER_VERSION),
+      kv.set(this.federationWorkerUrlKey(username), stripTrailingSlash(workerUrl)),
+    ]).catch(() => undefined);
+  }
+}
+
+function buildRoomWorkerUrl(federationWorkerBaseUrl: string, roomId: string): string {
+  return `${stripTrailingSlash(federationWorkerBaseUrl)}/rooms/${encodeURIComponent(roomId)}`;
+}
+
+function extractFederationWorkerBaseUrl(roomWorkerUrl: string): string {
+  const trimmed = stripTrailingSlash(roomWorkerUrl);
+  const marker = "/rooms/";
+  const index = trimmed.indexOf(marker);
+  if (index < 0) {
+    return trimmed;
+  }
+
+  return trimmed.slice(0, index);
 }
 
 function stripTrailingSlash(input: string): string {

@@ -8,6 +8,9 @@ declare const me: {
       incr(key: string, amount?: number): Promise<number>;
       list(prefix: string, includeValues?: boolean): Promise<Array<{ key: string; value: unknown }> | null>;
     };
+    workers?: {
+      exec: (url: string, init?: RequestInit) => Promise<Response>;
+    };
   };
 };
 
@@ -36,8 +39,6 @@ interface RouterContext {
   user: RouterUserContext;
 }
 
-const ROOM_ID = "__PUTER_FED_ROOM_ID__";
-const ROOM_NAME = "__PUTER_FED_ROOM_NAME__";
 const ROOM_OWNER = "__PUTER_FED_ROOM_OWNER__";
 const ROOM_WORKER_URL = "__PUTER_FED_ROOM_WORKER_URL__";
 
@@ -65,8 +66,6 @@ const kv: WorkerKv = {
 
 const worker = new RoomWorker(
   {
-    roomId: ROOM_ID,
-    roomName: ROOM_NAME,
     owner: ROOM_OWNER,
     workerUrl: ROOM_WORKER_URL,
   },
@@ -110,21 +109,28 @@ function withRequesterHeader(request: Request, requester: string | null): Reques
 
 async function route({ request, user }: RouterContext): Promise<Response> {
   const requester = await resolveRequesterFromAuth(user);
+  const workersExec = user.puter?.workers?.exec ?? me.puter.workers?.exec;
   return worker.handle(withRequesterHeader(request, requester), {
-    workersExec: (url, init) => user.puter!.workers!.exec(url, init)
+    workersExec: workersExec
+      ? (url, init) => workersExec(url, init)
+      : (url, init) => fetch(url, init),
   });
 }
 
-router.options("/room", () => new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
-router.options("/messages", () => new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
-router.options("/join", () => new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
-router.options("/invite-token", () =>
+router.options("/rooms", () => new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
+router.options("/rooms/:roomId/room", () => new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
+router.options("/rooms/:roomId/messages", () =>
   new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
-router.options("/message", () => new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
-router.options("/is-member", () => new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
-router.get("/room", route);
-router.get("/messages", route);
-router.get("/is-member", route);
-router.post("/join", route);
-router.post("/invite-token", route);
-router.post("/message", route);
+router.options("/rooms/:roomId/join", () => new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
+router.options("/rooms/:roomId/invite-token", () =>
+  new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
+router.options("/rooms/:roomId/message", () => new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
+router.options("/rooms/:roomId/is-member", () =>
+  new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
+router.post("/rooms", route);
+router.get("/rooms/:roomId/room", route);
+router.get("/rooms/:roomId/messages", route);
+router.get("/rooms/:roomId/is-member", route);
+router.post("/rooms/:roomId/join", route);
+router.post("/rooms/:roomId/invite-token", route);
+router.post("/rooms/:roomId/message", route);
