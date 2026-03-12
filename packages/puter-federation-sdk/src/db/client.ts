@@ -6,7 +6,7 @@ import { encodeFieldValue } from "./key-encoding";
 import { RowHandle, type RowHandleBackend } from "./row-handle";
 import type {
   DbCollectionSpec,
-  DbInsertOptions,
+  DbPutOptions,
   DbMemberInfo,
   DbQueryOptions,
   DbRowRef,
@@ -118,16 +118,16 @@ export class PuterDb<Schema extends DbSchema = DbSchema> implements RowHandleBac
     }
   }
 
-  async insert(
+  async put(
     collection: keyof Schema & string,
     fields: Record<string, JsonValue>,
-    options: DbInsertOptions = {},
+    options: DbPutOptions = {},
   ): Promise<RowHandle> {
     await this.init();
 
     const collectionSpec = this.getCollectionSpec(collection);
     const parentRefs = this.normalizeParents(options.in);
-    this.assertInsertParents(collection, collectionSpec, parentRefs);
+    this.assertPutParents(collection, collectionSpec, parentRefs);
 
     const room = await this.rooms.createRoom(options.name ?? `${collection}-${crypto.randomUUID().slice(0, 8)}`);
     const rowRef: DbRowRef = {
@@ -409,7 +409,7 @@ export class PuterDb<Schema extends DbSchema = DbSchema> implements RowHandleBac
     return Array.isArray(input) ? input : [input];
   }
 
-  private assertInsertParents(
+  private assertPutParents(
     collection: string,
     collectionSpec: DbCollectionSpec,
     parents: DbRowRef[],

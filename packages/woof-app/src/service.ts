@@ -40,7 +40,7 @@ interface TagRowLike {
 }
 
 interface TagDbLike {
-  insert(
+  put(
     collection: "tags",
     fields: Record<string, JsonValue>,
     options: { in: DbRowRef },
@@ -277,7 +277,7 @@ export class WoofService {
     }
 
     const actor = await this.rooms.whoAmI();
-    await this.db.insert(
+    await this.db.put(
       "tags",
       {
         label: trimmed,

@@ -110,7 +110,7 @@ class MockRooms {
 }
 
 class MockTagDb {
-  public insertCalls: Array<{
+  public putCalls: Array<{
     collection: string;
     fields: Record<string, unknown>;
     options: { in: { id: string; collection: string; owner: string; workerUrl: string } };
@@ -118,12 +118,12 @@ class MockTagDb {
 
   public queryRows: Array<{ id: string; fields: Record<string, unknown> }> = [];
 
-  async insert(
+  async put(
     collection: "tags",
     fields: Record<string, unknown>,
     options: { in: { id: string; collection: string; owner: string; workerUrl: string } },
   ): Promise<void> {
-    this.insertCalls.push({ collection, fields, options });
+    this.putCalls.push({ collection, fields, options });
   }
 
   async query(): Promise<Array<{ id: string; fields: Record<string, unknown> }>> {
@@ -175,10 +175,10 @@ describe("WoofService", () => {
 
     await service.createTag(profile, "friendly");
 
-    expect(tagDb.insertCalls).toHaveLength(1);
-    expect(tagDb.insertCalls[0].collection).toBe("tags");
-    expect(tagDb.insertCalls[0].fields.label).toBe("friendly");
-    expect(tagDb.insertCalls[0].options.in).toMatchObject({
+    expect(tagDb.putCalls).toHaveLength(1);
+    expect(tagDb.putCalls[0].collection).toBe("tags");
+    expect(tagDb.putCalls[0].fields.label).toBe("friendly");
+    expect(tagDb.putCalls[0].options.in).toMatchObject({
       id: profile.room.id,
       collection: "dogs",
       owner: profile.room.owner,

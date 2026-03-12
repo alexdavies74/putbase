@@ -46,7 +46,7 @@ export type {
   DbCollectionSpec,
   DbFieldSpec,
   DbIndexSpec,
-  DbInsertOptions,
+  DbPutOptions,
   DbMemberInfo,
   DbQueryOptions,
   DbRow,

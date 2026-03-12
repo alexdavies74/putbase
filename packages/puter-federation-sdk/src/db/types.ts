@@ -34,7 +34,7 @@ export interface DbRow<TFields extends Record<string, JsonValue> = Record<string
   fields: TFields;
 }
 
-export interface DbInsertOptions {
+export interface DbPutOptions {
   in?: DbRowRef | DbRowRef[];
   name?: string;
 }

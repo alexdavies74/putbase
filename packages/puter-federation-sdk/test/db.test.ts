@@ -106,12 +106,12 @@ function buildDb(args: {
 }
 
 describe("PuterDb", () => {
-  it("inserts, updates, and queries indexed rows", async () => {
+  it("puts, updates, and queries indexed rows", async () => {
     const network = new TestWorkerNetwork();
     const db = buildDb({ username: "alice", network });
 
-    const project = await db.insert("projects", { name: "Website" });
-    const task = await db.insert("tasks", { title: "Ship v2" }, { in: project.toRef() });
+    const project = await db.put("projects", { name: "Website" });
+    const task = await db.put("tasks", { title: "Ship v2" }, { in: project.toRef() });
 
     await db.update("tasks", task.toRef(), { status: "done" });
 
@@ -131,11 +131,11 @@ describe("PuterDb", () => {
     const aliceDb = buildDb({ username: "alice", network });
     const bobDb = buildDb({ username: "bob", network });
 
-    const aliceProject = await aliceDb.insert("projects", { name: "Roadmap" });
+    const aliceProject = await aliceDb.put("projects", { name: "Roadmap" });
     await aliceProject.members.add("bob", { role: "reader" });
 
-    const bobProject = await bobDb.insert("projects", { name: "Bob scope" });
-    const bobTask = await bobDb.insert("tasks", { title: "Review" }, { in: bobProject.toRef() });
+    const bobProject = await bobDb.put("projects", { name: "Bob scope" });
+    const bobTask = await bobDb.put("tasks", { title: "Review" }, { in: bobProject.toRef() });
     await bobTask.in.add(aliceProject.toRef());
 
     const tasks = await aliceDb.query("tasks", {
@@ -149,8 +149,8 @@ describe("PuterDb", () => {
     const network = new TestWorkerNetwork();
     const db = buildDb({ username: "alice", network });
 
-    const project = await db.insert("projects", { name: "Website" });
-    await db.insert("tasks", { title: "Ship v2", status: "todo" }, { in: project.toRef() });
+    const project = await db.put("projects", { name: "Website" });
+    await db.put("tasks", { title: "Ship v2", status: "todo" }, { in: project.toRef() });
 
     const directRoomWorkerUrl = `https://alice-room-${project.id}.example`;
     await expect(
