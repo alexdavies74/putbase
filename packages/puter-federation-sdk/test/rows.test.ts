@@ -108,8 +108,12 @@ function buildDb(args: { username: string; network: TestWorkerNetwork }): PutBas
   });
 }
 
-function spyOnInternalQuery(db: PutBase<typeof schema>) {
-  return vi.spyOn((db as unknown as { queryModule: Query<typeof schema> }).queryModule, "query");
+function buildQueryForWatchTests(): Query<typeof schema> {
+  return new Query(
+    { request: vi.fn() } as never,
+    { getRow: vi.fn() } as never,
+    schema,
+  );
 }
 
 describe("PutBase rows", () => {
@@ -273,15 +277,43 @@ describe("PutBase rows", () => {
     });
   });
 
-  it("watchQuery emits the initial result and skips unchanged snapshots", async () => {
+  it("watchQuery emits rows end-to-end through PutBase", async () => {
+    const network = new TestWorkerNetwork();
+    const db = buildDb({ username: "alice", network });
+    const project = await db.put("projects", { name: "Website" });
+    const task = await db.put("tasks", { title: "Ship v2" }, { in: project.toRef() });
+
+    const changes: string[][] = [];
+    const watcher = db.watchQuery("tasks", {
+      in: project.toRef(),
+    }, {
+      onChange: (rows) => {
+        changes.push(rows.map((row) => row.id));
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(changes).toContainEqual([task.id]);
+    });
+
+    watcher.disconnect();
+  });
+});
+
+describe("Query watchQuery", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("emits the initial result and skips unchanged snapshots", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-13T00:00:00.000Z"));
 
-    const db = buildDb({ username: "alice", network: new TestWorkerNetwork() });
-    spyOnInternalQuery(db).mockImplementation(async () => [buildWatchRow("task_1", "Ship v2")] as never);
+    const query = buildQueryForWatchTests();
+    vi.spyOn(query, "query").mockImplementation(async () => [buildWatchRow("task_1", "Ship v2")] as never);
 
     const changes: string[] = [];
-    const watcher = db.watchQuery("tasks", {
+    const watcher = query.watchQuery("tasks", {
       in: {
         id: "project_1",
         collection: "projects",
@@ -307,16 +339,16 @@ describe("PutBase rows", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-13T00:00:00.000Z"));
 
-    const db = buildDb({ username: "alice", network: new TestWorkerNetwork() });
+    const query = buildQueryForWatchTests();
     const queryTimes: number[] = [];
-    spyOnInternalQuery(db).mockImplementation(async () => {
+    vi.spyOn(query, "query").mockImplementation(async () => {
       queryTimes.push(Date.now());
       return Date.now() >= Date.parse("2026-03-13T00:01:15.000Z")
         ? [buildWatchRow("task_2", "Review PR")] as never
         : [buildWatchRow("task_1", "Ship v2")] as never;
     });
 
-    const watcher = db.watchQuery("tasks", {
+    const watcher = query.watchQuery("tasks", {
       in: {
         id: "project_1",
         collection: "projects",
@@ -343,9 +375,9 @@ describe("PutBase rows", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-13T00:00:00.000Z"));
 
-    const db = buildDb({ username: "alice", network: new TestWorkerNetwork() });
+    const query = buildQueryForWatchTests();
     let callCount = 0;
-    spyOnInternalQuery(db).mockImplementation(async () => {
+    vi.spyOn(query, "query").mockImplementation(async () => {
       callCount += 1;
       if (callCount === 1) throw new Error("boom");
       return [buildWatchRow("task_1", "Ship v2")] as never;
@@ -353,7 +385,7 @@ describe("PutBase rows", () => {
 
     const errors: string[] = [];
     const changes: string[] = [];
-    const watcher = db.watchQuery("tasks", {
+    const watcher = query.watchQuery("tasks", {
       in: {
         id: "project_1",
         collection: "projects",
@@ -379,14 +411,14 @@ describe("PutBase rows", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-13T00:00:00.000Z"));
 
-    const db = buildDb({ username: "alice", network: new TestWorkerNetwork() });
+    const query = buildQueryForWatchTests();
     const queryTimes: number[] = [];
-    spyOnInternalQuery(db).mockImplementation(async () => {
+    vi.spyOn(query, "query").mockImplementation(async () => {
       queryTimes.push(Date.now());
       return [buildWatchRow("task_1", "Ship v2")] as never;
     });
 
-    const watcher = db.watchQuery("tasks", {
+    const watcher = query.watchQuery("tasks", {
       in: {
         id: "project_1",
         collection: "projects",

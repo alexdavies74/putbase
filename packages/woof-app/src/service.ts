@@ -1,5 +1,12 @@
 import * as Y from "yjs";
-import type { CrdtConnection, DbQueryWatchHandle, RoomUser } from "puter-federation-sdk";
+import type {
+  CrdtConnectCallbacks,
+  CrdtConnection,
+  DbQueryWatchHandle,
+  InviteToken,
+  ParsedInviteInput,
+  RoomUser,
+} from "puter-federation-sdk";
 import type { AI, ChatMessage, ChatResponse, KV } from "@heyputer/puter.js";
 
 import {
@@ -8,11 +15,68 @@ import {
   saveStoredWorkerUrl,
   type DogProfile,
 } from "./profile";
-import type { DogRowHandle, TagRowHandle, WoofDb } from "./schema";
+import type { DogFields, TagFields } from "./schema";
 
 type KvLike = Pick<KV, "get" | "set" | "del">;
 
 type PuterAI = Pick<AI, "chat">;
+
+type DogRowRef = {
+  id: string;
+  collection: "dogs";
+  owner: string;
+  workerUrl: string;
+};
+
+interface TagQueryOptions {
+  in: DogRowRef;
+  index: "byCreatedAt";
+  order: "asc";
+  limit: 100;
+}
+
+interface TagWatchCallbacks {
+  onChange(rows: TagRowPort[]): void;
+  onError?(error: unknown): void;
+}
+
+interface ResolvedWoofRowPort {
+  collection: string;
+}
+
+export interface DogRowPort extends ResolvedWoofRowPort {
+  id: string;
+  collection: "dogs";
+  owner: string;
+  workerUrl: string;
+  fields: DogFields | (Record<string, unknown> & { name?: unknown });
+  connectCrdt(callbacks: CrdtConnectCallbacks): CrdtConnection;
+  toRef(): DogRowRef;
+}
+
+export interface TagRowPort {
+  id: string;
+  fields: TagFields | (Record<string, unknown> & {
+    label?: unknown;
+    createdBy?: unknown;
+    createdAt?: unknown;
+  });
+}
+
+export interface WoofDbPort {
+  whoAmI(): Promise<RoomUser>;
+  put(collection: "dogs", fields: DogFields): Promise<DogRowPort>;
+  put(collection: "tags", fields: TagFields, options: { in: DogRowRef }): Promise<TagRowPort>;
+  getRowByUrl(workerUrl: string): Promise<ResolvedWoofRowPort>;
+  parseInviteInput(input: string): ParsedInviteInput;
+  joinRow(workerUrl: string, options?: { inviteToken?: string }): Promise<ResolvedWoofRowPort>;
+  query(collection: "tags", options: TagQueryOptions): Promise<TagRowPort[]>;
+  watchQuery(collection: "tags", options: TagQueryOptions, callbacks: TagWatchCallbacks): DbQueryWatchHandle;
+  getExistingInviteToken(row: DogRowPort): Promise<InviteToken | null>;
+  createInviteToken(row: DogRowPort): Promise<InviteToken>;
+  createInviteLink(row: Pick<DogRowPort, "workerUrl">, inviteToken: string): string;
+  listMembers(row: DogRowPort): Promise<string[]>;
+}
 
 export interface ChatEntry {
   id: string;
@@ -34,8 +98,6 @@ export interface WatchTagsCallbacks {
   onChange(tags: DogTag[]): void;
   onError?(error: unknown): void;
 }
-
-type ResolvedWoofRow = Awaited<ReturnType<WoofDb["getRowByUrl"]>>;
 
 function encodeUpdate(update: Uint8Array): { type: string; data: string } {
   return {
@@ -60,12 +122,12 @@ function decodeUpdate(body: unknown): Uint8Array | null {
   }
 }
 
-function expectDogRow(row: ResolvedWoofRow): DogRowHandle {
+function expectDogRow(row: ResolvedWoofRowPort): DogRowPort {
   if (row.collection !== "dogs") {
     throw new Error(`Expected dogs row, got ${row.collection}`);
   }
 
-  return row as unknown as DogRowHandle;
+  return row as DogRowPort;
 }
 
 export class WoofService {
@@ -73,7 +135,7 @@ export class WoofService {
   private pendingUpdate: Uint8Array | null = null;
 
   constructor(
-    private readonly db: WoofDb,
+    private readonly db: WoofDbPort,
     private readonly kv: KvLike,
     private readonly doc: Y.Doc = new Y.Doc(),
   ) {
@@ -130,7 +192,7 @@ export class WoofService {
     }
   }
 
-  async generateInviteLink(row: DogRowHandle): Promise<string> {
+  async generateInviteLink(row: DogRowPort): Promise<string> {
     const existing = await this.db.getExistingInviteToken(row);
     const invite = existing ?? await this.db.createInviteToken(row);
     return this.db.createInviteLink(row, invite.token);
@@ -223,7 +285,7 @@ export class WoofService {
     });
   }
 
-  private mapTags(rows: TagRowHandle[]): DogTag[] {
+  private mapTags(rows: TagRowPort[]): DogTag[] {
     return rows
       .map((row) => {
         const label = typeof row.fields.label === "string"

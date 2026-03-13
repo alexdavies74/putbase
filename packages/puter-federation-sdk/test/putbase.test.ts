@@ -656,12 +656,8 @@ describe("PutBase", () => {
     });
 
     await firstAttemptStarted.promise;
-    await vi.waitFor(() => {
-      expect(
-        (db as unknown as { pendingReadinessError: unknown | null }).pendingReadinessError,
-      ).not.toBeNull();
-    });
-
+    await flushMicrotasks();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
     await expect(db.ensureReady()).rejects.toThrow("Federation worker name collision");
     expect(deployCalls).toBe(1);
 
