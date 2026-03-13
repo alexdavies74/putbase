@@ -1,7 +1,8 @@
 import type { Identity } from "./identity";
+import type { PutBaseOptions } from "./putbase";
 import type { Transport } from "./transport";
 import { stripTrailingSlash } from "./transport";
-import type { InviteToken, ParsedInviteInput, PuterFedRoomsOptions } from "./types";
+import type { InviteToken, ParsedInviteInput } from "./types";
 import type { DbRowLocator } from "./schema";
 
 interface GetInviteResponse {
@@ -27,7 +28,7 @@ function assertRoomWorkerUrl(workerUrl: string): void {
 
 export class Invites {
   constructor(
-    private readonly options: PuterFedRoomsOptions,
+    private readonly options: Pick<PutBaseOptions, "appBaseUrl">,
     private readonly transport: Transport,
     private readonly identity: Identity,
   ) {}

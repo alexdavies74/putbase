@@ -1,6 +1,6 @@
 # puter-federation-sdk
 
-`puter-federation-sdk` is a TypeScript SDK for building Puter-backed collaborative apps around typed rows. It handles worker provisioning, row creation and lookup, parent-child relationships, membership, invite links, and CRDT message sync behind a single `PutBase` client.
+`puter-federation-sdk` is a TypeScript SDK for building backend-compatible collaborative apps around typed rows. It handles worker provisioning, row creation and lookup, parent-child relationships, membership, invite links, and CRDT message sync behind a single `PutBase` client.
 
 ## Install
 
@@ -14,7 +14,7 @@ Create one `PutBase` instance with your schema, then call `ensureReady()` before
 
 ```ts
 import { PutBase, collection, defineSchema, field, index } from "puter-federation-sdk";
-import { puter } from "@heyputer/puter.js";
+import { puter as backend } from "@heyputer/puter.js";
 
 const schema = defineSchema({
   dogs: collection({
@@ -35,7 +35,7 @@ const schema = defineSchema({
 });
 
 const db = new PutBase({
-  puter,
+  backend,
   appBaseUrl: window.location.origin,
   schema,
 });
@@ -65,7 +65,7 @@ Parent constraints are expressed with `in: [...]` on a collection. That drives t
 ## Working With Rows
 
 - `ensureReady()` authenticates the current user and ensures their federation worker is available.
-- `whoAmI()` returns the current Puter username.
+- `whoAmI()` returns the current username from your configured backend or identity provider.
 - `put(collection, fields, options)` creates a row and returns a `RowHandle`.
 - `update(collection, row, fields)` updates stored fields and returns a refreshed `RowHandle`.
 - `getRow(collection, row)` fetches a known row by typed reference.
@@ -88,7 +88,7 @@ Parent constraints are expressed with `in: [...]` on a collection. That drives t
 
 ## Provisioning Model
 
-The SDK provisions one federation worker per user per app host. `PutBase` handles worker discovery, deployment, and room URL routing internally. Consumers work with rows and row URLs; worker runtime classes are internal implementation details and are not part of the package API.
+The SDK provisions one federation worker per user per app host. `PutBase` handles worker discovery, deployment, and room URL routing internally. Consumers work with rows and row URLs; worker runtime classes are internal implementation details and are not part of the package API. If your app already exposes a compatible client on `globalThis.puter`, you can initialize `PutBase` with just `{ schema }`.
 
 ## Export Surface
 
@@ -96,7 +96,7 @@ The supported root exports are:
 
 - `PutBase`
 - `RowHandle`
-- `PuterFedError`
+- `PutBaseError`
 - `collection`, `defineSchema`, `field`, `index`
 - `PutBaseOptions`
 - `CrdtConnectCallbacks`, `CrdtConnection`, `DeployWorkerArgs`, `InviteToken`, `JsonValue`, `ParsedInviteInput`, `BackendClient`, `RoomUser`

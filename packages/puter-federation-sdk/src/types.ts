@@ -81,14 +81,6 @@ export interface DeployWorkerArgs {
   appHostHash?: string;
 }
 
-export interface PuterFedRoomsOptions {
-  puter?: BackendClient;
-  fetchFn?: typeof fetch;
-  appBaseUrl?: string;
-  identityProvider?: () => Promise<RoomUser>;
-  deployWorker?: (args: DeployWorkerArgs) => Promise<string | void>;
-}
-
 export interface RoomSnapshot extends Room {
   collection: string | null;
   members: string[];

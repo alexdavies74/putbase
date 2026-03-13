@@ -14,8 +14,9 @@
     "dist"
   ],
   "scripts": {
+    "clean": "node ./scripts/clean-dist.mjs",
     "generate:worker-runtime": "node ./scripts/generate-worker-runtime.mjs",
-    "prebuild": "pnpm run generate:worker-runtime",
+    "prebuild": "pnpm run clean && pnpm run generate:worker-runtime",
     "build": "tsc -p tsconfig.json",
     "predev": "pnpm run generate:worker-runtime",
     "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",

@@ -22,6 +22,7 @@ import type {
   MemberRole,
   RowFields,
 } from "./schema";
+import { resolveBackend } from "./backend";
 import { resolveCollectionName } from "./schema";
 import { stripTrailingSlash } from "./transport";
 import { Transport } from "./transport";
@@ -29,17 +30,21 @@ import type {
   BackendClient,
   CrdtConnectCallbacks,
   CrdtConnection,
+  DeployWorkerArgs,
   InviteToken,
   JsonValue,
   ParsedInviteInput,
-  PuterFedRoomsOptions,
   RoomUser,
 } from "./types";
 import { Sync } from "./sync";
 
-export interface PutBaseOptions<Schema extends DbSchema = DbSchema>
-  extends PuterFedRoomsOptions {
+export interface PutBaseOptions<Schema extends DbSchema = DbSchema> {
   schema: Schema;
+  backend?: BackendClient;
+  fetchFn?: typeof fetch;
+  appBaseUrl?: string;
+  identityProvider?: () => Promise<RoomUser>;
+  deployWorker?: (args: DeployWorkerArgs) => Promise<string | void>;
 }
 
 export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBackend<Schema> {
@@ -211,10 +216,10 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
   }
 
   private syncRuntime(): void {
-    const backend = this.options.puter ?? (globalThis as { puter?: BackendClient }).puter;
-    this.identity.setPuter(backend);
-    this.transport.setPuter(backend);
-    this.provisioning.setPuter(backend);
+    const backend = resolveBackend(this.options.backend);
+    this.identity.setBackend(backend);
+    this.transport.setBackend(backend);
+    this.provisioning.setBackend(backend);
   }
 
   private startPrewarm(): void {

@@ -1,5 +1,7 @@
-import { PuterFedError, toApiError } from "./errors";
-import type { BackendClient, PuterFedRoomsOptions } from "./types";
+import { PutBaseError, toApiError } from "./errors";
+import { resolveBackend } from "./backend";
+import type { PutBaseOptions } from "./putbase";
+import type { BackendClient } from "./types";
 import type { DbRowLocator } from "./schema";
 
 export type PuterWorkersExec = (
@@ -47,15 +49,15 @@ export class Transport {
   private readonly getUsername: () => Promise<string>;
 
   constructor(
-    options: PuterFedRoomsOptions,
+    options: Pick<PutBaseOptions, "backend" | "fetchFn">,
     getUsername: () => Promise<string>,
   ) {
-    this.backend = options.puter;
+    this.backend = resolveBackend(options.backend);
     this.fetchFn = options.fetchFn ?? fetch;
     this.getUsername = getUsername;
   }
 
-  setPuter(backend: BackendClient | undefined): void {
+  setBackend(backend: BackendClient | undefined): void {
     this.backend = backend;
   }
 
@@ -83,7 +85,7 @@ export class Transport {
       const maybeApiError = await response
         .json()
         .catch((): unknown => ({ code: "BAD_REQUEST", message: response.statusText }));
-      throw new PuterFedError(toApiError(maybeApiError), response.status);
+      throw new PutBaseError(toApiError(maybeApiError), response.status);
     }
 
     return (await response.json()) as T;
@@ -102,16 +104,14 @@ export class Transport {
   }
 
   resolveWorkersExec(): PuterWorkersExec | null {
-    if (!this.backend) {
-      this.backend = (globalThis as { puter?: BackendClient }).puter;
-    }
+    this.backend = resolveBackend(this.backend);
 
     const exec = (this.backend?.workers as { exec?: unknown } | undefined)?.exec;
     if (typeof exec === "function") {
       return exec as PuterWorkersExec;
     }
 
-    const globalBackend = (globalThis as { puter?: BackendClient }).puter;
+    const globalBackend = resolveBackend();
     const globalExec = (globalBackend?.workers as { exec?: unknown } | undefined)?.exec;
     return typeof globalExec === "function" ? (globalExec as PuterWorkersExec) : null;
   }

@@ -1,7 +1,7 @@
 export { PutBase } from "./putbase";
 export { RowHandle } from "./row-handle";
 export type { AnyRowHandle } from "./row-handle";
-export { PuterFedError } from "./errors";
+export { PutBaseError } from "./errors";
 export { collection, defineSchema, field, index } from "./schema";
 export type { PutBaseOptions } from "./putbase";
 export type {

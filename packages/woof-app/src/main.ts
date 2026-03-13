@@ -1,6 +1,6 @@
 import { puter } from "@heyputer/puter.js";
 import * as Y from "yjs";
-import { PutBase, PuterFedError, type DbQueryWatchHandle } from "puter-federation-sdk";
+import { PutBase, PutBaseError, type DbQueryWatchHandle } from "puter-federation-sdk";
 
 import type { DogProfile } from "./profile";
 import { woofSchema } from "./schema";
@@ -17,7 +17,6 @@ const chatArray = doc.getArray<ChatEntry>("messages");
 
 const db = new PutBase({
   appBaseUrl: window.location.origin,
-  puter,
   schema: woofSchema,
 });
 const service = new WoofService(db, puter.kv, doc);
@@ -352,7 +351,7 @@ function escapeHtml(value: string): string {
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof PuterFedError) {
+  if (error instanceof PutBaseError) {
     const detailsParts: Array<string | number> = [error.code];
     if (error.status !== undefined) {
       detailsParts.push(error.status);

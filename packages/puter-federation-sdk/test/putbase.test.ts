@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { PutBaseError } from "../src/errors";
 import { PutBase } from "../src/putbase";
 import { RowHandle } from "../src/row-handle";
 import { collection, defineSchema } from "../src/schema";
 import type { BackendClient } from "../src/types";
 import { InMemoryKv } from "../src/worker/in-memory-kv";
 import { RoomWorker } from "../src/worker/core";
+
+const runtimeGlobal = globalThis as { puter?: BackendClient };
 
 function asUrl(input: RequestInfo | URL): string {
   return typeof input === "string"
@@ -58,6 +61,7 @@ const MINIMAL_SCHEMA = defineSchema({
 describe("PutBase", () => {
   afterEach(() => {
     vi.useRealTimers();
+    delete runtimeGlobal.puter;
   });
 
   it("gets row by URL", async () => {
@@ -103,6 +107,26 @@ describe("PutBase", () => {
     expect(row.owner).toBe("owner");
     expect(row.workerUrl).toBe("https://worker.example/rooms/room_public");
     expect(row.fields.name).toBe("Rex");
+  });
+
+  it("uses globalThis.puter when no backend option is provided", async () => {
+    runtimeGlobal.puter = {
+      auth: {
+        whoami: async () => ({ username: "owner" }),
+      },
+      fs: {
+        mkdir: async () => undefined,
+        write: async () => undefined,
+      },
+      workers: {},
+      kv: new MapKv(),
+    } as BackendClient;
+
+    const db = new PutBase({
+      schema: MINIMAL_SCHEMA,
+    });
+
+    await expect(db.whoAmI()).resolves.toEqual({ username: "owner" });
   });
 
   it("fails getRowByUrl when the worker omits collection metadata", async () => {
@@ -183,6 +207,24 @@ describe("PutBase", () => {
     });
 
     await expect(db.getRowByUrl("https://worker.example/rooms/room_public")).rejects.toThrow("Unknown collection: foreign");
+  });
+
+  it("throws PutBaseError for API failures", async () => {
+    const db = new PutBase({
+      schema: MINIMAL_SCHEMA,
+      identityProvider: async () => ({ username: "owner" }),
+      fetchFn: async (): Promise<Response> => new Response(
+        JSON.stringify({ code: "BAD_REQUEST", message: "Unexpected URL" }),
+        {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    });
+
+    await expect(db.getRowByUrl("https://worker.example/rooms/room_public")).rejects.toBeInstanceOf(
+      PutBaseError,
+    );
   });
 
   it("calls provided fetchFn without binding `this` to SDK instance", async () => {
@@ -280,7 +322,7 @@ describe("PutBase", () => {
       schema: MINIMAL_SCHEMA,
       identityProvider: async () => ({ username: "owner" }),
       appBaseUrl: `https://${appHost}`,
-      puter: backend,
+      backend,
       fetchFn: (() => Promise.reject(new Error("fetch should not be used in ensureReady"))) as typeof fetch,
     });
 
@@ -301,7 +343,7 @@ describe("PutBase", () => {
       schema: MINIMAL_SCHEMA,
       identityProvider: async () => ({ username: "owner" }),
       appBaseUrl: "https://prewarm-ensure.example",
-      puter: {
+      backend: {
         fs: { mkdir: async () => undefined, write: async () => undefined },
         workers: {
           create: async () => {
@@ -395,7 +437,7 @@ describe("PutBase", () => {
       schema: MINIMAL_SCHEMA,
       identityProvider: async () => ({ username: "owner" }),
       appBaseUrl: "https://deployed-worker.example",
-      puter: backend,
+      backend,
       fetchFn: fetchFn as typeof fetch,
     });
 
@@ -476,7 +518,7 @@ describe("PutBase", () => {
       schema: MINIMAL_SCHEMA,
       identityProvider: async () => ({ username: "owner" }),
       appBaseUrl: "https://prewarm-put.example",
-      puter: {
+      backend: {
         fs: { mkdir: async () => undefined, write: async () => undefined },
         workers: {
           create: async () => {
@@ -533,7 +575,7 @@ describe("PutBase", () => {
       schema: MINIMAL_SCHEMA,
       identityProvider: async () => ({ username: "owner" }),
       appBaseUrl: "https://reuse-kv.example",
-      puter: backend,
+      backend,
       fetchFn: fetchFn as typeof fetch,
     });
 
@@ -541,7 +583,7 @@ describe("PutBase", () => {
       schema: MINIMAL_SCHEMA,
       identityProvider: async () => ({ username: "owner" }),
       appBaseUrl: "https://reuse-kv.example",
-      puter: backend,
+      backend,
       fetchFn: fetchFn as typeof fetch,
     });
 
@@ -590,7 +632,7 @@ describe("PutBase", () => {
       schema: MINIMAL_SCHEMA,
       identityProvider: async () => ({ username: "owner" }),
       appBaseUrl: "https://reuse-existing.example",
-      puter: backend,
+      backend,
       fetchFn: fetchFn as typeof fetch,
     });
 
@@ -620,7 +662,7 @@ describe("PutBase", () => {
       schema: MINIMAL_SCHEMA,
       identityProvider: async () => ({ username: "owner" }),
       appBaseUrl: "https://collision.example",
-      puter: backend,
+      backend,
       fetchFn: (() => Promise.reject(new Error("fetch should not be used"))) as typeof fetch,
     });
 
@@ -635,7 +677,7 @@ describe("PutBase", () => {
       schema: MINIMAL_SCHEMA,
       identityProvider: async () => ({ username: "owner" }),
       appBaseUrl: "https://retry.example",
-      puter: {
+      backend: {
         fs: { mkdir: async () => undefined, write: async () => undefined },
         workers: {
           create: async () => {
@@ -665,7 +707,7 @@ describe("PutBase", () => {
     expect(deployCalls).toBe(2);
   });
 
-  it("uses puter.workers.exec when available", async () => {
+  it("uses backend.workers.exec when available", async () => {
     const execCalls: Array<{ url: string; init?: RequestInit }> = [];
 
     const backend = {
@@ -711,7 +753,7 @@ describe("PutBase", () => {
     const db = new PutBase({
       schema: MINIMAL_SCHEMA,
       identityProvider: async () => ({ username: "owner" }),
-      puter: backend,
+      backend,
       fetchFn: fetchFn as typeof fetch,
     });
 

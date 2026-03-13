@@ -1,8 +1,10 @@
 import { buildClassicWorkerScript } from "./worker/template";
+import { resolveBackend } from "./backend";
 import type { Identity } from "./identity";
+import type { PutBaseOptions } from "./putbase";
 import type { Transport } from "./transport";
 import { stripTrailingSlash } from "./transport";
-import type { BackendClient, DeployWorkerArgs, PuterFedRoomsOptions } from "./types";
+import type { BackendClient, DeployWorkerArgs } from "./types";
 
 const FEDERATION_WORKER_ROOM_SENTINEL = "bootstrap";
 const FEDERATION_WORKER_VERSION = 12;
@@ -17,14 +19,14 @@ export class Provisioning {
   private backend: BackendClient | undefined;
 
   constructor(
-    private readonly options: PuterFedRoomsOptions,
+    private readonly options: Pick<PutBaseOptions, "appBaseUrl" | "backend" | "deployWorker">,
     private readonly transport: Transport,
     private readonly identity: Identity,
   ) {
-    this.backend = options.puter;
+    this.backend = resolveBackend(options.backend);
   }
 
-  setPuter(backend: BackendClient | undefined): void {
+  setBackend(backend: BackendClient | undefined): void {
     this.backend = backend;
   }
 
@@ -116,7 +118,9 @@ export class Provisioning {
     }
 
     if (!this.canDeployFederationWorker()) {
-      throw new Error("Unable to provision federation worker: puter.workers.create is unavailable.");
+      throw new Error(
+        "Unable to provision federation worker: a compatible backend with workers.create is unavailable.",
+      );
     }
 
     const script = buildClassicWorkerScript({ owner: username });
@@ -148,9 +152,7 @@ export class Provisioning {
       return true;
     }
 
-    if (!this.backend) {
-      this.backend = (globalThis as { puter?: BackendClient }).puter;
-    }
+    this.backend = resolveBackend(this.backend);
 
     const workers = this.backend?.workers as { create?: unknown } | undefined;
     return typeof workers?.create === "function";
@@ -170,13 +172,11 @@ export class Provisioning {
       return undefined;
     }
 
-    if (!this.backend) {
-      this.backend = (globalThis as { puter?: BackendClient }).puter;
-    }
+    this.backend = resolveBackend(this.backend);
 
     const backend = this.backend;
     if (!backend) {
-      throw new Error("Puter SDK is unavailable");
+      throw new Error("A compatible backend client is unavailable.");
     }
 
     const workerName = args.workerName ?? `${args.owner}-federation`;
@@ -191,7 +191,7 @@ export class Provisioning {
       | undefined;
 
     if (!workers?.create) {
-      throw new Error("Puter workers.create is unavailable");
+      throw new Error("A compatible backend workers.create API is unavailable.");
     }
 
     try {
@@ -265,9 +265,7 @@ export class Provisioning {
   }
 
   private async loadFederationWorkerVersion(username: string, appHostHash: string): Promise<number> {
-    if (!this.backend) {
-      this.backend = (globalThis as { puter?: BackendClient }).puter;
-    }
+    this.backend = resolveBackend(this.backend);
 
     const kv = this.backend?.kv;
     if (!kv?.get) {
@@ -285,9 +283,7 @@ export class Provisioning {
   }
 
   private async loadFederationWorkerUrl(username: string, appHostHash: string): Promise<string | null> {
-    if (!this.backend) {
-      this.backend = (globalThis as { puter?: BackendClient }).puter;
-    }
+    this.backend = resolveBackend(this.backend);
 
     const kv = this.backend?.kv;
     if (!kv?.get) {
@@ -305,9 +301,7 @@ export class Provisioning {
   }
 
   private async loadExistingFederationWorkerUrl(workerName: string): Promise<string | null> {
-    if (!this.backend) {
-      this.backend = (globalThis as { puter?: BackendClient }).puter;
-    }
+    this.backend = resolveBackend(this.backend);
 
     const backend = this.backend;
     const workers = backend?.workers as
@@ -333,9 +327,7 @@ export class Provisioning {
     appHostHash: string,
     workerUrl: string,
   ): Promise<void> {
-    if (!this.backend) {
-      this.backend = (globalThis as { puter?: BackendClient }).puter;
-    }
+    this.backend = resolveBackend(this.backend);
 
     const kv = this.backend?.kv;
     if (!kv?.set) {

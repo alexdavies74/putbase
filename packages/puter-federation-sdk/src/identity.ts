@@ -1,14 +1,16 @@
-import type { BackendClient, PuterFedRoomsOptions, RoomUser } from "./types";
+import { resolveBackend } from "./backend";
+import type { PutBaseOptions } from "./putbase";
+import type { BackendClient, RoomUser } from "./types";
 
 export class Identity {
   private cached: RoomUser | null = null;
   private backend: BackendClient | undefined;
 
-  constructor(private readonly options: PuterFedRoomsOptions) {
-    this.backend = options.puter;
+  constructor(private readonly options: Pick<PutBaseOptions, "backend" | "identityProvider">) {
+    this.backend = resolveBackend(options.backend);
   }
 
-  setPuter(backend: BackendClient | undefined): void {
+  setBackend(backend: BackendClient | undefined): void {
     this.backend = backend;
   }
 
@@ -22,9 +24,7 @@ export class Identity {
       return this.cached;
     }
 
-    if (!this.backend) {
-      this.backend = (globalThis as { puter?: BackendClient }).puter;
-    }
+    this.backend = resolveBackend(this.backend);
 
     const auth = this.backend?.auth;
     let candidate: { username?: string } | null = null;
@@ -51,7 +51,7 @@ export class Identity {
     const username = candidate?.username;
     if (!username) {
       throw new Error(
-        "Unable to determine current Puter username. Import @heyputer/puter.js in the frontend and pass { puter } to PutBase.",
+        "Unable to determine the current username. Provide a compatible backend via { backend }, ensure globalThis.puter is available, or supply identityProvider.",
       );
     }
 

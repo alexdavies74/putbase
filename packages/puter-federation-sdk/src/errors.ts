@@ -1,12 +1,12 @@
 import type { ApiError, ErrorCode } from "./types";
 
-export class PuterFedError extends Error {
+export class PutBaseError extends Error {
   readonly code: ErrorCode;
   readonly status?: number;
 
   constructor(apiError: ApiError, status?: number) {
     super(apiError.message);
-    this.name = "PuterFedError";
+    this.name = "PutBaseError";
     this.code = apiError.code;
     this.status = status;
   }
