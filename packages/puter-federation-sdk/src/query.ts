@@ -1,5 +1,5 @@
 import { createAdaptivePoller } from "./polling";
-import { RowHandle, type RowHandleBackend } from "./row-handle";
+import { RowHandle } from "./row-handle";
 import type { Rows } from "./rows";
 import type {
   AllowedParentCollections,
@@ -65,7 +65,6 @@ export class Query<Schema extends DbSchema> {
     private readonly transport: Transport,
     private readonly rows: Rows<Schema>,
     private readonly schema: Schema,
-    private readonly backend: RowHandleBackend<Schema>,
   ) {}
 
   async query<TCollection extends CollectionName<Schema>>(
@@ -124,20 +123,7 @@ export class Query<Schema extends DbSchema> {
           workerUrl: stripTrailingSlash(row.workerUrl),
         };
 
-        try {
-          return await this.rows.getRow(collection, rowRef);
-        } catch {
-          return new RowHandle<
-            TCollection,
-            RowFields<Schema, TCollection>,
-            AllowedParentCollections<Schema, TCollection>,
-            Schema
-          >(
-            this.backend,
-            rowRef,
-            row.fields as RowFields<Schema, TCollection>,
-          );
-        }
+        return this.rows.getRow(collection, rowRef);
       }),
     );
 

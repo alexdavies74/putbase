@@ -237,6 +237,42 @@ describe("PutBase rows", () => {
     ).rejects.toThrow("Legacy non-federated room URLs are no longer supported");
   });
 
+  it("rejects query results when canonical row hydration fails", async () => {
+    const transport = {
+      request: vi.fn().mockResolvedValue({
+        rows: [{
+          rowId: "task_1",
+          owner: "alice",
+          workerUrl: "https://worker.example/rooms/task_1/",
+          collection: "tasks",
+          fields: { title: "Embedded snapshot", status: "todo" },
+        }],
+      }),
+    };
+    const getRow = vi.fn().mockRejectedValue(new Error("canonical fetch failed"));
+    const query = new Query(
+      transport as never,
+      { getRow } as never,
+      schema,
+    );
+
+    await expect(query.query("tasks", {
+      in: {
+        id: "project_1",
+        collection: "projects",
+        owner: "alice",
+        workerUrl: "https://worker.example/rooms/project_1",
+      },
+    })).rejects.toThrow("canonical fetch failed");
+
+    expect(getRow).toHaveBeenCalledWith("tasks", {
+      id: "task_1",
+      collection: "tasks",
+      owner: "alice",
+      workerUrl: "https://worker.example/rooms/task_1",
+    });
+  });
+
   it("watchQuery emits the initial result and skips unchanged snapshots", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-13T00:00:00.000Z"));

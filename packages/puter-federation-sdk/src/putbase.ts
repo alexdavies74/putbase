@@ -74,7 +74,7 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
       options.schema,
       (row) => this.rowsModule.refreshFields(row),
     );
-    this.queryModule = new Query(this.transport, this.rowsModule, options.schema, this);
+    this.queryModule = new Query(this.transport, this.rowsModule, options.schema);
   }
 
   async init(): Promise<void> {
