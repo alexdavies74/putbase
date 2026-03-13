@@ -1,4 +1,4 @@
-import type { JsonValue } from "../types";
+import type { JsonValue } from "./types";
 
 const NULL_SENTINEL = "\\x00";
 

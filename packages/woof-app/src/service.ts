@@ -1,13 +1,5 @@
 import * as Y from "yjs";
-import type {
-  DbQueryWatchHandle,
-  DbRowRef,
-  PuterFedRooms,
-  CrdtConnection,
-  JsonValue,
-  Room,
-  RoomUser,
-} from "puter-federation-sdk";
+import type { PutBase, CrdtConnection, DbQueryWatchHandle, RowHandle, RoomUser } from "puter-federation-sdk";
 import type { AI, ChatMessage, ChatResponse, KV } from "@heyputer/puter.js";
 
 import {
@@ -17,60 +9,9 @@ import {
   type DogProfile,
 } from "./profile";
 
-type RoomsLike = Pick<
-  PuterFedRooms,
-  | "createRoom"
-  | "getRoom"
-  | "joinRoom"
-  | "whoAmI"
-  | "parseInviteInput"
-  | "listMembers"
-  | "getExistingInviteToken"
-  | "createInviteToken"
-  | "createInviteLink"
-  | "connectCrdt"
->;
-
 type KvLike = Pick<KV, "get" | "set" | "del">;
 
 type PuterAI = Pick<AI, "chat">;
-
-interface TagRowLike {
-  id: string;
-  fields: Record<string, JsonValue>;
-}
-
-interface TagDbLike {
-  put(
-    collection: "tags",
-    fields: Record<string, JsonValue>,
-    options: { in: DbRowRef },
-  ): Promise<unknown>;
-  query(
-    collection: "tags",
-    options: {
-      in: DbRowRef;
-      index?: string;
-      order?: "asc" | "desc";
-      limit?: number;
-      where?: Record<string, JsonValue>;
-    },
-  ): Promise<TagRowLike[]>;
-  watchQuery(
-    collection: "tags",
-    options: {
-      in: DbRowRef;
-      index?: string;
-      order?: "asc" | "desc";
-      limit?: number;
-      where?: Record<string, JsonValue>;
-    },
-    callbacks: {
-      onChange(rows: TagRowLike[]): void;
-      onError?(error: unknown): void;
-    },
-  ): DbQueryWatchHandle;
-}
 
 export interface ChatEntry {
   id: string;
@@ -121,10 +62,9 @@ export class WoofService {
   private pendingUpdate: Uint8Array | null = null;
 
   constructor(
-    private readonly rooms: RoomsLike,
+    private readonly db: PutBase,
     private readonly kv: KvLike,
     private readonly doc: Y.Doc = new Y.Doc(),
-    private readonly db: TagDbLike | null = null,
   ) {
     this.doc.on("update", (update: Uint8Array) => {
       this.pendingUpdate = this.pendingUpdate
@@ -144,8 +84,8 @@ export class WoofService {
     }
 
     try {
-      const room = await this.rooms.getRoom(workerUrl);
-      return { room };
+      const row = await this.db.getRowByUrl(workerUrl);
+      return { row };
     } catch (error) {
       await clearProfile(this.kv);
       throw error;
@@ -153,41 +93,41 @@ export class WoofService {
   }
 
   async enterChat(args: { dogName: string }): Promise<DogProfile> {
-    const room = await this.rooms.createRoom(args.dogName);
-    await saveStoredWorkerUrl(room, this.kv);
-    return { room };
+    const row = await this.db.put("dogs", { name: args.dogName });
+    await saveStoredWorkerUrl(row, this.kv);
+    return { row };
   }
 
   async joinFromInvite(inviteInput: string): Promise<DogProfile> {
-    const parsed = this.rooms.parseInviteInput(inviteInput.trim());
-    const room = await this.rooms.joinRoom(parsed.workerUrl, {
+    const parsed = this.db.parseInviteInput(inviteInput.trim());
+    const row = await this.db.joinRow(parsed.workerUrl, {
       inviteToken: parsed.inviteToken,
     });
 
-    await saveStoredWorkerUrl(room, this.kv);
-    return { room };
+    await saveStoredWorkerUrl(row, this.kv);
+    return { row };
   }
 
   async refreshProfileCanonical(profile: DogProfile): Promise<DogProfile> {
     try {
-      const snapshot = await this.rooms.getRoom(profile.room.workerUrl);
-      await saveStoredWorkerUrl(snapshot, this.kv);
-      return { room: snapshot };
+      const row = await this.db.getRowByUrl(profile.row.workerUrl);
+      await saveStoredWorkerUrl(row, this.kv);
+      return { row };
     } catch (error) {
       await clearProfile(this.kv);
       throw error;
     }
   }
 
-  async generateInviteLink(room: Room): Promise<string> {
-    const existing = await this.rooms.getExistingInviteToken(room);
-    const invite = existing ?? await this.rooms.createInviteToken(room);
-    return this.rooms.createInviteLink(room, invite.token);
+  async generateInviteLink(row: RowHandle): Promise<string> {
+    const existing = await this.db.getExistingInviteToken(row);
+    const invite = existing ?? await this.db.createInviteToken(row);
+    return this.db.createInviteLink(row, invite.token);
   }
 
   connectToRoom(profile: DogProfile): void {
     this.connection?.disconnect();
-    this.connection = this.rooms.connectCrdt(profile.room, {
+    this.connection = profile.row.connectCrdt({
       applyRemoteUpdate: (body) => {
         const update = decodeUpdate(body);
         if (update) {
@@ -203,8 +143,9 @@ export class WoofService {
   }
 
   async sendTurn(profile: DogProfile, content: string, puterAI?: PuterAI): Promise<void> {
-    const actor = await this.rooms.whoAmI();
-    const members = await this.rooms.listMembers(profile.room);
+    const actor = await this.db.whoAmI();
+    const members = await this.db.listMembers(profile.row);
+    const dogName = String(profile.row.fields.name ?? "");
 
     const userEntry: ChatEntry = {
       id: crypto.randomUUID(),
@@ -221,7 +162,7 @@ export class WoofService {
 
     const replies = await this.getDogReplies({
       actor,
-      dogName: profile.room.name,
+      dogName,
       entries: this.chatArray.toArray(),
       members,
       puterAI,
@@ -247,12 +188,8 @@ export class WoofService {
   }
 
   async listTags(profile: DogProfile): Promise<DogTag[]> {
-    if (!this.db) {
-      return [];
-    }
-
     const rows = await this.db.query("tags", {
-      in: this.dogRowRef(profile),
+      in: profile.row.toRef(),
       index: "byCreatedAt",
       order: "asc",
       limit: 100,
@@ -262,16 +199,8 @@ export class WoofService {
   }
 
   watchTags(profile: DogProfile, callbacks: WatchTagsCallbacks): DbQueryWatchHandle {
-    if (!this.db) {
-      callbacks.onChange([]);
-      return {
-        disconnect() {},
-        refresh: async () => undefined,
-      };
-    }
-
     return this.db.watchQuery("tags", {
-      in: this.dogRowRef(profile),
+      in: profile.row.toRef(),
       index: "byCreatedAt",
       order: "asc",
       limit: 100,
@@ -283,7 +212,7 @@ export class WoofService {
     });
   }
 
-  private mapTags(rows: TagRowLike[]): DogTag[] {
+  private mapTags(rows: RowHandle[]): DogTag[] {
     return rows
       .map((row) => {
         const label = typeof row.fields.label === "string"
@@ -308,10 +237,6 @@ export class WoofService {
   }
 
   async createTag(profile: DogProfile, label: string): Promise<void> {
-    if (!this.db) {
-      throw new Error("Tag database is unavailable.");
-    }
-
     const trimmed = label.trim();
     if (!trimmed) {
       throw new Error("Tag text is required.");
@@ -321,7 +246,7 @@ export class WoofService {
       throw new Error("Tag text must be 32 characters or fewer.");
     }
 
-    const actor = await this.rooms.whoAmI();
+    const actor = await this.db.whoAmI();
     await this.db.put(
       "tags",
       {
@@ -330,7 +255,7 @@ export class WoofService {
         createdAt: Date.now(),
       },
       {
-        in: this.dogRowRef(profile),
+        in: profile.row.toRef(),
       },
     );
   }
@@ -339,15 +264,6 @@ export class WoofService {
     this.connection?.disconnect();
     this.connection = null;
     await clearProfile(this.kv);
-  }
-
-  private dogRowRef(profile: DogProfile): DbRowRef {
-    return {
-      id: profile.room.id,
-      collection: "dogs",
-      owner: profile.room.owner,
-      workerUrl: profile.room.workerUrl,
-    };
   }
 
   private async getDogReplies(args: {

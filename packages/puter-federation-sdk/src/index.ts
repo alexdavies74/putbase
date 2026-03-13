@@ -1,11 +1,8 @@
-export { PuterFedRooms } from "./client";
-export { PuterDb } from "./db/client";
-export { RowHandle } from "./db/row-handle";
+export { PutBase } from "./putbase";
+export { RowHandle } from "./row-handle";
 export { PuterFedError } from "./errors";
-export {
-  createInviteLink,
-  parseInviteInput,
-} from "./invite";
+export { RoomWorker } from "./worker/core";
+export { InMemoryKv } from "./worker/in-memory-kv";
 export {
   canonicalize,
   signEnvelope,
@@ -19,33 +16,23 @@ export {
   buildPublicKeyProofDocument,
   encodeProofDocumentAsDataUrl,
 } from "./crypto";
-export { RoomWorker } from "./worker/core";
-export { InMemoryKv } from "./worker/in-memory-kv";
+export type { PutBaseOptions } from "./putbase";
 export type {
-  ApiError,
   CrdtConnectCallbacks,
   CrdtConnection,
   DeployWorkerArgs,
   InviteToken,
   JsonValue,
-  JoinOptions,
-  Message,
   ParsedInviteInput,
   PublicKeyProofDocument,
-  PuterFedRoomsOptions,
-  Room,
-  RoomSnapshot,
   RoomUser,
-  SignedAction,
-  SignedWriteEnvelope,
-  SignerIdentity,
 } from "./types";
 export type {
   DbCollectionSpec,
   DbFieldSpec,
   DbIndexSpec,
-  DbPutOptions,
   DbMemberInfo,
+  DbPutOptions,
   DbQueryOptions,
   DbQueryWatchCallbacks,
   DbQueryWatchHandle,
@@ -54,4 +41,4 @@ export type {
   DbSchema,
   FieldType,
   MemberRole,
-} from "./db/types";
+} from "./schema";

@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { PuterDb } from "../src/db/client";
-import type { DbSchema } from "../src/db/types";
+import { PutBase } from "../src/putbase";
+import { Query } from "../src/query";
+import type { DbSchema } from "../src/schema";
 import { InMemoryKv } from "../src/worker/in-memory-kv";
 import { RoomWorker } from "../src/worker/core";
 
@@ -46,17 +47,10 @@ class TestWorkerNetwork {
 
   private resolveBaseUrl(requestUrl: string): string | null {
     let best: string | null = null;
-
     for (const candidate of this.workers.keys()) {
-      if (!requestUrl.startsWith(candidate)) {
-        continue;
-      }
-
-      if (!best || candidate.length > best.length) {
-        best = candidate;
-      }
+      if (!requestUrl.startsWith(candidate)) continue;
+      if (!best || candidate.length > best.length) best = candidate;
     }
-
     return best;
   }
 }
@@ -90,31 +84,22 @@ function buildWatchRow(id: string, title: string) {
     collection: "tasks",
     owner: "alice",
     workerUrl: `https://worker.example/rooms/${id}`,
-    fields: {
-      title,
-      status: "todo",
-    },
+    fields: { title, status: "todo" },
   };
 }
 
-function buildDb(args: {
-  username: string;
-  network: TestWorkerNetwork;
-}): PuterDb<DbSchema> {
+function buildDb(args: { username: string; network: TestWorkerNetwork }): PutBase<typeof schema> {
   const workerBase = `https://${args.username}-federation.example`;
 
   args.network.register(
     workerBase,
     new RoomWorker(
-      {
-        owner: args.username,
-        workerUrl: workerBase,
-      },
+      { owner: args.username, workerUrl: workerBase },
       { kv: new InMemoryKv() },
     ),
   );
 
-  return new PuterDb({
+  return new PutBase({
     schema,
     identityProvider: async () => ({ username: args.username }),
     fetchFn: args.network.fetch as typeof fetch,
@@ -123,7 +108,11 @@ function buildDb(args: {
   });
 }
 
-describe("PuterDb", () => {
+function spyOnInternalQuery(db: PutBase<typeof schema>) {
+  return vi.spyOn((db as unknown as { queryModule: Query }).queryModule, "query");
+}
+
+describe("PutBase rows", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
@@ -160,9 +149,7 @@ describe("PuterDb", () => {
     const bobTask = await bobDb.put("tasks", { title: "Review" }, { in: bobProject.toRef() });
     await bobTask.in.add(aliceProject.toRef());
 
-    const tasks = await aliceDb.query("tasks", {
-      in: aliceProject.toRef(),
-    });
+    const tasks = await aliceDb.query("tasks", { in: aliceProject.toRef() });
 
     expect(tasks.some((task) => task.id === bobTask.id)).toBe(true);
   });
@@ -177,10 +164,7 @@ describe("PuterDb", () => {
     const directRoomWorkerUrl = `https://alice-room-${project.id}.example`;
     await expect(
       db.query("tasks", {
-        in: {
-          ...project.toRef(),
-          workerUrl: directRoomWorkerUrl,
-        },
+        in: { ...project.toRef(), workerUrl: directRoomWorkerUrl },
         where: { status: "todo" },
       }),
     ).rejects.toThrow("Legacy non-federated room URLs are no longer supported");
@@ -191,7 +175,7 @@ describe("PuterDb", () => {
     vi.setSystemTime(new Date("2026-03-13T00:00:00.000Z"));
 
     const db = buildDb({ username: "alice", network: new TestWorkerNetwork() });
-    vi.spyOn(db, "query").mockImplementation(async () => [buildWatchRow("task_1", "Ship v2")] as never);
+    spyOnInternalQuery(db).mockImplementation(async () => [buildWatchRow("task_1", "Ship v2")] as never);
 
     const changes: string[] = [];
     const watcher = db.watchQuery("tasks", {
@@ -222,7 +206,7 @@ describe("PuterDb", () => {
 
     const db = buildDb({ username: "alice", network: new TestWorkerNetwork() });
     const queryTimes: number[] = [];
-    vi.spyOn(db, "query").mockImplementation(async () => {
+    spyOnInternalQuery(db).mockImplementation(async () => {
       queryTimes.push(Date.now());
       return Date.now() >= Date.parse("2026-03-13T00:01:15.000Z")
         ? [buildWatchRow("task_2", "Review PR")] as never
@@ -236,9 +220,7 @@ describe("PuterDb", () => {
         owner: "alice",
         workerUrl: "https://worker.example/rooms/project_1",
       },
-    }, {
-      onChange() {},
-    });
+    }, { onChange() {} });
 
     await flushMicrotasks();
     await vi.advanceTimersByTimeAsync(75_000);
@@ -260,11 +242,9 @@ describe("PuterDb", () => {
 
     const db = buildDb({ username: "alice", network: new TestWorkerNetwork() });
     let callCount = 0;
-    vi.spyOn(db, "query").mockImplementation(async () => {
+    spyOnInternalQuery(db).mockImplementation(async () => {
       callCount += 1;
-      if (callCount === 1) {
-        throw new Error("boom");
-      }
+      if (callCount === 1) throw new Error("boom");
       return [buildWatchRow("task_1", "Ship v2")] as never;
     });
 
@@ -278,12 +258,8 @@ describe("PuterDb", () => {
         workerUrl: "https://worker.example/rooms/project_1",
       },
     }, {
-      onChange: (rows) => {
-        changes.push(rows.map((row) => row.id).join(","));
-      },
-      onError: (error) => {
-        errors.push((error as Error).message);
-      },
+      onChange: (rows) => { changes.push(rows.map((row) => row.id).join(",")); },
+      onError: (error) => { errors.push((error as Error).message); },
     });
 
     await flushMicrotasks();
@@ -302,7 +278,7 @@ describe("PuterDb", () => {
 
     const db = buildDb({ username: "alice", network: new TestWorkerNetwork() });
     const queryTimes: number[] = [];
-    vi.spyOn(db, "query").mockImplementation(async () => {
+    spyOnInternalQuery(db).mockImplementation(async () => {
       queryTimes.push(Date.now());
       return [buildWatchRow("task_1", "Ship v2")] as never;
     });
@@ -314,9 +290,7 @@ describe("PuterDb", () => {
         owner: "alice",
         workerUrl: "https://worker.example/rooms/project_1",
       },
-    }, {
-      onChange() {},
-    });
+    }, { onChange() {} });
 
     await flushMicrotasks();
     await vi.advanceTimersByTimeAsync(74_000);

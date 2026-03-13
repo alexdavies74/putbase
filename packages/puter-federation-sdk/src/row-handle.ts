@@ -1,5 +1,5 @@
-import type { JsonValue } from "../types";
-import type { DbMemberInfo, DbRowRef, MemberRole } from "./types";
+import type { CrdtConnectCallbacks, CrdtConnection, JsonValue } from "./types";
+import type { DbMemberInfo, DbRowRef, MemberRole } from "./schema";
 
 export interface RowHandleBackend {
   addParent(child: DbRowRef, parent: DbRowRef): Promise<void>;
@@ -10,6 +10,8 @@ export interface RowHandleBackend {
   listDirectMembers(row: DbRowRef): Promise<Array<{ username: string; role: MemberRole }>>;
   listEffectiveMembers(row: DbRowRef): Promise<DbMemberInfo[]>;
   refreshFields(row: DbRowRef): Promise<Record<string, JsonValue>>;
+  connectCrdt(row: DbRowRef, callbacks: CrdtConnectCallbacks): CrdtConnection;
+  listMembers(row: DbRowRef): Promise<string[]>;
 }
 
 export class RowHandle {
@@ -34,6 +36,7 @@ export class RowHandle {
     remove: (username: string) => Promise<void>;
     list: () => Promise<Array<{ username: string; role: MemberRole }>>;
     effective: () => Promise<DbMemberInfo[]>;
+    listAll: () => Promise<string[]>;
   };
 
   constructor(
@@ -66,7 +69,12 @@ export class RowHandle {
       },
       list: async () => this.backend.listDirectMembers(this.toRef()),
       effective: async () => this.backend.listEffectiveMembers(this.toRef()),
+      listAll: async () => this.backend.listMembers(this.toRef()),
     };
+  }
+
+  connectCrdt(callbacks: CrdtConnectCallbacks): CrdtConnection {
+    return this.backend.connectCrdt(this.toRef(), callbacks);
   }
 
   async refresh(): Promise<this> {

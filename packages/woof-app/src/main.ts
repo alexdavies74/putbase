@@ -1,6 +1,6 @@
 import { puter } from "@heyputer/puter.js";
 import * as Y from "yjs";
-import { PuterDb, PuterFedError, PuterFedRooms, type DbQueryWatchHandle } from "puter-federation-sdk";
+import { PutBase, PuterFedError, type DbQueryWatchHandle } from "puter-federation-sdk";
 
 import type { DogProfile } from "./profile";
 import { WoofService, type ChatEntry } from "./service";
@@ -14,14 +14,15 @@ const app = appElement as HTMLDivElement;
 const doc = new Y.Doc();
 const chatArray = doc.getArray<ChatEntry>("messages");
 
-const rooms = new PuterFedRooms({
+const db = new PutBase({
   appBaseUrl: window.location.origin,
   puter,
-});
-const db = new PuterDb({
-  rooms,
-  puter,
   schema: {
+    dogs: {
+      fields: {
+        name: { type: "string" },
+      },
+    },
     tags: {
       in: ["dogs"],
       fields: {
@@ -35,7 +36,7 @@ const db = new PuterDb({
     },
   },
 });
-const service = new WoofService(rooms, puter.kv, doc, db);
+const service = new WoofService(db, puter.kv, doc);
 
 let currentProfile: DogProfile | null = null;
 let currentUsername: string | null = null;
@@ -43,8 +44,8 @@ let tagsWatcher: DbQueryWatchHandle | null = null;
 
 async function boot() {
   try {
-    await rooms.init();
-    const me = await rooms.whoAmI();
+    await db.init();
+    const me = await db.whoAmI();
     currentUsername = me.username;
   } catch (error) {
     console.error("[woof-app] boot/init failed", error);
@@ -152,10 +153,11 @@ function renderSetup(initialError = "") {
 
 async function renderChat(profile: DogProfile) {
   clearTagsWatcher();
+  const dogName = String(profile.row.fields.name ?? "");
 
   app.innerHTML = `
     <section class="panel">
-      <h1>${escapeHtml(profile.room.name)}'s Room</h1>
+      <h1>${escapeHtml(dogName)}'s Room</h1>
       <div class="toolbar">
         <button id="copy-link" class="secondary" type="button">Copy link</button>
         <button id="relinquish" class="secondary" type="button">Relinquish Dog</button>
@@ -191,7 +193,7 @@ async function renderChat(profile: DogProfile) {
   const copyButton = document.getElementById("copy-link") as HTMLButtonElement;
 
   try {
-    const inviteLink = await service.generateInviteLink(profile.room);
+    const inviteLink = await service.generateInviteLink(profile.row);
     inviteLinkElement.href = inviteLink;
     inviteLinkElement.textContent = inviteLink;
     inviteStatus.textContent = "";
@@ -224,7 +226,7 @@ async function renderChat(profile: DogProfile) {
   const tagError = document.getElementById("tag-error") as HTMLParagraphElement;
 
   const renderTags = (tags: Awaited<ReturnType<typeof service.listTags>>) => {
-    if (currentProfile?.room.id !== profile.room.id) {
+    if (currentProfile?.row.id !== profile.row.id) {
       return;
     }
 
@@ -264,7 +266,7 @@ async function renderChat(profile: DogProfile) {
   tagsWatcher = service.watchTags(profile, {
     onChange: renderTags,
     onError: (error) => {
-      if (currentProfile?.room.id !== profile.room.id) {
+      if (currentProfile?.row.id !== profile.row.id) {
         return;
       }
       tagError.textContent = getErrorMessage(error, "Failed to load tags.");
@@ -317,7 +319,7 @@ async function renderChat(profile: DogProfile) {
     } catch (error) {
       console.error("[woof-app] sendTurn failed", {
         error,
-        roomId: currentProfile.room.id,
+        rowId: currentProfile.row.id,
       });
       chatError.textContent = getErrorMessage(error, "Failed to send message.");
     }
@@ -339,7 +341,7 @@ function renderFromDoc(profile: DogProfile) {
     return;
   }
 
-  const dogLabel = profile.room.name;
+  const dogLabel = String(profile.row.fields.name ?? "");
   const myUsername = currentUsername;
 
   const entries = chatArray.toArray().filter(

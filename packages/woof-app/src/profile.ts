@@ -1,8 +1,8 @@
 import type { KV } from "@heyputer/puter.js";
-import type { Room } from "puter-federation-sdk";
+import type { RowHandle } from "puter-federation-sdk";
 
 export interface DogProfile {
-  room: Room;
+  row: RowHandle;
 }
 
 const PROFILE_KEY = "woof:myDog";
@@ -19,8 +19,8 @@ export async function loadStoredWorkerUrl(kv: KvLike): Promise<string | null> {
   return workerUrl || null;
 }
 
-export async function saveStoredWorkerUrl(room: Pick<Room, "workerUrl">, kv: KvLike): Promise<void> {
-  await kv.set(PROFILE_KEY, room.workerUrl);
+export async function saveStoredWorkerUrl(row: Pick<RowHandle, "workerUrl">, kv: KvLike): Promise<void> {
+  await kv.set(PROFILE_KEY, row.workerUrl);
 }
 
 export async function clearProfile(kv: KvLike): Promise<void> {

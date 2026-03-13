@@ -1,4 +1,4 @@
-import { encodeCompositeFieldValues } from "../db/key-encoding";
+import { encodeCompositeFieldValues } from "../key-encoding";
 import type {
   ApiError,
   InviteToken,
