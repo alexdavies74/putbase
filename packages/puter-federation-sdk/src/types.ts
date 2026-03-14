@@ -21,7 +21,6 @@ export type ErrorCode =
 export interface ApiError {
   code: ErrorCode;
   message: string;
-  logs?: string[];
 }
 
 export interface RoomUser {

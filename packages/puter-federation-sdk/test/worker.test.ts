@@ -802,14 +802,7 @@ describe("RoomWorker", () => {
       username: "alice",
     });
     expect(childFieldsWithLocalOnlyExec.status).toBe(401);
-    expect((await jsonBody(childFieldsWithLocalOnlyExec))).toMatchObject({
-      message: "Members only",
-      logs: expect.arrayContaining([
-        expect.stringContaining("fields room=tag_1 requester=alice"),
-        expect.stringContaining("resolve-member-role room=tag_1 username=alice"),
-        expect.stringContaining("resolve-member-role parent status=503 room=tag_1 parent=dog_1"),
-      ]),
-    });
+    expect((await jsonBody(childFieldsWithLocalOnlyExec)).message).toBe("Members only");
 
     const childFieldsWithFullExec = await run("full", {
       url: roomEndpoint("tag_1", "fields").replace("https://worker.example", bobBase),

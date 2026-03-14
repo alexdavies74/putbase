@@ -85,8 +85,6 @@ export class Transport {
       .json()
       .catch((): unknown => ({ code: "BAD_REQUEST", message: response.statusText }));
 
-    this.logWorkerTrace(url, response.status, payload);
-
     if (!response.ok) {
       throw new PutBaseError(toApiError(payload), response.status);
     }
@@ -123,26 +121,4 @@ export class Transport {
     const random = crypto.randomUUID().replace(/-/g, "");
     return `${prefix}_${random}`;
   }
-
-  private logWorkerTrace(url: string, status: number, payload: unknown): void {
-    const logs = extractLogs(payload);
-    if (!logs || logs.length === 0) {
-      return;
-    }
-
-    console.info(`[putbase] worker trace ${status} ${url}`, logs);
-  }
-}
-
-function extractLogs(payload: unknown): string[] | null {
-  if (!payload || typeof payload !== "object" || !("logs" in payload)) {
-    return null;
-  }
-
-  const candidate = (payload as { logs?: unknown }).logs;
-  if (!Array.isArray(candidate)) {
-    return null;
-  }
-
-  return candidate.filter((entry): entry is string => typeof entry === "string");
 }

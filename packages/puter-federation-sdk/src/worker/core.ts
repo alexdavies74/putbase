@@ -162,25 +162,18 @@ const CORS_PREFLIGHT_HEADERS = {
 
 const DEFAULT_PARENT_ROOM_TTL = 5;
 const MAX_QUERY_LIMIT = 200;
-const MAX_DEBUG_LOG_LINES = 80;
 
-function jsonResponse(status: number, body: unknown, ctx?: WorkerRequestContext): Response {
-  return new Response(JSON.stringify(withDebugLogs(body, ctx)), {
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
     status,
     headers: CORS_HEADERS,
   });
 }
 
-function error(
-  status: number,
-  code: ApiError["code"],
-  message: string,
-  ctx?: WorkerRequestContext,
-): never {
+function error(status: number, code: ApiError["code"], message: string): never {
   throw new WorkerApiError(status, {
     code,
     message,
-    ...(ctx?.logs?.length ? { logs: [...ctx.logs] } : {}),
   });
 }
 
@@ -491,51 +484,6 @@ type WorkersExec = (url: string, init?: RequestInit) => Promise<Response>;
 
 interface WorkerRequestContext {
   workersExec?: WorkersExec;
-  logs?: string[];
-}
-
-function appendDebugLog(ctx: WorkerRequestContext | undefined, message: string): void {
-  if (!ctx) {
-    return;
-  }
-
-  const logs = ctx.logs ?? (ctx.logs = []);
-  if (logs.length >= MAX_DEBUG_LOG_LINES) {
-    if (logs.length === MAX_DEBUG_LOG_LINES) {
-      logs.push("... trace truncated ...");
-    }
-    return;
-  }
-
-  logs.push(message);
-}
-
-function withDebugLogs<T>(body: T, ctx?: WorkerRequestContext): T | (T & { logs: string[] }) {
-  if (!ctx?.logs?.length || body === null || typeof body !== "object" || Array.isArray(body)) {
-    return body;
-  }
-
-  return {
-    ...(body as Record<string, unknown>),
-    logs: [...ctx.logs],
-  } as T & { logs: string[] };
-}
-
-function appendNestedLogs(ctx: WorkerRequestContext, payload: unknown): void {
-  if (!payload || typeof payload !== "object" || !("logs" in payload)) {
-    return;
-  }
-
-  const nested = (payload as { logs?: unknown }).logs;
-  if (!Array.isArray(nested)) {
-    return;
-  }
-
-  for (const entry of nested) {
-    if (typeof entry === "string") {
-      appendDebugLog(ctx, `[nested] ${entry}`);
-    }
-  }
 }
 
 export class RoomWorker {
@@ -661,18 +609,17 @@ export class RoomWorker {
       return jsonResponse(404, {
         code: "BAD_REQUEST",
         message: "Endpoint not found",
-      }, ctx);
+      });
     } catch (err) {
       if (err instanceof WorkerApiError) {
-        return jsonResponse(err.status, err.apiError, ctx);
+        return jsonResponse(err.status, err.apiError);
       }
 
       const message = err instanceof Error ? err.message : "Unknown server error";
-      appendDebugLog(ctx, `unexpected error: ${message}`);
       return jsonResponse(500, {
         code: "BAD_REQUEST",
         message,
-      }, ctx);
+      });
     }
   }
 
@@ -889,14 +836,12 @@ export class RoomWorker {
       new URL(request.url).searchParams.get("ttl"),
       DEFAULT_PARENT_ROOM_TTL,
     );
-    appendDebugLog(ctx, `member-role room=${roomId} requester=${requester} ttl=${ttl}`);
     const role = await this.resolveMemberRole(roomId, requester, ctx, ttl);
     if (!role) {
-      error(401, "UNAUTHORIZED", "Members only", ctx);
+      error(401, "UNAUTHORIZED", "Members only");
     }
 
-    appendDebugLog(ctx, `member-role result room=${roomId} requester=${requester} role=${role}`);
-    return jsonResponse(200, { role }, ctx);
+    return jsonResponse(200, { role });
   }
 
   private async getFields(
@@ -905,15 +850,13 @@ export class RoomWorker {
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const requester = requesterFromHeader(request);
-    appendDebugLog(ctx, `fields room=${roomId} requester=${requester}`);
     await this.assertMember(roomId, requester, ctx);
-    appendDebugLog(ctx, `fields authorized room=${roomId} requester=${requester}`);
 
     const response: GetFieldsResponse = {
       fields: await this.getRowFields(roomId),
       collection: await this.getRowCollection(roomId),
     };
-    return jsonResponse(200, response, ctx);
+    return jsonResponse(200, response);
   }
 
   private async postFields(
@@ -1290,7 +1233,6 @@ export class RoomWorker {
       new URL(request.url).searchParams.get("ttl"),
       DEFAULT_PARENT_ROOM_TTL,
     );
-    appendDebugLog(ctx, `members-effective room=${roomId} requester=${requester} ttl=${ttl}`);
     await this.assertMember(roomId, requester, ctx, ttl);
 
     const members = new Map<string, EffectiveMember>();
@@ -1307,10 +1249,8 @@ export class RoomWorker {
 
     if (ttl > 0 && ctx.workersExec) {
       const parentRefs = await this.getParentRefs(roomId);
-      appendDebugLog(ctx, `members-effective room=${roomId} parentRefs=${parentRefs.length}`);
       await Promise.all(parentRefs.map(async (parentRef) => {
         try {
-          appendDebugLog(ctx, `members-effective parent room=${roomId} -> ${parentRef.workerUrl}`);
           const response = await ctx.workersExec!(
             `${stripTrailingSlash(parentRef.workerUrl)}/members-effective?ttl=${ttl - 1}`,
             {
@@ -1320,9 +1260,7 @@ export class RoomWorker {
               },
             },
           );
-          appendDebugLog(ctx, `members-effective parent status=${response.status} room=${roomId} parent=${parentRef.id}`);
-          const payload = await response.json().catch(() => null) as { members?: EffectiveMember[]; logs?: string[] } | null;
-          appendNestedLogs(ctx, payload);
+          const payload = await response.json().catch(() => null) as { members?: EffectiveMember[] } | null;
           if (!response.ok) {
             return;
           }
@@ -1337,18 +1275,15 @@ export class RoomWorker {
               });
             }
           }
-        } catch (error) {
-          appendDebugLog(
-            ctx,
-            `members-effective parent failure room=${roomId} parent=${parentRef.id} error=${error instanceof Error ? error.message : String(error)}`,
-          );
+        } catch {
+          // best effort only
         }
       }));
     }
 
     return jsonResponse(200, {
       members: Array.from(members.values()),
-    }, ctx);
+    });
   }
 
   private async queryByIndex(
@@ -1540,7 +1475,7 @@ export class RoomWorker {
   ): Promise<void> {
     const role = await this.resolveMemberRole(roomId, username, ctx, ttl);
     if (!role) {
-      error(401, "UNAUTHORIZED", "Members only", ctx);
+      error(401, "UNAUTHORIZED", "Members only");
     }
   }
 
@@ -1561,14 +1496,14 @@ export class RoomWorker {
   ): Promise<void> {
     const role = await this.resolveMemberRole(roomId, username, ctx);
     if (role !== "admin" && role !== "writer") {
-      error(401, "UNAUTHORIZED", "Writers or admins only", ctx);
+      error(401, "UNAUTHORIZED", "Writers or admins only");
     }
   }
 
   private async assertAdmin(roomId: string, username: string, ctx: WorkerRequestContext): Promise<void> {
     const role = await this.resolveMemberRole(roomId, username, ctx);
     if (role !== "admin") {
-      error(401, "UNAUTHORIZED", "Admins only", ctx);
+      error(401, "UNAUTHORIZED", "Admins only");
     }
   }
 
@@ -1579,27 +1514,19 @@ export class RoomWorker {
     ttl: number = DEFAULT_PARENT_ROOM_TTL,
   ): Promise<MemberRole | null> {
     let bestRole = await this.getDirectRole(roomId, username);
-    appendDebugLog(ctx, `resolve-member-role room=${roomId} username=${username} ttl=${ttl} direct=${bestRole ?? "none"}`);
 
     if (ttl === 0 || !ctx.workersExec) {
-      appendDebugLog(
-        ctx,
-        `resolve-member-role room=${roomId} username=${username} stop=${ttl === 0 ? "ttl-exhausted" : "no-workers-exec"} result=${bestRole ?? "none"}`,
-      );
       return bestRole;
     }
 
     const parentRefs = await this.getParentRefs(roomId);
     if (parentRefs.length === 0) {
-      appendDebugLog(ctx, `resolve-member-role room=${roomId} username=${username} parentRefs=0 result=${bestRole ?? "none"}`);
       return bestRole;
     }
-    appendDebugLog(ctx, `resolve-member-role room=${roomId} username=${username} parentRefs=${parentRefs.length}`);
 
     const parentRoles = await Promise.all(
       parentRefs.map(async (parentRef): Promise<MemberRole | null> => {
         try {
-          appendDebugLog(ctx, `resolve-member-role parent room=${roomId} -> ${parentRef.workerUrl} ttl=${ttl - 1}`);
           const response = await ctx.workersExec!(
             `${stripTrailingSlash(parentRef.workerUrl)}/member-role?ttl=${ttl - 1}`,
             {
@@ -1609,9 +1536,7 @@ export class RoomWorker {
               },
             },
           );
-          appendDebugLog(ctx, `resolve-member-role parent status=${response.status} room=${roomId} parent=${parentRef.id}`);
-          const payload = await response.json().catch(() => null) as { role?: MemberRole; logs?: string[] } | null;
-          appendNestedLogs(ctx, payload);
+          const payload = await response.json().catch(() => null) as { role?: MemberRole } | null;
 
           if (!response.ok) {
             return null;
@@ -1622,17 +1547,11 @@ export class RoomWorker {
             || payload?.role === "writer"
             || payload?.role === "reader"
           ) {
-            appendDebugLog(ctx, `resolve-member-role parent result room=${roomId} parent=${parentRef.id} role=${payload.role}`);
             return payload.role;
           }
 
-          appendDebugLog(ctx, `resolve-member-role parent result room=${roomId} parent=${parentRef.id} role=none`);
           return null;
-        } catch (error) {
-          appendDebugLog(
-            ctx,
-            `resolve-member-role parent failure room=${roomId} parent=${parentRef.id} error=${error instanceof Error ? error.message : String(error)}`,
-          );
+        } catch {
           return null;
         }
       }),
@@ -1641,7 +1560,6 @@ export class RoomWorker {
     for (const parentRole of parentRoles) {
       bestRole = maxRole(bestRole, parentRole);
     }
-    appendDebugLog(ctx, `resolve-member-role room=${roomId} username=${username} final=${bestRole ?? "none"}`);
 
     return bestRole;
   }

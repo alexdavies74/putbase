@@ -7,7 +7,7 @@ import { stripTrailingSlash } from "./transport";
 import type { BackendClient, DeployWorkerArgs } from "./types";
 
 const FEDERATION_WORKER_ROOM_SENTINEL = "bootstrap";
-const FEDERATION_WORKER_VERSION = 21;
+const FEDERATION_WORKER_VERSION = 22;
 const FEDERATION_WORKER_VERSION_KV_PREFIX = "puter-fed:federation-worker-version:v2";
 const FEDERATION_WORKER_URL_KV_PREFIX = "puter-fed:federation-worker-url:v2";
 const sharedFederationWorkerPromises = new Map<string, Promise<string>>();
