@@ -2,8 +2,6 @@ import * as Y from "yjs";
 import type {
   CrdtConnectCallbacks,
   CrdtConnection,
-  DbQueryWatchHandle,
-  InviteToken,
   ParsedInviteInput,
   RoomUser,
 } from "puter-federation-sdk";
@@ -27,18 +25,6 @@ type DogRowRef = {
   owner: string;
   workerUrl: string;
 };
-
-interface TagQueryOptions {
-  in: DogRowRef;
-  index: "byCreatedAt";
-  order: "asc";
-  limit: 100;
-}
-
-interface TagWatchCallbacks {
-  onChange(rows: TagRowPort[]): void;
-  onError?(error: unknown): void;
-}
 
 interface ResolvedWoofRowPort {
   collection: string;
@@ -70,11 +56,6 @@ export interface WoofDbPort {
   getRowByUrl(workerUrl: string): Promise<ResolvedWoofRowPort>;
   parseInviteInput(input: string): ParsedInviteInput;
   joinRow(workerUrl: string, options?: { inviteToken?: string }): Promise<ResolvedWoofRowPort>;
-  query(collection: "tags", options: TagQueryOptions): Promise<TagRowPort[]>;
-  watchQuery(collection: "tags", options: TagQueryOptions, callbacks: TagWatchCallbacks): DbQueryWatchHandle;
-  getExistingInviteToken(row: DogRowPort): Promise<InviteToken | null>;
-  createInviteToken(row: DogRowPort): Promise<InviteToken>;
-  createInviteLink(row: Pick<DogRowPort, "workerUrl">, inviteToken: string): string;
   listMembers(row: DogRowPort): Promise<string[]>;
 }
 
@@ -85,18 +66,6 @@ export interface ChatEntry {
   threadUser: string | null;
   createdAt: number;
   signedBy: string;
-}
-
-export interface DogTag {
-  id: string;
-  label: string;
-  createdBy: string | null;
-  createdAt: number | null;
-}
-
-export interface WatchTagsCallbacks {
-  onChange(tags: DogTag[]): void;
-  onError?(error: unknown): void;
 }
 
 function encodeUpdate(update: Uint8Array): { type: string; data: string } {
@@ -192,12 +161,6 @@ export class WoofService {
     }
   }
 
-  async generateInviteLink(row: DogRowPort): Promise<string> {
-    const existing = await this.db.getExistingInviteToken(row);
-    const invite = existing ?? await this.db.createInviteToken(row);
-    return this.db.createInviteLink(row, invite.token);
-  }
-
   connectToRoom(profile: DogProfile): void {
     this.connection?.disconnect();
     this.connection = profile.row.connectCrdt({
@@ -213,6 +176,11 @@ export class WoofService {
         return update ? encodeUpdate(update) : null;
       },
     });
+  }
+
+  disconnectRoom(): void {
+    this.connection?.disconnect();
+    this.connection = null;
   }
 
   async sendTurn(profile: DogProfile, content: string, puterAI?: PuterAI): Promise<void> {
@@ -260,55 +228,6 @@ export class WoofService {
     await this.connection?.flush();
   }
 
-  async listTags(profile: DogProfile): Promise<DogTag[]> {
-    const rows = await this.db.query("tags", {
-      in: profile.row.toRef(),
-      index: "byCreatedAt",
-      order: "asc",
-      limit: 100,
-    });
-
-    return this.mapTags(rows);
-  }
-
-  watchTags(profile: DogProfile, callbacks: WatchTagsCallbacks): DbQueryWatchHandle {
-    return this.db.watchQuery("tags", {
-      in: profile.row.toRef(),
-      index: "byCreatedAt",
-      order: "asc",
-      limit: 100,
-    }, {
-      onChange: (rows) => {
-        callbacks.onChange(this.mapTags(rows));
-      },
-      onError: callbacks.onError,
-    });
-  }
-
-  private mapTags(rows: TagRowPort[]): DogTag[] {
-    return rows
-      .map((row) => {
-        const label = typeof row.fields.label === "string"
-          ? row.fields.label.trim()
-          : "";
-        if (!label) {
-          return null;
-        }
-
-        return {
-          id: row.id,
-          label,
-          createdBy: typeof row.fields.createdBy === "string"
-            ? row.fields.createdBy
-            : null,
-          createdAt: typeof row.fields.createdAt === "number"
-            ? row.fields.createdAt
-            : null,
-        } satisfies DogTag;
-      })
-      .filter((row): row is DogTag => row !== null);
-  }
-
   async createTag(profile: DogProfile, label: string): Promise<void> {
     const trimmed = label.trim();
     if (!trimmed) {
@@ -334,8 +253,7 @@ export class WoofService {
   }
 
   async relinquish(): Promise<void> {
-    this.connection?.disconnect();
-    this.connection = null;
+    this.disconnectRoom();
     await clearProfile(this.kv);
   }
 
@@ -364,7 +282,6 @@ export class WoofService {
 
     try {
       const response = await args.puterAI.chat(buildDogPrompt(args));
-      console.log({response});
 
       const extracted = extractAIText(response);
       if (extracted) {
@@ -442,8 +359,6 @@ function buildDogPrompt(args: {
       };
     }),
   ];
-
-  console.log({promptPieces});
 
   return promptPieces;
 }

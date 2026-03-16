@@ -4,8 +4,6 @@ import * as Y from "yjs";
 import type {
   CrdtConnectCallbacks,
   CrdtConnection,
-  DbQueryWatchHandle,
-  InviteToken,
 } from "puter-federation-sdk";
 import type { ChatMessage } from "@heyputer/puter.js";
 
@@ -42,10 +40,6 @@ class MockDb implements WoofDbPort {
     fields: Record<string, unknown>;
     options?: { in?: ReturnType<DogRowPort["toRef"]> };
   }> = [];
-
-  public queryRows: MockRow[] = [];
-  public refreshCalls = 0;
-  public disconnectCalls = 0;
 
   private makeDogRow(id: string, fields: Record<string, unknown>): DogRowPort {
     const workerUrl = `https://workers.puter.site/alex/rooms/${id}`;
@@ -137,43 +131,6 @@ class MockDb implements WoofDbPort {
     return this.makeDogRow("row_joined", { name: "Joined" });
   }
 
-  async query(_collection: "tags", _options: Parameters<WoofDbPort["query"]>[1]): Promise<TagRowPort[]> {
-    return this.queryRows.map((row) =>
-      this.makeTagRow(row.id, row.fields),
-    );
-  }
-
-  watchQuery(
-    _collection: "tags",
-    _options: Parameters<WoofDbPort["watchQuery"]>[1],
-    callbacks: Parameters<WoofDbPort["watchQuery"]>[2],
-  ): DbQueryWatchHandle {
-    callbacks.onChange(
-      this.queryRows.map((row) => this.makeTagRow(row.id, row.fields)),
-    );
-    return {
-      disconnect: () => { this.disconnectCalls += 1; },
-      refresh: async () => {
-        this.refreshCalls += 1;
-        callbacks.onChange(
-          this.queryRows.map((row) => this.makeTagRow(row.id, row.fields)),
-        );
-      },
-    };
-  }
-
-  async getExistingInviteToken(_row: DogRowPort): Promise<InviteToken | null> {
-    return null;
-  }
-
-  async createInviteToken(row: DogRowPort): Promise<InviteToken> {
-    return { token: "invite_1", roomId: row.id, invitedBy: row.owner, createdAt: 1 };
-  }
-
-  createInviteLink(row: Pick<DogRowPort, "workerUrl">, inviteToken: string): string {
-    return `https://woof.example/?worker=${encodeURIComponent(row.workerUrl)}&token=${inviteToken}`;
-  }
-
   async listMembers(_row: DogRowPort): Promise<string[]> {
     return this.memberList;
   }
@@ -235,60 +192,6 @@ describe("WoofService", () => {
       owner: profile.row.owner,
       workerUrl: profile.row.workerUrl,
     });
-  });
-
-  it("loads tags from DB rows", async () => {
-    const db = new MockDb();
-    db.queryRows = [
-      { id: "tag_1", fields: { label: "playful", createdBy: "alex", createdAt: 100 } },
-      { id: "tag_2", fields: { label: "" } },
-    ];
-
-    const service = new WoofService(db, new MockKv(), new Y.Doc());
-    const profile = await service.enterChat({ dogName: "Rex" });
-    const tags = await service.listTags(profile);
-
-    expect(tags).toHaveLength(1);
-    expect(tags[0]).toMatchObject({ id: "tag_1", label: "playful", createdBy: "alex", createdAt: 100 });
-  });
-
-  it("watches tags and maps DB rows", async () => {
-    const db = new MockDb();
-    db.queryRows = [
-      { id: "tag_1", fields: { label: "playful", createdBy: "alex", createdAt: 100 } },
-      { id: "tag_2", fields: { label: " " } },
-    ];
-
-    const service = new WoofService(db, new MockKv(), new Y.Doc());
-    const profile = await service.enterChat({ dogName: "Rex" });
-    const updates: Array<Array<{ id: string; label: string }>> = [];
-
-    service.watchTags(profile, {
-      onChange: (tags) => {
-        updates.push(tags.map((tag) => ({ id: tag.id, label: tag.label })));
-      },
-    });
-
-    expect(updates).toEqual([[{ id: "tag_1", label: "playful" }]]);
-  });
-
-  it("supports refreshing and disconnecting tag watches after tag creation", async () => {
-    const db = new MockDb();
-    db.queryRows = [
-      { id: "tag_1", fields: { label: "friendly", createdBy: "alex", createdAt: 100 } },
-    ];
-
-    const service = new WoofService(db, new MockKv(), new Y.Doc());
-    const profile = await service.enterChat({ dogName: "Rex" });
-    const watcher = service.watchTags(profile, { onChange() {} });
-
-    await service.createTag(profile, "friendly");
-    await watcher.refresh();
-    watcher.disconnect();
-
-    expect(db.putCalls.some((c) => c.collection === "tags")).toBe(true);
-    expect(db.refreshCalls).toBe(1);
-    expect(db.disconnectCalls).toBe(1);
   });
 
   it("refreshes saved profile with canonical row fields", async () => {
