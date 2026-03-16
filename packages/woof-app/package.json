@@ -13,7 +13,7 @@
   "dependencies": {
     "@heyputer/puter.js": "^2.2.11",
     "@putbase/react": "workspace:*",
-    "puter-federation-sdk": "workspace:*",
+    "@putbase/core": "workspace:*",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "yjs": "^13.6.0"

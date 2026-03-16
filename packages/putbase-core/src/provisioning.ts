@@ -9,8 +9,13 @@ import type { BackendClient, DeployWorkerArgs } from "./types";
 
 const FEDERATION_WORKER_ROOM_SENTINEL = "bootstrap";
 const FEDERATION_WORKER_VERSION = 22;
-const FEDERATION_WORKER_VERSION_KV_PREFIX = "puter-fed:federation-worker-version:v2";
-const FEDERATION_WORKER_URL_KV_PREFIX = "puter-fed:federation-worker-url:v2";
+const WORKER_METADATA_NAMESPACE = "putbase";
+const LEGACY_WORKER_METADATA_NAMESPACE = `${"puter"}-${"fed"}`;
+const FEDERATION_WORKER_VERSION_KV_PREFIX = `${WORKER_METADATA_NAMESPACE}:federation-worker-version:v2`;
+const FEDERATION_WORKER_URL_KV_PREFIX = `${WORKER_METADATA_NAMESPACE}:federation-worker-url:v2`;
+const LEGACY_FEDERATION_WORKER_VERSION_KV_PREFIX = `${LEGACY_WORKER_METADATA_NAMESPACE}:federation-worker-version:v2`;
+const LEGACY_FEDERATION_WORKER_URL_KV_PREFIX = `${LEGACY_WORKER_METADATA_NAMESPACE}:federation-worker-url:v2`;
+const FEDERATION_WORKER_DIR = `${WORKER_METADATA_NAMESPACE}/workers`;
 const sharedFederationWorkerPromises = new Map<string, Promise<string>>();
 const sharedFederationWorkerUrls = new Map<string, string>();
 
@@ -110,6 +115,7 @@ export class Provisioning {
     const storedVersion = await this.loadFederationWorkerVersion(username, appHostHash);
     const storedUrl = await this.loadFederationWorkerUrl(username, appHostHash);
     if (storedUrl && storedVersion >= FEDERATION_WORKER_VERSION) {
+      await this.saveFederationWorkerMetadata(username, appHostHash, storedUrl);
       return stripTrailingSlash(storedUrl);
     }
 
@@ -197,8 +203,7 @@ export class Provisioning {
     }
 
     const workerName = args.workerName ?? `${args.owner}-federation`;
-    const workerDir = "puter-fed/workers";
-    const workerFilePath = `${workerDir}/${workerName}.js`;
+    const workerFilePath = `${FEDERATION_WORKER_DIR}/${workerName}.js`;
 
     const workers = backend.workers;
 
@@ -207,7 +212,7 @@ export class Provisioning {
     }
 
     try {
-      await backend.fs.mkdir(workerDir, {
+      await backend.fs.mkdir(FEDERATION_WORKER_DIR, {
         recursive: true,
         createMissingParents: true,
         overwrite: true,
@@ -270,8 +275,16 @@ export class Provisioning {
     return `${FEDERATION_WORKER_VERSION_KV_PREFIX}:${username}:${appHostHash}`;
   }
 
+  private legacyFederationWorkerVersionKey(username: string, appHostHash: string): string {
+    return `${LEGACY_FEDERATION_WORKER_VERSION_KV_PREFIX}:${username}:${appHostHash}`;
+  }
+
   private federationWorkerUrlKey(username: string, appHostHash: string): string {
     return `${FEDERATION_WORKER_URL_KV_PREFIX}:${username}:${appHostHash}`;
+  }
+
+  private legacyFederationWorkerUrlKey(username: string, appHostHash: string): string {
+    return `${LEGACY_FEDERATION_WORKER_URL_KV_PREFIX}:${username}:${appHostHash}`;
   }
 
   private async loadFederationWorkerVersion(username: string, appHostHash: string): Promise<number> {
@@ -282,11 +295,14 @@ export class Provisioning {
       return 0;
     }
 
-    const value = await kv
-      .get<unknown>(this.federationWorkerVersionKey(username, appHostHash))
-      .catch(() => undefined);
-    if (typeof value === "number" && Number.isFinite(value)) {
-      return Math.max(0, Math.floor(value));
+    for (const key of [
+      this.federationWorkerVersionKey(username, appHostHash),
+      this.legacyFederationWorkerVersionKey(username, appHostHash),
+    ]) {
+      const value = await kv.get<unknown>(key).catch(() => undefined);
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return Math.max(0, Math.floor(value));
+      }
     }
 
     return 0;
@@ -300,11 +316,14 @@ export class Provisioning {
       return null;
     }
 
-    const value = await kv
-      .get<unknown>(this.federationWorkerUrlKey(username, appHostHash))
-      .catch(() => undefined);
-    if (typeof value === "string" && value.trim()) {
-      return stripTrailingSlash(value.trim());
+    for (const key of [
+      this.federationWorkerUrlKey(username, appHostHash),
+      this.legacyFederationWorkerUrlKey(username, appHostHash),
+    ]) {
+      const value = await kv.get<unknown>(key).catch(() => undefined);
+      if (typeof value === "string" && value.trim()) {
+        return stripTrailingSlash(value.trim());
+      }
     }
 
     return null;

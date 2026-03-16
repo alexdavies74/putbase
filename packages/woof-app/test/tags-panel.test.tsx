@@ -3,7 +3,7 @@
 import { act, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
-import { RowHandle, type PutBase } from "puter-federation-sdk";
+import { RowHandle, type PutBase } from "@putbase/core";
 
 import { PutBaseProvider } from "@putbase/react";
 import { TagsPanel } from "../src/tags-panel";

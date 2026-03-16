@@ -1,6 +1,6 @@
 import { puter } from "@heyputer/puter.js";
 import * as Y from "yjs";
-import { PutBase } from "puter-federation-sdk";
+import { PutBase } from "@putbase/core";
 
 import { woofSchema } from "./schema";
 import { WoofService } from "./service";

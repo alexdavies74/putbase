@@ -3,7 +3,7 @@ import type {
   AnyRowHandle,
   CrdtConnection,
   RoomUser,
-} from "puter-federation-sdk";
+} from "@putbase/core";
 import type { AI, ChatMessage, ChatResponse, KV } from "@heyputer/puter.js";
 
 import {

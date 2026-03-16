@@ -5,14 +5,14 @@ import {
   RowHandle,
   CrdtConnectCallbacks,
   CrdtConnection,
-} from "puter-federation-sdk";
+} from "@putbase/core";
 import type {
   DbMemberInfo,
   DbRowLocator,
   DbRowRef,
   MemberRole,
   RowHandleBackend,
-} from "puter-federation-sdk";
+} from "@putbase/core";
 import type { ChatMessage } from "@heyputer/puter.js";
 
 import { loadStoredWorkerUrl } from "../src/profile";

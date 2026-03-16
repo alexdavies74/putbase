@@ -1,10 +1,11 @@
-# puter-fed
+# putbase
 
 Monorepo containing:
-- `packages/puter-federation-sdk`: TypeScript SDK for Puter-backed federated rows, invites, membership, and CRDT sync.
+- `packages/putbase-core`: Core TypeScript SDK for Puter-backed rows, invites, membership, and CRDT sync.
+- `packages/putbase-react`: React bindings for `@putbase/core`.
 - `packages/woof-app`: Vite TypeScript SPA using the SDK.
 
-Start with the SDK docs in [`packages/puter-federation-sdk/README.md`](packages/puter-federation-sdk/README.md) for the current product surface and usage.
+Start with the SDK docs in [`packages/putbase-core/README.md`](packages/putbase-core/README.md) for the current product surface and usage.
 
 ## Quick start
 

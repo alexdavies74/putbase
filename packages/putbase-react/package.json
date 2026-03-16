@@ -21,7 +21,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "puter-federation-sdk": "workspace:*"
+    "@putbase/core": "workspace:*"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0"

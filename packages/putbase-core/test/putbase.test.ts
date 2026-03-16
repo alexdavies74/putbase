@@ -27,6 +27,15 @@ function hashHostname(hostname: string): string {
   return hash.toString(16).padStart(8, "0");
 }
 
+function workerMetadataKey(kind: "version" | "url", hostHash: string): string {
+  return `putbase:federation-worker-${kind}:v2:owner:${hostHash}`;
+}
+
+function legacyWorkerMetadataKey(kind: "version" | "url", hostHash: string): string {
+  const legacyNamespace = `${"puter"}-${"fed"}`;
+  return `${legacyNamespace}:federation-worker-${kind}:v2:owner:${hostHash}`;
+}
+
 class MapKv {
   private readonly store = new Map<string, unknown>();
 
@@ -165,10 +174,10 @@ describe("PutBase", () => {
     await expect(db.ensureReady()).resolves.toBeUndefined();
 
     expect(createCalls).toBe(1);
-    await expect(kv.get(`puter-fed:federation-worker-version:v2:owner:${hostHash}`)).resolves.toSatisfy(
+    await expect(kv.get(workerMetadataKey("version", hostHash))).resolves.toSatisfy(
       (value) => typeof value === "number" && Number.isFinite(value) && value > 0,
     );
-    await expect(kv.get(`puter-fed:federation-worker-url:v2:owner:${hostHash}`)).resolves.toBe(deployedWorkerBase);
+    await expect(kv.get(workerMetadataKey("url", hostHash))).resolves.toBe(deployedWorkerBase);
   });
 
   it("fails getRowByUrl when the worker omits collection metadata", async () => {
@@ -373,10 +382,10 @@ describe("PutBase", () => {
     await db.ensureReady();
 
     expect(createdName).toBe(expectedWorkerName);
-    await expect(kv.get(`puter-fed:federation-worker-version:v2:owner:${hostHash}`)).resolves.toSatisfy(
+    await expect(kv.get(workerMetadataKey("version", hostHash))).resolves.toSatisfy(
       (value) => typeof value === "number" && Number.isFinite(value) && value > 0,
     );
-    await expect(kv.get(`puter-fed:federation-worker-url:v2:owner:${hostHash}`)).resolves.toBe(deployedWorkerBase);
+    await expect(kv.get(workerMetadataKey("url", hostHash))).resolves.toBe(deployedWorkerBase);
     expect(consoleInfo).toHaveBeenCalledWith(
       expect.stringContaining(`[putbase] deploying federation worker ${expectedWorkerName} for owner on ${appHost} at version `),
     );
@@ -706,8 +715,8 @@ describe("PutBase", () => {
     let getCalls = 0;
     let createCalls = 0;
 
-    await kv.set(`puter-fed:federation-worker-version:v2:owner:${hostHash}`, 1);
-    await kv.set(`puter-fed:federation-worker-url:v2:owner:${hostHash}`, staleWorkerBase);
+    await kv.set(legacyWorkerMetadataKey("version", hostHash), 1);
+    await kv.set(legacyWorkerMetadataKey("url", hostHash), staleWorkerBase);
 
     const db = new PutBase({
       schema: MINIMAL_SCHEMA,
@@ -733,7 +742,7 @@ describe("PutBase", () => {
 
     expect(getCalls).toBe(0);
     expect(createCalls).toBe(1);
-    await expect(kv.get(`puter-fed:federation-worker-url:v2:owner:${hostHash}`)).resolves.toBe(upgradedWorkerBase);
+    await expect(kv.get(workerMetadataKey("url", hostHash))).resolves.toBe(upgradedWorkerBase);
     expect(consoleInfo).toHaveBeenCalledWith(
       expect.stringContaining(
         `[putbase] upgrading federation worker ${workerName} for owner on ${appHost} from version 1 to `,

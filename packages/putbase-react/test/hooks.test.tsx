@@ -12,7 +12,7 @@ import {
   type DbMemberInfo,
   type DbRowRef,
   type PutBase,
-} from "puter-federation-sdk";
+} from "@putbase/core";
 
 import {
   PutBaseProvider,

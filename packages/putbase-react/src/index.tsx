@@ -7,7 +7,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type { PutBase } from "puter-federation-sdk";
+import type { PutBase } from "@putbase/core";
 import type {
   AnyRowHandle,
   CollectionName,
@@ -19,8 +19,8 @@ import type {
   MemberRole,
   RowFields,
   RoomUser,
-} from "puter-federation-sdk";
-import type { RowHandle } from "puter-federation-sdk";
+} from "@putbase/core";
+import type { RowHandle } from "@putbase/core";
 
 import type { ActivitySubscriber } from "./polling";
 import {

@@ -6,7 +6,7 @@ import {
   field,
   index,
   type RowFields,
-} from "puter-federation-sdk";
+} from "@putbase/core";
 
 export const woofSchema = defineSchema({
   dogs: collection({

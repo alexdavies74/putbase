@@ -1,11 +1,11 @@
-# puter-federation-sdk
+# @putbase/core
 
-`puter-federation-sdk` is a TypeScript SDK for building backend-compatible collaborative apps around typed rows. It handles worker provisioning, row creation and lookup, parent-child relationships, membership, invite links, and CRDT message sync behind a single `PutBase` client.
+`@putbase/core` is a TypeScript SDK for building backend-compatible collaborative apps around typed rows. It handles worker provisioning, row creation and lookup, parent-child relationships, membership, invite links, and CRDT message sync behind a single `PutBase` client.
 
 ## Install
 
 ```bash
-pnpm add puter-federation-sdk
+pnpm add @putbase/core
 ```
 
 ## Core API
@@ -13,7 +13,7 @@ pnpm add puter-federation-sdk
 Create one `PutBase` instance with your schema, then call `ensureReady()` before relying on provisioned worker-backed operations.
 
 ```ts
-import { PutBase, collection, defineSchema, field, index } from "puter-federation-sdk";
+import { PutBase, collection, defineSchema, field, index } from "@putbase/core";
 import { puter as backend } from "@heyputer/puter.js";
 
 const schema = defineSchema({

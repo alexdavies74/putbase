@@ -1,4 +1,4 @@
-import { PutBaseError } from "puter-federation-sdk";
+import { PutBaseError } from "@putbase/core";
 
 export function getErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof PutBaseError) {

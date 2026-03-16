@@ -1,5 +1,5 @@
 {
-  "name": "puter-fed",
+  "name": "putbase",
   "private": true,
   "packageManager": "pnpm@10.0.0",
   "scripts": {
