@@ -2,15 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import { createPrincipalProof, createRequestProof } from "../src/auth";
 import { exportPublicJwk, generateP256KeyPair } from "../src/crypto";
-import { RoomWorker } from "../src/worker/core";
+import { RowWorker } from "../src/worker/core";
 import { InMemoryKv } from "../src/worker/in-memory-kv";
 
 async function jsonBody(response: Response) {
   return response.json() as Promise<Record<string, unknown>>;
 }
 
-function roomEndpoint(roomId: string, endpoint: string): string {
-  return `https://worker.example/rooms/${encodeURIComponent(roomId)}/${endpoint}`;
+function rowEndpoint(rowId: string, endpoint: string): string {
+  return `https://worker.example/rows/${encodeURIComponent(rowId)}/${endpoint}`;
 }
 
 const signerState = new Map<string, Promise<{ keyPair: CryptoKeyPair; publicKeyJwk: JsonWebKey }>>();
@@ -34,7 +34,7 @@ async function authedRequest(args: {
   url: string;
   username: string;
   action: string;
-  roomId: string;
+  rowId: string;
   body?: object;
 }): Promise<Request> {
   const signer = await getSigner(args.username);
@@ -45,7 +45,7 @@ async function authedRequest(args: {
   });
   const requestProof = await createRequestProof({
     action: args.action,
-    roomId: args.roomId,
+    rowId: args.rowId,
     payload: args.body ?? {},
     principal,
     privateKey: signer.keyPair.privateKey,
@@ -66,16 +66,16 @@ async function authedRequest(args: {
   });
 }
 
-async function createRoom(worker: RoomWorker, roomId: string, roomName = "Rex"): Promise<Response> {
+async function createRow(worker: RowWorker, rowId: string, rowName = "Rex"): Promise<Response> {
   return worker.handle(
     await authedRequest({
-      url: "https://worker.example/rooms",
+      url: "https://worker.example/rows",
       username: "owner",
-      action: "rooms/create",
-      roomId,
+      action: "rows/create",
+      rowId,
       body: {
-        roomId,
-        roomName,
+        rowId,
+        rowName,
       },
     }),
   );
@@ -91,9 +91,9 @@ class CountingKv extends InMemoryKv {
 }
 
 class WorkerNetwork {
-  private readonly workers = new Map<string, RoomWorker>();
+  private readonly workers = new Map<string, RowWorker>();
 
-  register(baseUrl: string, worker: RoomWorker): void {
+  register(baseUrl: string, worker: RowWorker): void {
     this.workers.set(baseUrl.replace(/\/+$/g, ""), worker);
   }
 
@@ -146,9 +146,9 @@ class WorkerNetwork {
   }
 }
 
-describe("RoomWorker", () => {
+describe("RowWorker", () => {
   it("enforces invite and members-only reads", async () => {
-    const worker = new RoomWorker(
+    const worker = new RowWorker(
       {
         owner: "owner",
         workerUrl: "https://worker.example",
@@ -156,26 +156,26 @@ describe("RoomWorker", () => {
       { kv: new InMemoryKv() },
     );
 
-    const created = await createRoom(worker, "room_1");
+    const created = await createRow(worker, "row_1");
     expect(created.status).toBe(200);
 
     const ownerJoin = await worker.handle(
       await authedRequest({
-        url: roomEndpoint("room_1", "room/join"),
-        action: "room/join",
-        roomId: "room_1",
+        url: rowEndpoint("row_1", "row/join"),
+        action: "row/join",
+        rowId: "row_1",
         username: "owner",
         body: { username: "owner" },
       }),
     );
     expect(ownerJoin.status).toBe(200);
-    expect((await jsonBody(ownerJoin)).target).toBe("https://worker.example/rooms/room_1");
+    expect((await jsonBody(ownerJoin)).target).toBe("https://worker.example/rows/row_1");
 
     const guestJoinWithoutInvite = await worker.handle(
       await authedRequest({
-        url: roomEndpoint("room_1", "room/join"),
-        action: "room/join",
-        roomId: "room_1",
+        url: rowEndpoint("row_1", "row/join"),
+        action: "row/join",
+        rowId: "row_1",
         username: "guest",
         body: { username: "guest" },
       }),
@@ -186,13 +186,13 @@ describe("RoomWorker", () => {
 
     const inviteResponse = await worker.handle(
       await authedRequest({
-        url: roomEndpoint("room_1", "invite-token/create"),
+        url: rowEndpoint("row_1", "invite-token/create"),
         action: "invite-token/create",
-        roomId: "room_1",
+        rowId: "row_1",
         username: "owner",
         body: {
           token: "invite_1",
-          roomId: "room_1",
+          rowId: "row_1",
           invitedBy: "tampered",
           createdAt: 10,
         },
@@ -202,15 +202,15 @@ describe("RoomWorker", () => {
     expect(inviteResponse.status).toBe(200);
     expect((await jsonBody(inviteResponse)).inviteToken).toMatchObject({
       token: "invite_1",
-      roomId: "room_1",
+      rowId: "row_1",
       invitedBy: "owner",
     });
 
     const guestJoin = await worker.handle(
       await authedRequest({
-        url: roomEndpoint("room_1", "room/join"),
-        action: "room/join",
-        roomId: "room_1",
+        url: rowEndpoint("row_1", "row/join"),
+        action: "row/join",
+        rowId: "row_1",
         username: "guest",
         body: {
           username: "guest",
@@ -223,9 +223,9 @@ describe("RoomWorker", () => {
 
     const outsiderRead = await worker.handle(
       await authedRequest({
-        url: roomEndpoint("room_1", "room/messages"),
-        action: "room/messages",
-        roomId: "room_1",
+        url: rowEndpoint("row_1", "sync/poll"),
+        action: "sync/poll",
+        rowId: "row_1",
         username: "outsider",
         body: { sinceSequence: 0 },
       }),
@@ -235,8 +235,8 @@ describe("RoomWorker", () => {
     expect((await jsonBody(outsiderRead)).code).toBe("UNAUTHORIZED");
   });
 
-  it("requires owner auth for room creation", async () => {
-    const worker = new RoomWorker(
+  it("requires owner auth for row creation", async () => {
+    const worker = new RowWorker(
       {
         owner: "owner",
         workerUrl: "https://worker.example",
@@ -246,13 +246,13 @@ describe("RoomWorker", () => {
 
     const response = await worker.handle(
       await authedRequest({
-        url: "https://worker.example/rooms",
-        action: "rooms/create",
-        roomId: "room_auth",
+        url: "https://worker.example/rows",
+        action: "rows/create",
+        rowId: "row_auth",
         username: "guest",
         body: {
-          roomId: "room_auth",
-          roomName: "Rex",
+          rowId: "row_auth",
+          rowName: "Rex",
         },
       }),
     );
@@ -262,7 +262,7 @@ describe("RoomWorker", () => {
   });
 
   it("rejects join username spoofing", async () => {
-    const worker = new RoomWorker(
+    const worker = new RowWorker(
       {
         owner: "owner",
         workerUrl: "https://worker.example",
@@ -270,13 +270,13 @@ describe("RoomWorker", () => {
       { kv: new InMemoryKv() },
     );
 
-    await createRoom(worker, "room_auth");
+    await createRow(worker, "row_auth");
 
     const spoofedJoin = await worker.handle(
       await authedRequest({
-        url: roomEndpoint("room_auth", "room/join"),
-        action: "room/join",
-        roomId: "room_auth",
+        url: rowEndpoint("row_auth", "row/join"),
+        action: "row/join",
+        rowId: "row_auth",
         username: "owner",
         body: { username: "guest" },
       }),
@@ -286,8 +286,8 @@ describe("RoomWorker", () => {
     expect((await jsonBody(spoofedJoin)).code).toBe("UNAUTHORIZED");
   });
 
-  it("stores canonical parent refs in room snapshots and unlinks by full ref", async () => {
-    const worker = new RoomWorker(
+  it("stores canonical parent refs in row snapshots and unlinks by full ref", async () => {
+    const worker = new RowWorker(
       {
         owner: "owner",
         workerUrl: "https://worker.example",
@@ -295,23 +295,23 @@ describe("RoomWorker", () => {
       { kv: new InMemoryKv() },
     );
 
-    await createRoom(worker, "project_1", "Project");
-    await createRoom(worker, "task_1", "Task");
+    await createRow(worker, "project_1", "Project");
+    await createRow(worker, "task_1", "Task");
 
     await worker.handle(
       await authedRequest({
-        url: roomEndpoint("project_1", "room/join"),
-        action: "room/join",
-        roomId: "project_1",
+        url: rowEndpoint("project_1", "row/join"),
+        action: "row/join",
+        rowId: "project_1",
         username: "owner",
         body: { username: "owner" },
       }),
     );
     await worker.handle(
       await authedRequest({
-        url: roomEndpoint("task_1", "room/join"),
-        action: "room/join",
-        roomId: "task_1",
+        url: rowEndpoint("task_1", "row/join"),
+        action: "row/join",
+        rowId: "task_1",
         username: "owner",
         body: { username: "owner" },
       }),
@@ -319,9 +319,9 @@ describe("RoomWorker", () => {
 
     await worker.handle(
       await authedRequest({
-        url: roomEndpoint("project_1", "fields/set"),
+        url: rowEndpoint("project_1", "fields/set"),
         action: "fields/set",
-        roomId: "project_1",
+        rowId: "project_1",
         username: "owner",
         body: {
           fields: { name: "Project" },
@@ -331,9 +331,9 @@ describe("RoomWorker", () => {
     );
     await worker.handle(
       await authedRequest({
-        url: roomEndpoint("task_1", "fields/set"),
+        url: rowEndpoint("task_1", "fields/set"),
         action: "fields/set",
-        roomId: "task_1",
+        rowId: "task_1",
         username: "owner",
         body: {
           fields: { title: "Task" },
@@ -346,14 +346,14 @@ describe("RoomWorker", () => {
       id: "project_1",
       collection: "projects",
       owner: "owner",
-      target: "https://worker.example/rooms/project_1",
+      target: "https://worker.example/rows/project_1",
     };
 
     const link = await worker.handle(
       await authedRequest({
-        url: roomEndpoint("task_1", "parents/link-parent"),
+        url: rowEndpoint("task_1", "parents/link-parent"),
         action: "parents/link-parent",
-        roomId: "task_1",
+        rowId: "task_1",
         username: "owner",
         body: { parentRef },
       }),
@@ -364,9 +364,9 @@ describe("RoomWorker", () => {
 
     const snapshot = await worker.handle(
       await authedRequest({
-        url: roomEndpoint("task_1", "room/get"),
-        action: "room/get",
-        roomId: "task_1",
+        url: rowEndpoint("task_1", "row/get"),
+        action: "row/get",
+        rowId: "task_1",
         username: "owner",
       }),
     );
@@ -380,9 +380,9 @@ describe("RoomWorker", () => {
 
     const unlink = await worker.handle(
       await authedRequest({
-        url: roomEndpoint("task_1", "parents/unlink-parent"),
+        url: rowEndpoint("task_1", "parents/unlink-parent"),
         action: "parents/unlink-parent",
-        roomId: "task_1",
+        rowId: "task_1",
         username: "owner",
         body: { parentRef },
       }),
@@ -393,7 +393,7 @@ describe("RoomWorker", () => {
   });
 
   it("stamps message sender from authenticated requester", async () => {
-    const worker = new RoomWorker(
+    const worker = new RowWorker(
       {
         owner: "owner",
         workerUrl: "https://worker.example",
@@ -401,13 +401,13 @@ describe("RoomWorker", () => {
       { kv: new InMemoryKv() },
     );
 
-    await createRoom(worker, "room_2");
+    await createRow(worker, "row_2");
 
     await worker.handle(
       await authedRequest({
-        url: roomEndpoint("room_2", "room/join"),
-        action: "room/join",
-        roomId: "room_2",
+        url: rowEndpoint("row_2", "row/join"),
+        action: "row/join",
+        rowId: "row_2",
         username: "owner",
         body: { username: "owner" },
       }),
@@ -415,13 +415,13 @@ describe("RoomWorker", () => {
 
     await worker.handle(
       await authedRequest({
-        url: roomEndpoint("room_2", "invite-token/create"),
+        url: rowEndpoint("row_2", "invite-token/create"),
         action: "invite-token/create",
-        roomId: "room_2",
+        rowId: "row_2",
         username: "owner",
         body: {
           token: "invite_2",
-          roomId: "room_2",
+          rowId: "row_2",
           invitedBy: "owner",
           createdAt: 10,
         },
@@ -430,9 +430,9 @@ describe("RoomWorker", () => {
 
     await worker.handle(
       await authedRequest({
-        url: roomEndpoint("room_2", "room/join"),
-        action: "room/join",
-        roomId: "room_2",
+        url: rowEndpoint("row_2", "row/join"),
+        action: "row/join",
+        rowId: "row_2",
         username: "guest",
         body: {
           username: "guest",
@@ -443,13 +443,13 @@ describe("RoomWorker", () => {
 
     const post = await worker.handle(
       await authedRequest({
-        url: roomEndpoint("room_2", "room/message"),
-        action: "room/message",
-        roomId: "room_2",
+        url: rowEndpoint("row_2", "sync/send"),
+        action: "sync/send",
+        rowId: "row_2",
         username: "guest",
         body: {
           id: "msg_1",
-          roomId: "room_2",
+          rowId: "row_2",
           body: { userType: "user", content: "hello" },
           createdAt: 100,
           signedBy: "owner",
@@ -460,14 +460,14 @@ describe("RoomWorker", () => {
     expect(post.status).toBe(200);
     expect((await jsonBody(post)).message).toMatchObject({
       id: "msg_1",
-      roomId: "room_2",
+      rowId: "row_2",
       signedBy: "guest",
       sequence: 1,
     });
   });
 
   it("returns messages sorted by createdAt and id", async () => {
-    const worker = new RoomWorker(
+    const worker = new RowWorker(
       {
         owner: "owner",
         workerUrl: "https://worker.example",
@@ -475,13 +475,13 @@ describe("RoomWorker", () => {
       { kv: new InMemoryKv() },
     );
 
-    await createRoom(worker, "room_3");
+    await createRow(worker, "row_3");
 
     await worker.handle(
       await authedRequest({
-        url: roomEndpoint("room_3", "room/join"),
-        action: "room/join",
-        roomId: "room_3",
+        url: rowEndpoint("row_3", "row/join"),
+        action: "row/join",
+        rowId: "row_3",
         username: "owner",
         body: { username: "owner" },
       }),
@@ -489,13 +489,13 @@ describe("RoomWorker", () => {
 
     await worker.handle(
       await authedRequest({
-        url: roomEndpoint("room_3", "room/message"),
-        action: "room/message",
-        roomId: "room_3",
+        url: rowEndpoint("row_3", "sync/send"),
+        action: "sync/send",
+        rowId: "row_3",
         username: "owner",
         body: {
           id: "b",
-          roomId: "room_3",
+          rowId: "row_3",
           body: { userType: "user", content: "b" },
           createdAt: 1000,
         },
@@ -504,13 +504,13 @@ describe("RoomWorker", () => {
 
     await worker.handle(
       await authedRequest({
-        url: roomEndpoint("room_3", "room/message"),
-        action: "room/message",
-        roomId: "room_3",
+        url: rowEndpoint("row_3", "sync/send"),
+        action: "sync/send",
+        rowId: "row_3",
         username: "owner",
         body: {
           id: "a",
-          roomId: "room_3",
+          rowId: "row_3",
           body: { userType: "user", content: "a" },
           createdAt: 1000,
         },
@@ -519,9 +519,9 @@ describe("RoomWorker", () => {
 
     const response = await worker.handle(
       await authedRequest({
-        url: roomEndpoint("room_3", "room/messages"),
-        action: "room/messages",
-        roomId: "room_3",
+        url: rowEndpoint("row_3", "sync/poll"),
+        action: "sync/poll",
+        rowId: "row_3",
         username: "owner",
         body: { sinceSequence: 0 },
       }),
@@ -533,7 +533,7 @@ describe("RoomWorker", () => {
   });
 
   it("requires sinceSequence for message polling", async () => {
-    const worker = new RoomWorker(
+    const worker = new RowWorker(
       {
         owner: "owner",
         workerUrl: "https://worker.example",
@@ -541,13 +541,13 @@ describe("RoomWorker", () => {
       { kv: new InMemoryKv() },
     );
 
-    await createRoom(worker, "room_req_seq");
+    await createRow(worker, "row_req_seq");
 
     await worker.handle(
       await authedRequest({
-        url: roomEndpoint("room_req_seq", "room/join"),
-        action: "room/join",
-        roomId: "room_req_seq",
+        url: rowEndpoint("row_req_seq", "row/join"),
+        action: "row/join",
+        rowId: "row_req_seq",
         username: "owner",
         body: { username: "owner" },
       }),
@@ -555,9 +555,9 @@ describe("RoomWorker", () => {
 
     const response = await worker.handle(
       await authedRequest({
-        url: roomEndpoint("room_req_seq", "room/messages"),
-        action: "room/messages",
-        roomId: "room_req_seq",
+        url: rowEndpoint("row_req_seq", "sync/poll"),
+        action: "sync/poll",
+        rowId: "row_req_seq",
         username: "owner",
       }),
     );
@@ -566,9 +566,9 @@ describe("RoomWorker", () => {
     expect((await response.json()).code).toBe("BAD_REQUEST");
   });
 
-  it("uses room sequence to skip list reads when nothing changed", async () => {
+  it("uses row sequence to skip list reads when nothing changed", async () => {
     const kv = new CountingKv();
-    const worker = new RoomWorker(
+    const worker = new RowWorker(
       {
         owner: "owner",
         workerUrl: "https://worker.example",
@@ -576,13 +576,13 @@ describe("RoomWorker", () => {
       { kv },
     );
 
-    await createRoom(worker, "room_seq");
+    await createRow(worker, "row_seq");
 
     await worker.handle(
       await authedRequest({
-        url: roomEndpoint("room_seq", "room/join"),
-        action: "room/join",
-        roomId: "room_seq",
+        url: rowEndpoint("row_seq", "row/join"),
+        action: "row/join",
+        rowId: "row_seq",
         username: "owner",
         body: { username: "owner" },
       }),
@@ -590,13 +590,13 @@ describe("RoomWorker", () => {
 
     await worker.handle(
       await authedRequest({
-        url: roomEndpoint("room_seq", "room/message"),
-        action: "room/message",
-        roomId: "room_seq",
+        url: rowEndpoint("row_seq", "sync/send"),
+        action: "sync/send",
+        rowId: "row_seq",
         username: "owner",
         body: {
           id: "msg_1",
-          roomId: "room_seq",
+          rowId: "row_seq",
           body: { userType: "user", content: "hello" },
           createdAt: 1000,
         },
@@ -605,9 +605,9 @@ describe("RoomWorker", () => {
 
     const noChangeResponse = await worker.handle(
       await authedRequest({
-        url: roomEndpoint("room_seq", "room/messages"),
-        action: "room/messages",
-        roomId: "room_seq",
+        url: rowEndpoint("row_seq", "sync/poll"),
+        action: "sync/poll",
+        rowId: "row_seq",
         username: "owner",
         body: { sinceSequence: 1 },
       }),
@@ -623,9 +623,9 @@ describe("RoomWorker", () => {
 
     const changedResponse = await worker.handle(
       await authedRequest({
-        url: roomEndpoint("room_seq", "room/messages"),
-        action: "room/messages",
-        roomId: "room_seq",
+        url: rowEndpoint("row_seq", "sync/poll"),
+        action: "sync/poll",
+        rowId: "row_seq",
         username: "owner",
         body: { sinceSequence: 0 },
       }),
@@ -635,7 +635,7 @@ describe("RoomWorker", () => {
   });
 
   it("all members see all messages globally", async () => {
-    const worker = new RoomWorker(
+    const worker = new RowWorker(
       {
         owner: "owner",
         workerUrl: "https://worker.example",
@@ -643,13 +643,13 @@ describe("RoomWorker", () => {
       { kv: new InMemoryKv() },
     );
 
-    await createRoom(worker, "room_4");
+    await createRow(worker, "row_4");
 
     await worker.handle(
       await authedRequest({
-        url: roomEndpoint("room_4", "room/join"),
-        action: "room/join",
-        roomId: "room_4",
+        url: rowEndpoint("row_4", "row/join"),
+        action: "row/join",
+        rowId: "row_4",
         username: "owner",
         body: { username: "owner" },
       }),
@@ -657,13 +657,13 @@ describe("RoomWorker", () => {
 
     await worker.handle(
       await authedRequest({
-        url: roomEndpoint("room_4", "invite-token/create"),
+        url: rowEndpoint("row_4", "invite-token/create"),
         action: "invite-token/create",
-        roomId: "room_4",
+        rowId: "row_4",
         username: "owner",
         body: {
           token: "invite_4",
-          roomId: "room_4",
+          rowId: "row_4",
           invitedBy: "owner",
           createdAt: 10,
         },
@@ -672,9 +672,9 @@ describe("RoomWorker", () => {
 
     await worker.handle(
       await authedRequest({
-        url: roomEndpoint("room_4", "room/join"),
-        action: "room/join",
-        roomId: "room_4",
+        url: rowEndpoint("row_4", "row/join"),
+        action: "row/join",
+        rowId: "row_4",
         username: "guest",
         body: {
           username: "guest",
@@ -685,13 +685,13 @@ describe("RoomWorker", () => {
 
     await worker.handle(
       await authedRequest({
-        url: roomEndpoint("room_4", "room/message"),
-        action: "room/message",
-        roomId: "room_4",
+        url: rowEndpoint("row_4", "sync/send"),
+        action: "sync/send",
+        rowId: "row_4",
         username: "guest",
         body: {
           id: "msg_guest",
-          roomId: "room_4",
+          rowId: "row_4",
           body: { type: "yjs-update", data: "AAAA" },
           createdAt: 100,
         },
@@ -700,13 +700,13 @@ describe("RoomWorker", () => {
 
     await worker.handle(
       await authedRequest({
-        url: roomEndpoint("room_4", "room/message"),
-        action: "room/message",
-        roomId: "room_4",
+        url: rowEndpoint("row_4", "sync/send"),
+        action: "sync/send",
+        rowId: "row_4",
         username: "owner",
         body: {
           id: "msg_owner",
-          roomId: "room_4",
+          rowId: "row_4",
           body: { type: "yjs-update", data: "BBBB" },
           createdAt: 120,
         },
@@ -716,9 +716,9 @@ describe("RoomWorker", () => {
     for (const username of ["guest", "owner"]) {
       const response = await worker.handle(
         await authedRequest({
-          url: roomEndpoint("room_4", "room/messages"),
-          action: "room/messages",
-          roomId: "room_4",
+          url: rowEndpoint("row_4", "sync/poll"),
+          action: "sync/poll",
+          rowId: "row_4",
           username,
           body: { sinceSequence: 0 },
         }),
@@ -729,7 +729,7 @@ describe("RoomWorker", () => {
   });
 
   it("allows puter-auth in CORS preflight", async () => {
-    const worker = new RoomWorker(
+    const worker = new RowWorker(
       {
         owner: "owner",
         workerUrl: "https://worker.example",
@@ -738,7 +738,7 @@ describe("RoomWorker", () => {
     );
 
     const response = await worker.handle(
-      new Request(roomEndpoint("room_cors", "room/join"), {
+      new Request(rowEndpoint("row_cors", "row/join"), {
         method: "OPTIONS",
         headers: {
           "access-control-request-method": "POST",
@@ -759,14 +759,14 @@ describe("RoomWorker", () => {
 
     network.register(
       aliceBase,
-      new RoomWorker(
+      new RowWorker(
         { owner: "alice", workerUrl: aliceBase },
         { kv: new InMemoryKv() },
       ),
     );
     network.register(
       bobBase,
-      new RoomWorker(
+      new RowWorker(
         { owner: "bob", workerUrl: bobBase },
         { kv: new InMemoryKv() },
       ),
@@ -776,65 +776,65 @@ describe("RoomWorker", () => {
       network.dispatch(mode, await authedRequest(args));
 
     expect(await run("full", {
-      url: `${aliceBase}/rooms`,
-      action: "rooms/create",
-      roomId: "dog_1",
+      url: `${aliceBase}/rows`,
+      action: "rows/create",
+      rowId: "dog_1",
       username: "alice",
-      body: { roomId: "dog_1", roomName: "Rex" },
+      body: { rowId: "dog_1", rowName: "Rex" },
     })).toMatchObject({ status: 200 });
 
     expect(await run("full", {
-      url: roomEndpoint("dog_1", "room/join").replace("https://worker.example", aliceBase),
-      action: "room/join",
-      roomId: "dog_1",
+      url: rowEndpoint("dog_1", "row/join").replace("https://worker.example", aliceBase),
+      action: "row/join",
+      rowId: "dog_1",
       username: "alice",
       body: { username: "alice" },
     })).toMatchObject({ status: 200 });
 
     expect(await run("full", {
-      url: roomEndpoint("dog_1", "invite-token/create").replace("https://worker.example", aliceBase),
+      url: rowEndpoint("dog_1", "invite-token/create").replace("https://worker.example", aliceBase),
       action: "invite-token/create",
-      roomId: "dog_1",
+      rowId: "dog_1",
       username: "alice",
-      body: { token: "invite_1", roomId: "dog_1", invitedBy: "alice", createdAt: 1 },
+      body: { token: "invite_1", rowId: "dog_1", invitedBy: "alice", createdAt: 1 },
     })).toMatchObject({ status: 200 });
 
     expect(await run("full", {
-      url: roomEndpoint("dog_1", "room/join").replace("https://worker.example", aliceBase),
-      action: "room/join",
-      roomId: "dog_1",
+      url: rowEndpoint("dog_1", "row/join").replace("https://worker.example", aliceBase),
+      action: "row/join",
+      rowId: "dog_1",
       username: "bob",
       body: { username: "bob", inviteToken: "invite_1" },
     })).toMatchObject({ status: 200 });
 
     expect(await run("full", {
-      url: roomEndpoint("dog_1", "fields/set").replace("https://worker.example", aliceBase),
+      url: rowEndpoint("dog_1", "fields/set").replace("https://worker.example", aliceBase),
       action: "fields/set",
-      roomId: "dog_1",
+      rowId: "dog_1",
       username: "alice",
       body: { collection: "dogs", fields: { name: "Rex" } },
     })).toMatchObject({ status: 200 });
 
     expect(await run("full", {
-      url: `${bobBase}/rooms`,
-      action: "rooms/create",
-      roomId: "tag_1",
+      url: `${bobBase}/rows`,
+      action: "rows/create",
+      rowId: "tag_1",
       username: "bob",
-      body: { roomId: "tag_1", roomName: "friendly" },
+      body: { rowId: "tag_1", rowName: "friendly" },
     })).toMatchObject({ status: 200 });
 
     expect(await run("full", {
-      url: roomEndpoint("tag_1", "room/join").replace("https://worker.example", bobBase),
-      action: "room/join",
-      roomId: "tag_1",
+      url: rowEndpoint("tag_1", "row/join").replace("https://worker.example", bobBase),
+      action: "row/join",
+      rowId: "tag_1",
       username: "bob",
       body: { username: "bob" },
     })).toMatchObject({ status: 200 });
 
     expect(await run("full", {
-      url: roomEndpoint("tag_1", "fields/set").replace("https://worker.example", bobBase),
+      url: rowEndpoint("tag_1", "fields/set").replace("https://worker.example", bobBase),
       action: "fields/set",
-      roomId: "tag_1",
+      rowId: "tag_1",
       username: "bob",
       body: {
         collection: "tags",
@@ -843,38 +843,38 @@ describe("RoomWorker", () => {
     })).toMatchObject({ status: 200 });
 
     expect(await run("full", {
-      url: roomEndpoint("dog_1", "parents/register-child").replace("https://worker.example", aliceBase),
+      url: rowEndpoint("dog_1", "parents/register-child").replace("https://worker.example", aliceBase),
       action: "parents/register-child",
-      roomId: "dog_1",
+      rowId: "dog_1",
       username: "bob",
       body: {
         childRowId: "tag_1",
         childOwner: "bob",
-        childTarget: `${bobBase}/rooms/tag_1`,
+        childTarget: `${bobBase}/rows/tag_1`,
         collection: "tags",
         fields: { label: "friendly", createdBy: "bob", createdAt: 1 },
       },
     })).toMatchObject({ status: 200 });
 
     expect(await run("full", {
-      url: roomEndpoint("tag_1", "parents/link-parent").replace("https://worker.example", bobBase),
+      url: rowEndpoint("tag_1", "parents/link-parent").replace("https://worker.example", bobBase),
       action: "parents/link-parent",
-      roomId: "tag_1",
+      rowId: "tag_1",
       username: "bob",
       body: {
         parentRef: {
           id: "dog_1",
           collection: "dogs",
           owner: "alice",
-          target: `${aliceBase}/rooms/dog_1`,
+          target: `${aliceBase}/rows/dog_1`,
         },
       },
     })).toMatchObject({ status: 200 });
 
     const parentQuery = await run("local-only", {
-      url: roomEndpoint("dog_1", "db/query").replace("https://worker.example", aliceBase),
+      url: rowEndpoint("dog_1", "db/query").replace("https://worker.example", aliceBase),
       action: "db/query",
-      roomId: "dog_1",
+      rowId: "dog_1",
       username: "alice",
       body: { collection: "tags" },
     });
@@ -883,23 +883,23 @@ describe("RoomWorker", () => {
       expect.objectContaining({
         rowId: "tag_1",
         owner: "bob",
-        target: `${bobBase}/rooms/tag_1`,
+        target: `${bobBase}/rows/tag_1`,
       }),
     ]);
 
     const childFieldsWithLocalOnlyExec = await run("local-only", {
-      url: roomEndpoint("tag_1", "fields/get").replace("https://worker.example", bobBase),
+      url: rowEndpoint("tag_1", "fields/get").replace("https://worker.example", bobBase),
       action: "fields/get",
-      roomId: "tag_1",
+      rowId: "tag_1",
       username: "alice",
     });
     expect(childFieldsWithLocalOnlyExec.status).toBe(401);
     expect((await jsonBody(childFieldsWithLocalOnlyExec)).message).toBe("Members only");
 
     const childFieldsWithFullExec = await run("full", {
-      url: roomEndpoint("tag_1", "fields/get").replace("https://worker.example", bobBase),
+      url: rowEndpoint("tag_1", "fields/get").replace("https://worker.example", bobBase),
       action: "fields/get",
-      roomId: "tag_1",
+      rowId: "tag_1",
       username: "alice",
     });
     expect(childFieldsWithFullExec.status).toBe(200);

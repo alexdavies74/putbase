@@ -24,15 +24,15 @@ export interface ApiError {
   message: string;
 }
 
-export interface RoomUser {
+export interface PutBaseUser {
   username: string;
 }
 
 export type AuthSession =
   | { state: "signed-out" }
-  | { state: "signed-in"; user: RoomUser };
+  | { state: "signed-in"; user: PutBaseUser };
 
-export interface Room {
+export interface Row {
   id: string;
   name: string;
   owner: string;
@@ -40,9 +40,9 @@ export interface Room {
   createdAt: number;
 }
 
-export interface Message {
+export interface SyncMessage {
   id: string;
-  roomId: string;
+  rowId: string;
   body: JsonValue;
   createdAt: number;
   signedBy: string;
@@ -51,7 +51,7 @@ export interface Message {
 
 export interface InviteToken {
   token: string;
-  roomId: string;
+  rowId: string;
   invitedBy: string;
   createdAt: number;
 }
@@ -70,7 +70,7 @@ export interface PrincipalProof {
 
 export interface RequestProof {
   action: string;
-  roomId: string;
+  rowId: string;
   nonce: string;
   signedAt: number;
   signature: string;
@@ -95,7 +95,7 @@ export interface VerifiedPrincipal {
 }
 
 export interface CrdtConnectCallbacks {
-  applyRemoteUpdate: (body: JsonValue, message: Message) => void;
+  applyRemoteUpdate: (body: JsonValue, message: SyncMessage) => void;
   produceLocalUpdate: () => JsonValue | null;
 }
 
@@ -111,8 +111,8 @@ export interface InviteTarget {
 
 export interface DeployWorkerArgs {
   owner: string;
-  roomId: string;
-  roomName: string;
+  rowId: string;
+  rowName: string;
   script: string;
   ownerPublicKeyJwk?: JsonWebKey;
   workerName?: string;
@@ -121,7 +121,7 @@ export interface DeployWorkerArgs {
   appHostHash?: string;
 }
 
-export interface RoomSnapshot extends Room {
+export interface RowSnapshot extends Row {
   collection: string | null;
   members: string[];
   parentRefs: DbRowRef[];

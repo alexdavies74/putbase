@@ -94,7 +94,7 @@ class MockDb implements WoofDbPort {
   }
 
   private makeDogRow(id: string, fields: Record<string, unknown>): DogRowHandle {
-    const target = `https://workers.puter.site/alex/rooms/${id}`;
+    const target = `https://workers.puter.site/alex/rows/${id}`;
     const rowRef: ReturnType<DogRowHandle["toRef"]> = {
       id,
       collection: "dogs",
@@ -113,7 +113,7 @@ class MockDb implements WoofDbPort {
       id,
       collection: "tags",
       owner: "alex",
-      target: `https://workers.puter.site/alex/rooms/${id}`,
+      target: `https://workers.puter.site/alex/rows/${id}`,
     };
     const rowFields: TagFields = {
       label: typeof fields.label === "string" ? fields.label : "",
@@ -159,7 +159,7 @@ class MockDb implements WoofDbPort {
 
   async openTarget(target: string): Promise<DogRowHandle> {
     if (this.failOpenTarget) {
-      throw new Error("room lookup failed");
+      throw new Error("row lookup failed");
     }
     const joined = target.includes("row_joined");
     const id = joined ? "row_joined" : "row_created";
@@ -186,7 +186,7 @@ describe("WoofService", () => {
 
     expect(profile.row.id).toBe("row_created");
     await expect(loadStoredTarget(kv)).resolves.toBe(
-      "https://workers.puter.site/alex/rooms/row_created",
+      "https://workers.puter.site/alex/rows/row_created",
     );
   });
 
@@ -196,12 +196,12 @@ describe("WoofService", () => {
     const service = new WoofService(db, kv);
 
     const profile = await service.joinFromInvite(
-      "https://woof.example/?worker=https%3A%2F%2Fworkers.puter.site%2Falex%2Frooms%2Frow_joined&token=invite_1",
+      "https://woof.example/?worker=https%3A%2F%2Fworkers.puter.site%2Falex%2Frows%2Frow_joined&token=invite_1",
     );
 
     expect(profile.row.id).toBe("row_joined");
     await expect(loadStoredTarget(kv)).resolves.toBe(
-      "https://workers.puter.site/alex/rooms/row_joined",
+      "https://workers.puter.site/alex/rows/row_joined",
     );
   });
 
@@ -210,7 +210,7 @@ describe("WoofService", () => {
     const kv = new MockKv();
     const service = new WoofService(db, kv);
 
-    await kv.set("woof:myDog", "https://workers.puter.site/alex/rooms/row_created");
+    await kv.set("woof:myDog", "https://workers.puter.site/alex/rows/row_created");
     const restored = await service.restoreProfile();
 
     expect(String(restored?.row.fields.name)).toBe("Rex Canonical");
@@ -240,13 +240,13 @@ describe("WoofService", () => {
     const service = new WoofService(db, kv);
 
     const profile = await service.joinFromInvite(
-      "https://woof.example/?worker=https%3A%2F%2Fworkers.puter.site%2Falex%2Frooms%2Frow_joined&token=invite_1",
+      "https://woof.example/?worker=https%3A%2F%2Fworkers.puter.site%2Falex%2Frows%2Frow_joined&token=invite_1",
     );
     const refreshed = await service.refreshProfileCanonical(profile);
 
     expect(String(refreshed.row.fields.name)).toBe("Joined Canonical");
     await expect(loadStoredTarget(kv)).resolves.toBe(
-      "https://workers.puter.site/alex/rooms/row_joined",
+      "https://workers.puter.site/alex/rows/row_joined",
     );
   });
 
@@ -258,7 +258,7 @@ describe("WoofService", () => {
     const profile = await service.enterChat({ dogName: "Rex" });
     db.failOpenTarget = true;
 
-    await expect(service.refreshProfileCanonical(profile)).rejects.toThrow("room lookup failed");
+    await expect(service.refreshProfileCanonical(profile)).rejects.toThrow("row lookup failed");
     await expect(loadStoredTarget(kv)).resolves.toBeNull();
   });
 
@@ -267,10 +267,10 @@ describe("WoofService", () => {
     const kv = new MockKv();
     const service = new WoofService(db, kv);
 
-    await kv.set("woof:myDog", "https://workers.puter.site/alex/rooms/row_created");
+    await kv.set("woof:myDog", "https://workers.puter.site/alex/rows/row_created");
     db.failOpenTarget = true;
 
-    await expect(service.restoreProfile()).rejects.toThrow("room lookup failed");
+    await expect(service.restoreProfile()).rejects.toThrow("row lookup failed");
     await expect(loadStoredTarget(kv)).resolves.toBeNull();
   });
 
@@ -281,7 +281,7 @@ describe("WoofService", () => {
     let chatInput: ChatMessage[] | undefined;
 
     const profile = await service.enterChat({ dogName: "Rex" });
-    service.connectToRoom(profile);
+    service.connectToRow(profile);
 
     await service.sendTurn(profile, "hello", {
       async chat(input: ChatMessage[]) {
@@ -297,11 +297,11 @@ describe("WoofService", () => {
     expect(chatInput?.[0]).toEqual({
       role: "system",
       content:
-        "You are Rex, a friendly dog in a shared room with separate 1:1 threads. You can reply to multiple users, but you must always reply to the trigger user. Return STRICT JSON only: {\"triggerUserReply\":\"message\",\"otherReplies\":[{\"toUser\":\"username\",\"content\":\"message\"}]} Keep content short and playful.",
+        "You are Rex, a friendly dog in a shared row with separate 1:1 threads. You can reply to multiple users, but you must always reply to the trigger user. Return STRICT JSON only: {\"triggerUserReply\":\"message\",\"otherReplies\":[{\"toUser\":\"username\",\"content\":\"message\"}]} Keep content short and playful.",
     });
     expect(chatInput?.[1]).toEqual({
       role: "system",
-      content: "Room members: alex, friend. Trigger user: alex.",
+      content: "Row members: alex, friend. Trigger user: alex.",
     });
     expect(chatInput?.[2]).toEqual({
       role: "user",
@@ -315,9 +315,9 @@ describe("WoofService", () => {
     let chatInput: ChatMessage[] | undefined;
 
     const profile = await service.joinFromInvite(
-      "https://woof.example/?worker=https%3A%2F%2Fworkers.puter.site%2Falex%2Frooms%2Frow_joined&token=invite_1",
+      "https://woof.example/?worker=https%3A%2F%2Fworkers.puter.site%2Falex%2Frows%2Frow_joined&token=invite_1",
     );
-    service.connectToRoom(profile);
+    service.connectToRow(profile);
 
     await service.sendTurn(profile, "hello", {
       async chat(input: ChatMessage[]) {
@@ -329,7 +329,7 @@ describe("WoofService", () => {
     expect(chatInput?.[0]).toEqual({
       role: "system",
       content:
-        "You are Joined, a friendly dog in a shared room with separate 1:1 threads. You can reply to multiple users, but you must always reply to the trigger user. Return STRICT JSON only: {\"triggerUserReply\":\"message\",\"otherReplies\":[{\"toUser\":\"username\",\"content\":\"message\"}]} Keep content short and playful.",
+        "You are Joined, a friendly dog in a shared row with separate 1:1 threads. You can reply to multiple users, but you must always reply to the trigger user. Return STRICT JSON only: {\"triggerUserReply\":\"message\",\"otherReplies\":[{\"toUser\":\"username\",\"content\":\"message\"}]} Keep content short and playful.",
     });
   });
 
@@ -337,7 +337,7 @@ describe("WoofService", () => {
     const db = new MockDb();
     const service = new WoofService(db, new MockKv());
     const profile = await service.enterChat({ dogName: "Rex" });
-    service.connectToRoom(profile);
+    service.connectToRow(profile);
     let secondTurnChatInput: ChatMessage[] | undefined;
 
     await service.sendTurn(profile, "first", {
@@ -365,7 +365,7 @@ describe("WoofService", () => {
     const service = new WoofService(db, new MockKv());
 
     const profile = await service.enterChat({ dogName: "Rex" });
-    service.connectToRoom(profile);
+    service.connectToRow(profile);
 
     await service.sendTurn(profile, "hello", {
       async chat() { throw { message: "messages required" }; },
@@ -381,7 +381,7 @@ describe("WoofService", () => {
     const db = new MockDb();
     const service = new WoofService(db, new MockKv());
     const profile = await service.enterChat({ dogName: "Rex" });
-    service.connectToRoom(profile);
+    service.connectToRow(profile);
 
     await service.sendTurn(profile, "hello", {
       async chat() {
@@ -406,7 +406,7 @@ describe("WoofService", () => {
     const db = new MockDb();
     const service = new WoofService(db, new MockKv());
     const profile = await service.enterChat({ dogName: "Rex" });
-    service.connectToRoom(profile);
+    service.connectToRow(profile);
 
     await service.sendTurn(profile, "hello", {
       async chat() {
@@ -423,7 +423,7 @@ describe("WoofService", () => {
     const db = new MockDb();
     const service = new WoofService(db, new MockKv());
     const profile = await service.enterChat({ dogName: "Rex" });
-    service.connectToRoom(profile);
+    service.connectToRow(profile);
 
     await service.sendTurn(profile, "hello", {
       async chat() {
@@ -447,7 +447,7 @@ describe("WoofService", () => {
     const service = new WoofService(db, kv);
 
     const profile = await service.enterChat({ dogName: "Rex" });
-    service.connectToRoom(profile);
+    service.connectToRow(profile);
 
     await service.relinquish();
 
@@ -460,7 +460,7 @@ describe("WoofService", () => {
     const service = new WoofService(db, new MockKv(), doc);
 
     const profile = await service.enterChat({ dogName: "Rex" });
-    service.connectToRoom(profile);
+    service.connectToRow(profile);
 
     const remoteDoc = new Y.Doc();
     const remoteArray = remoteDoc.getArray<{
@@ -484,7 +484,7 @@ describe("WoofService", () => {
 
     db.crdtCallbacks!.applyRemoteUpdate(encodedBody, {
       id: "msg_remote",
-      roomId: "row_created",
+      rowId: "row_created",
       body: encodedBody,
       createdAt: 100,
       signedBy: "friend",

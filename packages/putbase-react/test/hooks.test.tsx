@@ -67,7 +67,7 @@ function makeDogRow(name: string) {
       id: "dog_1",
       collection: "dogs",
       owner: "alex",
-      target: "https://worker.example/rooms/dog_1",
+      target: "https://worker.example/rows/dog_1",
     },
     { name },
   );
@@ -80,7 +80,7 @@ function makeTagRow(id: string, label: string) {
       id,
       collection: "tags",
       owner: "alex",
-      target: `https://worker.example/rooms/${id}`,
+      target: `https://worker.example/rows/${id}`,
     },
     { label, createdAt: 1 },
   );
@@ -169,7 +169,7 @@ class FakeDb {
   async createInviteToken() {
     return {
       token: "invite_1",
-      roomId: "dog_1",
+      rowId: "dog_1",
       invitedBy: "alex",
       createdAt: 1,
     };
@@ -309,7 +309,7 @@ describe("@putbase/react", () => {
         id: "dog_1",
         collection: "dogs",
         owner: "alex",
-        target: "https://worker.example/rooms/dog_1",
+        target: "https://worker.example/rows/dog_1",
       },
       index: "byCreatedAt" as const,
       order: "asc" as const,
@@ -337,7 +337,7 @@ describe("@putbase/react", () => {
         id: "dog_1",
         collection: "dogs",
         owner: "alex",
-        target: "https://worker.example/rooms/dog_1",
+        target: "https://worker.example/rows/dog_1",
       },
       index: "byCreatedAt" as const,
       order: "asc" as const,
@@ -377,7 +377,7 @@ describe("@putbase/react", () => {
       id: "dog_1",
       collection: "dogs",
       owner: "alex",
-      target: "https://worker.example/rooms/dog_1",
+      target: "https://worker.example/rows/dog_1",
     };
     let latest: ReturnType<typeof useRow<TestSchema, "dogs">> | null = null;
 
@@ -408,7 +408,7 @@ describe("@putbase/react", () => {
         id: "dog_1",
         collection: "dogs",
         owner: "alex",
-        target: "https://worker.example/rooms/dog_1",
+        target: "https://worker.example/rows/dog_1",
       },
       index: "byCreatedAt" as const,
       order: "asc" as const,
@@ -458,7 +458,7 @@ describe("@putbase/react", () => {
         id: "dog_1",
         collection: "dogs",
         owner: "alex",
-        target: "https://worker.example/rooms/dog_1",
+        target: "https://worker.example/rows/dog_1",
       },
       index: "byCreatedAt" as const,
       order: "asc" as const,
@@ -490,7 +490,7 @@ describe("@putbase/react", () => {
         id: "dog_1",
         collection: "dogs",
         owner: "alex",
-        target: "https://worker.example/rooms/dog_1",
+        target: "https://worker.example/rows/dog_1",
       },
       index: "byCreatedAt" as const,
       order: "asc" as const,

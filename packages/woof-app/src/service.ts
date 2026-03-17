@@ -2,7 +2,7 @@ import * as Y from "yjs";
 import type {
   AnyRowHandle,
   CrdtConnection,
-  RoomUser,
+  PutBaseUser,
 } from "@putbase/core";
 import type { AI, ChatMessage, ChatResponse, KV } from "@heyputer/puter.js";
 
@@ -121,7 +121,7 @@ export class WoofService {
     }
   }
 
-  connectToRoom(profile: DogProfile): void {
+  connectToRow(profile: DogProfile): void {
     this.connection?.disconnect();
     this.connection = profile.row.connectCrdt({
       applyRemoteUpdate: (body) => {
@@ -138,7 +138,7 @@ export class WoofService {
     });
   }
 
-  disconnectRoom(): void {
+  disconnectRow(): void {
     this.connection?.disconnect();
     this.connection = null;
   }
@@ -213,12 +213,12 @@ export class WoofService {
   }
 
   async relinquish(): Promise<void> {
-    this.disconnectRoom();
+    this.disconnectRow();
     await clearProfile(this.kv);
   }
 
   private async getDogReplies(args: {
-    actor: RoomUser;
+    actor: PutBaseUser;
     dogName: string;
     entries: ChatEntry[];
     members: string[];
@@ -285,7 +285,7 @@ export class WoofService {
 }
 
 function buildDogPrompt(args: {
-  actor: RoomUser;
+  actor: PutBaseUser;
   dogName: string;
   entries: ChatEntry[];
   members: string[];
@@ -298,7 +298,7 @@ function buildDogPrompt(args: {
     {
       role: "system",
       content: [
-        `You are ${args.dogName}, a friendly dog in a shared room with separate 1:1 threads.`,
+        `You are ${args.dogName}, a friendly dog in a shared row with separate 1:1 threads.`,
         "You can reply to multiple users, but you must always reply to the trigger user.",
         "Return STRICT JSON only: {\"triggerUserReply\":\"message\",\"otherReplies\":[{\"toUser\":\"username\",\"content\":\"message\"}]}",
         "Keep content short and playful.",
@@ -306,7 +306,7 @@ function buildDogPrompt(args: {
     },
     {
       role: "system",
-      content: `Room members: ${args.members.join(", ")}. Trigger user: ${args.actor.username}.`,
+      content: `Row members: ${args.members.join(", ")}. Trigger user: ${args.actor.username}.`,
     },
     ...sortedEntries.map((entry) => {
       const fromUser = entry.userType === "dog" ? args.dogName : entry.signedBy;
@@ -338,7 +338,7 @@ function parseDogReplyPlan(value: string): unknown {
 function sanitizeDogReplyPlan(
   plan: unknown,
   triggerUser: string,
-  roomMembers: string[],
+  rowMembers: string[],
 ): Array<{ toUser: string; content: string }> {
   if (!plan || typeof plan !== "object") {
     return [];
@@ -350,7 +350,7 @@ function sanitizeDogReplyPlan(
     replies?: unknown;
   };
 
-  const memberSet = new Set(roomMembers);
+  const memberSet = new Set(rowMembers);
   const sanitized: Array<{ toUser: string; content: string }> = [];
 
   const triggerUserReply =

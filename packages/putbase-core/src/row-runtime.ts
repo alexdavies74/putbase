@@ -1,14 +1,14 @@
 import type { Identity } from "./identity";
 import type { Provisioning } from "./provisioning";
 import type { Transport } from "./transport";
-import { buildRoomTarget } from "./transport";
-import type { JoinOptions, Room, RoomSnapshot } from "./types";
+import { buildRowTarget } from "./transport";
+import type { JoinOptions, Row, RowSnapshot } from "./types";
 
 interface PostMessageResponse {
   message: { sequence: number };
 }
 
-export class Rooms {
+export class RowRuntime {
   constructor(
     private readonly transport: Transport,
     private readonly identity: Identity,
@@ -16,46 +16,46 @@ export class Rooms {
     private readonly ensureReady: () => Promise<void>,
   ) {}
 
-  async createRoom(name: string): Promise<Room> {
+  async createRow(name: string): Promise<Row> {
     await this.ensureReady();
 
     const user = await this.identity.whoAmI();
     const federationWorkerUrl = await this.provisioning.getFederationWorkerUrl(user.username);
-    const roomId = this.transport.createId("room");
-    const roomTarget = buildRoomTarget(federationWorkerUrl, roomId);
+    const rowId = this.transport.createId("row");
+    const rowTarget = buildRowTarget(federationWorkerUrl, rowId);
 
     await this.transport.request({
-      url: `${federationWorkerUrl}/rooms`,
-      action: "rooms/create",
-      roomId,
+      url: `${federationWorkerUrl}/rows`,
+      action: "rows/create",
+      rowId,
       payload: {
-        roomId,
-        roomName: name,
+        rowId,
+        rowName: name,
       },
     });
 
-    await this.joinRoom(roomTarget, {});
+    await this.joinRow(rowTarget, {});
 
-    const room = await this.getRoom(roomTarget);
+    const row = await this.getRow(rowTarget);
     return {
-      id: room.id,
-      name: room.name,
-      owner: room.owner,
-      target: room.target,
-      createdAt: room.createdAt,
+      id: row.id,
+      name: row.name,
+      owner: row.owner,
+      target: row.target,
+      createdAt: row.createdAt,
     };
   }
 
-  async joinRoom(target: string, options: JoinOptions = {}): Promise<Room> {
+  async joinRow(target: string, options: JoinOptions = {}): Promise<Row> {
     const user = await this.identity.whoAmI();
-    const room = this.transport.room(target);
+    const row = this.transport.row(target);
 
-    await room.request("room/join", {
+    await row.request("row/join", {
       username: user.username,
       inviteToken: options.inviteToken,
     });
 
-    const snapshot = await this.getRoom(target);
+    const snapshot = await this.getRow(target);
     return {
       id: snapshot.id,
       name: snapshot.name,
@@ -65,32 +65,32 @@ export class Rooms {
     };
   }
 
-  async getRoom(target: string): Promise<RoomSnapshot> {
-    return this.transport.room(target).request<RoomSnapshot>("room/get", {});
+  async getRow(target: string): Promise<RowSnapshot> {
+    return this.transport.row(target).request<RowSnapshot>("row/get", {});
   }
 
   async listMembers(target: string): Promise<string[]> {
-    const snapshot = await this.getRoom(target);
+    const snapshot = await this.getRow(target);
     return snapshot.members;
   }
 
-  async sendMessage(target: string, roomId: string, body: unknown): Promise<{ sequence: number }> {
+  async sendSyncMessage(target: string, rowId: string, body: unknown): Promise<{ sequence: number }> {
     const payload = {
       id: this.transport.createId("msg"),
-      roomId,
+      rowId,
       body,
       createdAt: Date.now(),
     };
 
-    const response = await this.transport.room({ id: roomId, target }).request<PostMessageResponse>("room/message", payload);
+    const response = await this.transport.row({ id: rowId, target }).request<PostMessageResponse>("sync/send", payload);
 
     return response.message;
   }
 
-  async pollMessages(
+  async pollSyncMessages(
     target: string,
     sinceSequence: number,
   ): Promise<{ messages: Array<{ body: unknown; sequence: number; createdAt: number; id: string }>; latestSequence: number }> {
-    return this.transport.room(target).request("room/messages", { sinceSequence });
+    return this.transport.row(target).request("sync/poll", { sinceSequence });
   }
 }

@@ -9,8 +9,8 @@ import type {
   DbRowRef,
   DbSchema,
   MemberRole,
+  PutBaseUser,
   RowFields,
-  RoomUser,
 } from "@putbase/core";
 import type { RowHandle } from "@putbase/core";
 
@@ -95,7 +95,7 @@ function snapshotStrings(value: string[]): string {
   return stableJsonStringify(value);
 }
 
-function snapshotRoomUser(value: RoomUser): string {
+function snapshotCurrentUser(value: PutBaseUser): string {
   return stableJsonStringify(value);
 }
 
@@ -354,7 +354,7 @@ export const snapshots = {
   memberUsernames: snapshotStrings,
   directMembers: snapshotMembers,
   effectiveMembers: snapshotEffectiveMembers,
-  currentUser: snapshotRoomUser,
+  currentUser: snapshotCurrentUser,
   session: snapshotSession,
 };
 

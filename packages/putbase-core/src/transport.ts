@@ -6,7 +6,7 @@ import type { PutBaseOptions } from "./putbase";
 import type { BackendClient } from "./types";
 import type { DbRowLocator } from "./schema";
 
-type RoomAction =
+type RowAction =
   | "db/query"
   | "fields/get"
   | "fields/set"
@@ -18,14 +18,15 @@ type RoomAction =
   | "members/remove"
   | "parents/link-parent"
   | "parents/register-child"
+  | "sync/poll"
+  | "sync/send"
   | "parents/unlink-parent"
   | "parents/unregister-child"
-  | "room/get"
-  | "room/join"
-  | "room/message"
-  | "room/messages";
+  | "row/get"
+  | "row/join"
+  ;
 
-interface RoomRequestOptions {
+interface RowRequestOptions {
   includeRequestProof?: boolean;
 }
 
@@ -43,49 +44,49 @@ export function stripTrailingSlash(input: string): string {
   return input.replace(/\/+$/g, "");
 }
 
-export function roomIdFromTarget(target: string): string {
+export function rowIdFromTarget(target: string): string {
   const parsed = new URL(target);
   const segments = parsed.pathname.split("/").filter(Boolean);
-  const roomsIndex = segments.indexOf("rooms");
+  const rowsIndex = segments.indexOf("rows");
 
-  if (roomsIndex < 0 || roomsIndex + 1 >= segments.length) {
+  if (rowsIndex < 0 || rowsIndex + 1 >= segments.length) {
     throw new Error(
-      `Unsupported room target: ${target}. Legacy non-federated room targets are no longer supported.`,
+      `Unsupported row target: ${target}. Legacy non-federated row targets are no longer supported.`,
     );
   }
 
-  return decodeURIComponent(segments[roomsIndex + 1]);
+  return decodeURIComponent(segments[rowsIndex + 1]);
 }
 
 export function normalizeTarget(input: string): string {
   return stripTrailingSlash(input);
 }
 
-export function buildRoomTarget(federationWorkerBaseUrl: string, roomId: string): string {
-  return `${stripTrailingSlash(federationWorkerBaseUrl)}/rooms/${encodeURIComponent(roomId)}`;
+export function buildRowTarget(federationWorkerBaseUrl: string, rowId: string): string {
+  return `${stripTrailingSlash(federationWorkerBaseUrl)}/rows/${encodeURIComponent(rowId)}`;
 }
 
-function roomEndpointUrl(
+function rowEndpointUrl(
   target: string,
-  roomId: string,
+  rowId: string,
   endpoint: string,
 ): string {
   const targetUrl = new URL(normalizeTarget(target));
   const segments = targetUrl.pathname.split("/").filter(Boolean);
-  const roomsIndex = segments.indexOf("rooms");
+  const rowsIndex = segments.indexOf("rows");
 
-  if (roomsIndex < 0 || roomsIndex + 1 >= segments.length) {
+  if (rowsIndex < 0 || rowsIndex + 1 >= segments.length) {
     throw new Error(
-      `Unsupported room target: ${target}. Legacy non-federated room targets are no longer supported.`,
+      `Unsupported row target: ${target}. Legacy non-federated row targets are no longer supported.`,
     );
   }
 
-  const routeRoomId = decodeURIComponent(segments[roomsIndex + 1]);
-  if (routeRoomId !== roomId) {
-    throw new Error(`Room target/id mismatch: ${target} does not match row id ${roomId}.`);
+  const routeRowId = decodeURIComponent(segments[rowsIndex + 1]);
+  if (routeRowId !== rowId) {
+    throw new Error(`Row target/id mismatch: ${target} does not match row id ${rowId}.`);
   }
 
-  const prefix = segments.slice(0, roomsIndex + 2).join("/");
+  const prefix = segments.slice(0, rowsIndex + 2).join("/");
   targetUrl.pathname = `/${prefix}/${endpoint}`;
 
   targetUrl.search = "";
@@ -114,48 +115,48 @@ export class Transport {
   async request<T, TPayload = unknown>(args: {
     url: string;
     action: string;
-    roomId: string;
+    rowId: string;
     payload: TPayload;
     includeRequestProof?: boolean;
   }): Promise<T> {
     const body = await this.auth.createProtectedRequest({
       action: args.action,
-      roomId: args.roomId,
+      rowId: args.rowId,
       payload: args.payload,
       includeRequestProof: args.includeRequestProof,
     });
     return this.postJson<T>(args.url, body);
   }
 
-  room(rowOrTarget: string | Pick<DbRowLocator, "id" | "target">): {
-    request<T, TPayload = unknown>(action: RoomAction, payload: TPayload, options?: RoomRequestOptions): Promise<T>;
+  row(rowOrTarget: string | Pick<DbRowLocator, "id" | "target">): {
+    request<T, TPayload = unknown>(action: RowAction, payload: TPayload, options?: RowRequestOptions): Promise<T>;
     target: string;
-    roomId: string;
+    rowId: string;
   } {
     const target = typeof rowOrTarget === "string" ? normalizeTarget(rowOrTarget) : normalizeTarget(rowOrTarget.target);
-    const roomId = typeof rowOrTarget === "string" ? roomIdFromTarget(target) : rowOrTarget.id;
-    const parsedRoomId = roomIdFromTarget(target);
+    const rowId = typeof rowOrTarget === "string" ? rowIdFromTarget(target) : rowOrTarget.id;
+    const parsedRowId = rowIdFromTarget(target);
 
-    if (parsedRoomId !== roomId) {
-      throw new Error(`Room target/id mismatch: ${target} does not match row id ${roomId}.`);
+    if (parsedRowId !== rowId) {
+      throw new Error(`Row target/id mismatch: ${target} does not match row id ${rowId}.`);
     }
 
     return {
       request: <T, TPayload = unknown>(
-        action: RoomAction,
+        action: RowAction,
         payload: TPayload,
-        options?: RoomRequestOptions,
+        options?: RowRequestOptions,
       ): Promise<T> => {
         return this.request<T, TPayload>({
-          url: roomEndpointUrl(target, roomId, action),
+          url: rowEndpointUrl(target, rowId, action),
           action,
-          roomId,
+          rowId,
           payload,
           includeRequestProof: options?.includeRequestProof,
         });
       },
       target,
-      roomId,
+      rowId,
     };
   }
 

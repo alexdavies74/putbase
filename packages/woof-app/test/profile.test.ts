@@ -21,16 +21,16 @@ class MockKv {
 }
 
 describe("profile persistence", () => {
-  it("saves, loads, and clears the stored room target in puter kv", async () => {
+  it("saves, loads, and clears the stored row target in puter kv", async () => {
     const kv = new MockKv();
 
     await saveStoredTarget(
       {
-        target: "https://workers.puter.site/alex/rooms/room_1",
+        target: "https://workers.puter.site/alex/rows/row_1",
       },
       kv,
     );
-    await expect(loadStoredTarget(kv)).resolves.toBe("https://workers.puter.site/alex/rooms/room_1");
+    await expect(loadStoredTarget(kv)).resolves.toBe("https://workers.puter.site/alex/rows/row_1");
 
     await clearProfile(kv);
     await expect(loadStoredTarget(kv)).resolves.toBeNull();

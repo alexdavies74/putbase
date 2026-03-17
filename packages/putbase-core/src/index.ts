@@ -13,7 +13,8 @@ export type {
   InviteTarget,
   InviteToken,
   JsonValue,
-  RoomUser,
+  PutBaseUser,
+  SyncMessage,
 } from "./types";
 export type {
   CollectionName,

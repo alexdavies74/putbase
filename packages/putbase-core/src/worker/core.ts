@@ -7,12 +7,12 @@ import type {
   ApiError,
   InviteToken,
   JsonValue,
-  Message,
+  SyncMessage,
   PrincipalProof,
   ProtectedRequest,
   RequestProof,
-  Room,
-  RoomSnapshot,
+  Row,
+  RowSnapshot,
   VerifiedPrincipal,
 } from "../types";
 
@@ -29,15 +29,15 @@ export interface WorkerKv {
   delete?(key: string): Promise<void>;
 }
 
-export interface RoomWorkerConfig {
+export interface RowWorkerConfig {
   owner: string;
   ownerPublicKeyJwk?: JsonWebKey;
   workerUrl?: string;
 }
 
-interface CreateRoomRequest {
-  roomId: string;
-  roomName: string;
+interface CreateRowRequest {
+  rowId: string;
+  rowName: string;
 }
 
 interface JoinRequest {
@@ -53,9 +53,9 @@ interface MessagesRequest {
   sinceSequence: number;
 }
 
-type InvitePayload = Pick<InviteToken, "token" | "roomId" | "createdAt" | "invitedBy">;
+type InvitePayload = Pick<InviteToken, "token" | "rowId" | "createdAt" | "invitedBy">;
 
-type MessagePayload = Omit<Message, "signedBy" | "sequence">;
+type SyncMessagePayload = Omit<SyncMessage, "signedBy" | "sequence">;
 
 interface GetFieldsResponse {
   fields: Record<string, JsonValue>;
@@ -146,7 +146,7 @@ interface EffectiveMember {
   via: "direct" | DbRowRef;
 }
 
-export interface RoomWorkerDeps {
+export interface RowWorkerDeps {
   kv: WorkerKv;
   now?: () => number;
 }
@@ -175,7 +175,7 @@ const CORS_PREFLIGHT_HEADERS = {
   "access-control-allow-methods": "POST,OPTIONS",
 };
 
-const DEFAULT_PARENT_ROOM_TTL = 5;
+const DEFAULT_PARENT_ROW_TTL = 5;
 const MAX_QUERY_LIMIT = 200;
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -200,48 +200,48 @@ async function parseJson<T>(request: Request): Promise<T> {
   }
 }
 
-function messageGlobalKey(roomId: string, message: Pick<Message, "createdAt" | "id">): string {
-  return `room:${roomId}:global_message:${message.createdAt}:${message.id}`;
+function messageGlobalKey(rowId: string, message: Pick<SyncMessage, "createdAt" | "id">): string {
+  return `row:${rowId}:global_message:${message.createdAt}:${message.id}`;
 }
 
-function tokenKey(roomId: string, token: string): string {
-  return `room:${roomId}:invite_token:${token}`;
+function tokenKey(rowId: string, token: string): string {
+  return `row:${rowId}:invite_token:${token}`;
 }
 
-function tokenKeyPrefix(roomId: string): string {
-  return `room:${roomId}:invite_token:`;
+function tokenKeyPrefix(rowId: string): string {
+  return `row:${rowId}:invite_token:`;
 }
 
-function memberPublicKeyKey(roomId: string, username: string): string {
-  return `room:${roomId}:member_public_key:${username}`;
+function memberPublicKeyKey(rowId: string, username: string): string {
+  return `row:${rowId}:member_public_key:${username}`;
 }
 
-function roomMetaKey(roomId: string): string {
-  return `room:${roomId}:meta`;
+function rowMetaKey(rowId: string): string {
+  return `row:${rowId}:meta`;
 }
 
-function roomMembersKey(roomId: string): string {
-  return `room:${roomId}:members`;
+function rowMembersKey(rowId: string): string {
+  return `row:${rowId}:members`;
 }
 
-function roomMemberRolesKey(roomId: string): string {
-  return `row:${roomId}:member_roles`;
+function rowMemberRolesKey(rowId: string): string {
+  return `row:${rowId}:member_roles`;
 }
 
-function roomGlobalMessagePrefix(roomId: string): string {
-  return `room:${roomId}:global_message:`;
+function rowGlobalMessagePrefix(rowId: string): string {
+  return `row:${rowId}:global_message:`;
 }
 
-function roomMessageSequenceKey(roomId: string): string {
-  return `room:${roomId}:global_message_sequence`;
+function rowMessageSequenceKey(rowId: string): string {
+  return `row:${rowId}:global_message_sequence`;
 }
 
-function roomParentRefsKey(roomId: string): string {
-  return `room:${roomId}:parent_refs`;
+function rowParentRefsKey(rowId: string): string {
+  return `row:${rowId}:parent_refs`;
 }
 
-function roomNonceKey(roomId: string, username: string, nonce: string): string {
-  return `room:${roomId}:nonce:${username}:${nonce}`;
+function rowNonceKey(rowId: string, username: string, nonce: string): string {
+  return `row:${rowId}:nonce:${username}:${nonce}`;
 }
 
 function rowFieldsKey(rowId: string): string {
@@ -287,8 +287,8 @@ function stripTrailingSlash(input: string): string {
   return input.replace(/\/+$/g, "");
 }
 
-function buildRoomWorkerUrl(workerBaseUrl: string, roomId: string): string {
-  return `${stripTrailingSlash(workerBaseUrl)}/rooms/${encodeURIComponent(roomId)}`;
+function buildRowWorkerUrl(workerBaseUrl: string, rowId: string): string {
+  return `${stripTrailingSlash(workerBaseUrl)}/rows/${encodeURIComponent(rowId)}`;
 }
 
 function parseOptionalNonNegativeInteger(value: string | null, fallback: number): number {
@@ -304,39 +304,39 @@ function parseOptionalNonNegativeInteger(value: string | null, fallback: number)
   return Math.floor(parsed);
 }
 
-interface RoomRoute {
-  roomId: string;
+interface RowRoute {
+  rowId: string;
   endpoint: string;
   workerBasePath: string;
 }
 
-function parseRoomRoute(pathname: string): RoomRoute | null {
+function parseRowRoute(pathname: string): RowRoute | null {
   const segments = pathname.split("/").filter(Boolean);
-  const roomsIndex = segments.indexOf("rooms");
-  if (roomsIndex < 0 || roomsIndex + 2 >= segments.length) {
+  const rowsIndex = segments.indexOf("rows");
+  if (rowsIndex < 0 || rowsIndex + 2 >= segments.length) {
     return null;
   }
 
   return {
-    roomId: decodeURIComponent(segments[roomsIndex + 1]),
-    endpoint: segments.slice(roomsIndex + 2).join("/"),
-    workerBasePath: roomsIndex > 0 ? `/${segments.slice(0, roomsIndex).join("/")}` : "",
+    rowId: decodeURIComponent(segments[rowsIndex + 1]),
+    endpoint: segments.slice(rowsIndex + 2).join("/"),
+    workerBasePath: rowsIndex > 0 ? `/${segments.slice(0, rowsIndex).join("/")}` : "",
   };
 }
 
-function isRoomsCollectionPath(pathname: string): boolean {
+function isRowsCollectionPath(pathname: string): boolean {
   const segments = pathname.split("/").filter(Boolean);
-  const roomsIndex = segments.indexOf("rooms");
-  return roomsIndex >= 0 && roomsIndex === segments.length - 1;
+  const rowsIndex = segments.indexOf("rows");
+  return rowsIndex >= 0 && rowsIndex === segments.length - 1;
 }
 
-function inferRoomWorkerUrlFromRequest(
+function inferRowWorkerUrlFromRequest(
   requestUrl: string,
-  roomId: string,
+  rowId: string,
   fallbackWorkerUrl?: string,
 ): string {
   const baseUrl = inferFederationWorkerBaseUrlFromRequest(requestUrl, fallbackWorkerUrl);
-  return buildRoomWorkerUrl(baseUrl, roomId);
+  return buildRowWorkerUrl(baseUrl, rowId);
 }
 
 function inferFederationWorkerBaseUrlFromRequest(
@@ -344,15 +344,15 @@ function inferFederationWorkerBaseUrlFromRequest(
   fallbackWorkerUrl?: string,
 ): string {
   const url = new URL(requestUrl);
-  const route = parseRoomRoute(url.pathname);
+  const route = parseRowRoute(url.pathname);
   if (route) {
     return stripTrailingSlash(`${url.origin}${route.workerBasePath}`);
   }
 
-  if (isRoomsCollectionPath(url.pathname)) {
+  if (isRowsCollectionPath(url.pathname)) {
     const segments = url.pathname.split("/").filter(Boolean);
-    const roomsIndex = segments.indexOf("rooms");
-    const basePath = roomsIndex > 0 ? `/${segments.slice(0, roomsIndex).join("/")}` : "";
+    const rowsIndex = segments.indexOf("rows");
+    const basePath = rowsIndex > 0 ? `/${segments.slice(0, rowsIndex).join("/")}` : "";
     return stripTrailingSlash(`${url.origin}${basePath}`);
   }
 
@@ -489,14 +489,14 @@ interface WorkerRequestContext {
   workersExec?: WorkersHandler["exec"];
 }
 
-export class RoomWorker {
+export class RowWorker {
   private readonly kv: WorkerKv;
 
   private readonly now: () => number;
 
   constructor(
-    private readonly config: RoomWorkerConfig,
-    deps: RoomWorkerDeps,
+    private readonly config: RowWorkerConfig,
+    deps: RowWorkerDeps,
   ) {
     this.kv = deps.kv;
     this.now = deps.now ?? (() => Date.now());
@@ -513,96 +513,96 @@ export class RoomWorker {
 
       const { pathname } = new URL(request.url);
 
-      if (request.method === "POST" && isRoomsCollectionPath(pathname)) {
-        return await this.createRoom(request);
+      if (request.method === "POST" && isRowsCollectionPath(pathname)) {
+        return await this.createRow(request);
       }
 
-      const roomRoute = parseRoomRoute(pathname);
-      if (!roomRoute) {
+      const rowRoute = parseRowRoute(pathname);
+      if (!rowRoute) {
         return jsonResponse(404, {
           code: "BAD_REQUEST",
           message: "Endpoint not found",
         });
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "room/get") {
-        return await this.getRoom(request, roomRoute.roomId, ctx);
+      if (request.method === "POST" && rowRoute.endpoint === "row/get") {
+        return await this.getRow(request, rowRoute.rowId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "room/messages") {
-        return await this.getMessages(request, roomRoute.roomId, ctx);
+      if (request.method === "POST" && rowRoute.endpoint === "sync/poll") {
+        return await this.pollSyncMessages(request, rowRoute.rowId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "room/join") {
-        return await this.join(request, roomRoute.roomId);
+      if (request.method === "POST" && rowRoute.endpoint === "row/join") {
+        return await this.join(request, rowRoute.rowId);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "invite-token/get") {
-        return await this.getInviteToken(request, roomRoute.roomId, ctx);
+      if (request.method === "POST" && rowRoute.endpoint === "invite-token/get") {
+        return await this.getInviteToken(request, rowRoute.rowId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "invite-token/create") {
-        return await this.createInviteToken(request, roomRoute.roomId, ctx);
+      if (request.method === "POST" && rowRoute.endpoint === "invite-token/create") {
+        return await this.createInviteToken(request, rowRoute.rowId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "room/message") {
-        return await this.postMessage(request, roomRoute.roomId, ctx);
+      if (request.method === "POST" && rowRoute.endpoint === "sync/send") {
+        return await this.sendSyncMessage(request, rowRoute.rowId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "members/is-member") {
-        return await this.isMember(request, roomRoute.roomId, ctx);
+      if (request.method === "POST" && rowRoute.endpoint === "members/is-member") {
+        return await this.isMember(request, rowRoute.rowId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "members/role") {
-        return await this.memberRole(request, roomRoute.roomId, ctx);
+      if (request.method === "POST" && rowRoute.endpoint === "members/role") {
+        return await this.memberRole(request, rowRoute.rowId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "fields/get") {
-        return await this.getFields(request, roomRoute.roomId, ctx);
+      if (request.method === "POST" && rowRoute.endpoint === "fields/get") {
+        return await this.getFields(request, rowRoute.rowId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "fields/set") {
-        return await this.postFields(request, roomRoute.roomId, ctx);
+      if (request.method === "POST" && rowRoute.endpoint === "fields/set") {
+        return await this.postFields(request, rowRoute.rowId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "parents/register-child") {
-        return await this.registerChild(request, roomRoute.roomId, ctx);
+      if (request.method === "POST" && rowRoute.endpoint === "parents/register-child") {
+        return await this.registerChild(request, rowRoute.rowId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "parents/unregister-child") {
-        return await this.unregisterChild(request, roomRoute.roomId, ctx);
+      if (request.method === "POST" && rowRoute.endpoint === "parents/unregister-child") {
+        return await this.unregisterChild(request, rowRoute.rowId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "parents/update-index") {
-        return await this.updateIndex(request, roomRoute.roomId, ctx);
+      if (request.method === "POST" && rowRoute.endpoint === "parents/update-index") {
+        return await this.updateIndex(request, rowRoute.rowId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "db/query") {
-        return await this.dbQuery(request, roomRoute.roomId, ctx);
+      if (request.method === "POST" && rowRoute.endpoint === "db/query") {
+        return await this.dbQuery(request, rowRoute.rowId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "parents/link-parent") {
-        return await this.linkParent(request, roomRoute.roomId, ctx);
+      if (request.method === "POST" && rowRoute.endpoint === "parents/link-parent") {
+        return await this.linkParent(request, rowRoute.rowId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "parents/unlink-parent") {
-        return await this.unlinkParent(request, roomRoute.roomId, ctx);
+      if (request.method === "POST" && rowRoute.endpoint === "parents/unlink-parent") {
+        return await this.unlinkParent(request, rowRoute.rowId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "members/add") {
-        return await this.membersAdd(request, roomRoute.roomId, ctx);
+      if (request.method === "POST" && rowRoute.endpoint === "members/add") {
+        return await this.membersAdd(request, rowRoute.rowId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "members/remove") {
-        return await this.membersRemove(request, roomRoute.roomId, ctx);
+      if (request.method === "POST" && rowRoute.endpoint === "members/remove") {
+        return await this.membersRemove(request, rowRoute.rowId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "members/direct") {
-        return await this.membersDirect(request, roomRoute.roomId, ctx);
+      if (request.method === "POST" && rowRoute.endpoint === "members/direct") {
+        return await this.membersDirect(request, rowRoute.rowId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "members/effective") {
-        return await this.membersEffective(request, roomRoute.roomId, ctx);
+      if (request.method === "POST" && rowRoute.endpoint === "members/effective") {
+        return await this.membersEffective(request, rowRoute.rowId, ctx);
       }
 
       return jsonResponse(404, {
@@ -626,7 +626,7 @@ export class RoomWorker {
     request: Request,
     args: {
       action: string;
-      roomId: string;
+      rowId: string;
       requireRequestProof?: boolean;
       verifyBinding?: boolean;
     },
@@ -645,19 +645,19 @@ export class RoomWorker {
         await verifyRequestProof({
           proof: protectedRequest.auth.request,
           action: args.action,
-          roomId: args.roomId,
+          rowId: args.rowId,
           payload: protectedRequest.payload,
           principal: protectedRequest.auth.principal,
           publicKey: principal.publicKey,
         });
-        await this.assertFreshNonce(args.roomId, principal.username, protectedRequest.auth.request!.nonce);
+        await this.assertFreshNonce(args.rowId, principal.username, protectedRequest.auth.request!.nonce);
       }
     } catch (err) {
       error(401, "INVALID_SIGNATURE", err instanceof Error ? err.message : "Invalid auth proof");
     }
 
     if (args.verifyBinding === true) {
-      await this.assertPrincipalBound(args.roomId, principal);
+      await this.assertPrincipalBound(args.rowId, principal);
     }
 
     return {
@@ -667,8 +667,8 @@ export class RoomWorker {
     };
   }
 
-  private async assertFreshNonce(roomId: string, username: string, nonce: string): Promise<void> {
-    const key = roomNonceKey(roomId, username, nonce);
+  private async assertFreshNonce(rowId: string, username: string, nonce: string): Promise<void> {
+    const key = rowNonceKey(rowId, username, nonce);
     const existing = await this.kv.get<number>(key);
     if (typeof existing === "number") {
       error(401, "UNAUTHORIZED", "Request proof nonce has already been used");
@@ -677,7 +677,7 @@ export class RoomWorker {
     await this.kv.set(key, this.now());
   }
 
-  private async assertPrincipalBound(roomId: string, principal: VerifiedPrincipal): Promise<void> {
+  private async assertPrincipalBound(rowId: string, principal: VerifiedPrincipal): Promise<void> {
     if (principal.username === this.config.owner) {
       if (this.config.ownerPublicKeyJwk && canonicalize(principal.publicKeyJwk) !== canonicalize(this.config.ownerPublicKeyJwk)) {
         error(401, "KEY_MISMATCH", "Owner key does not match worker configuration");
@@ -685,12 +685,12 @@ export class RoomWorker {
       return;
     }
 
-    const members = await this.getMembers(roomId);
+    const members = await this.getMembers(rowId);
     if (!members.includes(principal.username)) {
       error(401, "UNAUTHORIZED", "Members only");
     }
 
-    const existing = await this.kv.get<JsonWebKey>(memberPublicKeyKey(roomId, principal.username));
+    const existing = await this.kv.get<JsonWebKey>(memberPublicKeyKey(rowId, principal.username));
     if (!existing) {
       error(401, "UNAUTHORIZED", "Member key missing");
     }
@@ -700,20 +700,20 @@ export class RoomWorker {
     }
   }
 
-  private async createRoom(request: Request): Promise<Response> {
-    let protectedRequest: ProtectedRequest<CreateRoomRequest>;
+  private async createRow(request: Request): Promise<Response> {
+    let protectedRequest: ProtectedRequest<CreateRowRequest>;
     try {
-      protectedRequest = await parseProtectedRequest<CreateRoomRequest>(request);
+      protectedRequest = await parseProtectedRequest<CreateRowRequest>(request);
     } catch (err) {
       error(400, "BAD_REQUEST", err instanceof Error ? err.message : "Invalid protected request");
     }
 
     const body = protectedRequest.payload;
-    const roomId = body.roomId?.trim();
-    const roomName = body.roomName?.trim();
+    const rowId = body.rowId?.trim();
+    const rowName = body.rowName?.trim();
 
-    if (!roomId || !roomName) {
-      error(400, "BAD_REQUEST", "roomId and roomName are required");
+    if (!rowId || !rowName) {
+      error(400, "BAD_REQUEST", "rowId and rowName are required");
     }
 
     let principal: VerifiedPrincipal;
@@ -721,63 +721,63 @@ export class RoomWorker {
       principal = await verifyPrincipalProof(protectedRequest.auth.principal);
       await verifyRequestProof({
         proof: protectedRequest.auth.request,
-        action: "rooms/create",
-        roomId,
+        action: "rows/create",
+        rowId,
         payload: body,
         principal: protectedRequest.auth.principal,
         publicKey: principal.publicKey,
       });
-      await this.assertFreshNonce(roomId, principal.username, protectedRequest.auth.request!.nonce);
+      await this.assertFreshNonce(rowId, principal.username, protectedRequest.auth.request!.nonce);
     } catch (err) {
       error(401, "INVALID_SIGNATURE", err instanceof Error ? err.message : "Invalid auth proof");
     }
     if (principal.username !== this.config.owner) {
-      error(401, "UNAUTHORIZED", "Only owner can create rooms");
+      error(401, "UNAUTHORIZED", "Only owner can create rows");
     }
     if (this.config.ownerPublicKeyJwk && canonicalize(principal.publicKeyJwk) !== canonicalize(this.config.ownerPublicKeyJwk)) {
       error(401, "KEY_MISMATCH", "Owner key does not match worker configuration");
     }
 
-    await this.ensureRoomMeta({
-      roomId,
-      roomName,
+    await this.ensureRowMeta({
+      rowId,
+      rowName,
       requestUrl: request.url,
     });
 
-    return jsonResponse(200, await this.snapshot(roomId, request.url));
+    return jsonResponse(200, await this.snapshot(rowId, request.url));
   }
 
-  private async getRoom(
+  private async getRow(
     request: Request,
-    roomId: string,
+    rowId: string,
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { principal } = await this.requireProtectedPayload<Record<string, never>>(request, {
-      action: "room/get",
-      roomId,
+      action: "row/get",
+      rowId,
     });
-    await this.assertMember(roomId, principal, ctx);
+    await this.assertMember(rowId, principal, ctx);
 
-    const snapshot = await this.snapshot(roomId, request.url);
+    const snapshot = await this.snapshot(rowId, request.url);
     return jsonResponse(200, snapshot);
   }
 
-  private async getMessages(
+  private async pollSyncMessages(
     request: Request,
-    roomId: string,
+    rowId: string,
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { principal, payload } = await this.requireProtectedPayload<MessagesRequest>(request, {
-      action: "room/messages",
-      roomId,
+      action: "sync/poll",
+      rowId,
     });
     if (payload.sinceSequence == null) {
       error(400, "BAD_REQUEST", "sinceSequence is required");
     }
     const sinceSequence = parseOptionalNonNegativeInteger(String(payload.sinceSequence), 0);
-    await this.assertMember(roomId, principal, ctx);
+    await this.assertMember(rowId, principal, ctx);
 
-    const currentSequence = await this.getMessageSequence(roomId);
+    const currentSequence = await this.getMessageSequence(rowId);
     if (sinceSequence >= currentSequence) {
       return jsonResponse(200, {
         messages: [],
@@ -785,10 +785,10 @@ export class RoomWorker {
       });
     }
 
-    const messageEntries = await this.kv.list(roomGlobalMessagePrefix(roomId));
+    const messageEntries = await this.kv.list(rowGlobalMessagePrefix(rowId));
 
     const messages = messageEntries
-      .map((entry) => entry.value as Message)
+      .map((entry) => entry.value as SyncMessage)
       .filter((message) => message.sequence > sinceSequence)
       .sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id));
 
@@ -803,10 +803,10 @@ export class RoomWorker {
     });
   }
 
-  private async join(request: Request, roomId: string): Promise<Response> {
+  private async join(request: Request, rowId: string): Promise<Response> {
     const { payload: body, principal } = await this.requireProtectedPayload<JoinRequest>(request, {
-      action: "room/join",
-      roomId,
+      action: "row/join",
+      rowId,
       verifyBinding: false,
     });
     if (!body.username) {
@@ -817,20 +817,20 @@ export class RoomWorker {
       error(401, "UNAUTHORIZED", "Join username does not match principal proof");
     }
 
-    await this.ensureRoomMeta({ roomId, requestUrl: request.url });
+    await this.ensureRowMeta({ rowId, requestUrl: request.url });
 
-    const members = await this.getMembers(roomId);
+    const members = await this.getMembers(rowId);
     const isOwner = body.username === this.config.owner;
     const alreadyMember = members.includes(body.username);
 
     if (alreadyMember) {
-      const existingKey = await this.kv.get<JsonWebKey>(memberPublicKeyKey(roomId, body.username));
+      const existingKey = await this.kv.get<JsonWebKey>(memberPublicKeyKey(rowId, body.username));
       if (!existingKey) {
-        await this.kv.set(memberPublicKeyKey(roomId, body.username), principal.publicKeyJwk);
+        await this.kv.set(memberPublicKeyKey(rowId, body.username), principal.publicKeyJwk);
       } else if (canonicalize(existingKey) !== canonicalize(principal.publicKeyJwk)) {
         error(401, "KEY_MISMATCH", "Public key does not match bound member key");
       }
-      return jsonResponse(200, await this.snapshot(roomId, request.url));
+      return jsonResponse(200, await this.snapshot(rowId, request.url));
     }
 
     if (!isOwner) {
@@ -838,98 +838,98 @@ export class RoomWorker {
         error(401, "INVITE_REQUIRED", "Invite token is required for non-owner first join");
       }
 
-      const invite = await this.kv.get<InviteToken>(tokenKey(roomId, body.inviteToken));
-      if (!invite || invite.roomId !== roomId) {
+      const invite = await this.kv.get<InviteToken>(tokenKey(rowId, body.inviteToken));
+      if (!invite || invite.rowId !== rowId) {
         error(401, "INVITE_REQUIRED", "Invite token is invalid");
       }
     }
 
     members.push(body.username);
-    await this.kv.set(roomMembersKey(roomId), members);
-    await this.kv.set(memberPublicKeyKey(roomId, body.username), principal.publicKeyJwk);
+    await this.kv.set(rowMembersKey(rowId), members);
+    await this.kv.set(memberPublicKeyKey(rowId, body.username), principal.publicKeyJwk);
 
     if (!isOwner) {
-      const roles = await this.getMemberRoles(roomId);
+      const roles = await this.getMemberRoles(rowId);
       roles[body.username] = roles[body.username] ?? "reader";
-      await this.kv.set(roomMemberRolesKey(roomId), roles);
+      await this.kv.set(rowMemberRolesKey(rowId), roles);
     }
 
-    return jsonResponse(200, await this.snapshot(roomId, request.url));
+    return jsonResponse(200, await this.snapshot(rowId, request.url));
   }
 
   private async getInviteToken(
     request: Request,
-    roomId: string,
+    rowId: string,
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { principal } = await this.requireProtectedPayload<Record<string, never>>(request, {
       action: "invite-token/get",
-      roomId,
+      rowId,
     });
-    await this.assertMember(roomId, principal, ctx);
+    await this.assertMember(rowId, principal, ctx);
 
-    const entries = await this.kv.list(tokenKeyPrefix(roomId));
+    const entries = await this.kv.list(tokenKeyPrefix(rowId));
     const existing = entries
       .map((e) => e.value as InviteToken)
-      .find((t) => t.invitedBy === principal.username && t.roomId === roomId);
+      .find((t) => t.invitedBy === principal.username && t.rowId === rowId);
 
     return jsonResponse(200, { inviteToken: existing ?? null });
   }
 
   private async createInviteToken(
     request: Request,
-    roomId: string,
+    rowId: string,
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload, principal } = await this.requireProtectedPayload<InvitePayload>(request, {
       action: "invite-token/create",
-      roomId,
+      rowId,
     });
-    await this.assertMember(roomId, principal, ctx);
+    await this.assertMember(rowId, principal, ctx);
 
-    if (payload.roomId !== roomId) {
-      error(400, "BAD_REQUEST", "Payload roomId does not match route roomId");
+    if (payload.rowId !== rowId) {
+      error(400, "BAD_REQUEST", "Payload rowId does not match route rowId");
     }
 
     const inviteToken: InviteToken = {
       token: payload.token,
-      roomId: payload.roomId,
+      rowId: payload.rowId,
       invitedBy: principal.username,
       createdAt: payload.createdAt,
     };
 
-    await this.kv.set(tokenKey(roomId, inviteToken.token), inviteToken);
+    await this.kv.set(tokenKey(rowId, inviteToken.token), inviteToken);
 
     return jsonResponse(200, {
       inviteToken,
     });
   }
 
-  private async postMessage(
+  private async sendSyncMessage(
     request: Request,
-    roomId: string,
+    rowId: string,
     ctx: WorkerRequestContext,
   ): Promise<Response> {
-    const { payload, principal } = await this.requireProtectedPayload<MessagePayload>(request, {
-      action: "room/message",
-      roomId,
+    const { payload, principal } = await this.requireProtectedPayload<SyncMessagePayload>(request, {
+      action: "sync/send",
+      rowId,
     });
-    await this.assertMember(roomId, principal, ctx);
+    await this.assertMember(rowId, principal, ctx);
 
-    if (payload.roomId !== roomId) {
-      error(400, "BAD_REQUEST", "Payload roomId does not match route roomId");
+    if (payload.rowId !== rowId) {
+      error(400, "BAD_REQUEST", "Payload rowId does not match route rowId");
     }
 
-    const sequence = await this.nextMessageSequence(roomId);
+    const sequence = await this.nextMessageSequence(rowId);
 
-    const message: Message = {
+    const message: SyncMessage = {
       ...payload,
-      body: payload.body as Message["body"],
+      body: payload.body as SyncMessage["body"],
       signedBy: principal.username,
       sequence,
     };
 
-    await this.kv.set(messageGlobalKey(roomId, message), message);
+    await this.kv.set(messageGlobalKey(rowId, message), message);
 
     return jsonResponse(200, {
       message,
@@ -938,30 +938,30 @@ export class RoomWorker {
 
   private async isMember(
     request: Request,
-    roomId: string,
+    rowId: string,
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload, principal } = await this.requireProtectedPayload<RoleResolutionRequest>(request, {
       action: "members/is-member",
-      roomId,
+      rowId,
     });
-    const ttl = parseOptionalNonNegativeInteger(payload.ttl == null ? null : String(payload.ttl), DEFAULT_PARENT_ROOM_TTL);
-    await this.assertMember(roomId, principal, ctx, ttl);
+    const ttl = parseOptionalNonNegativeInteger(payload.ttl == null ? null : String(payload.ttl), DEFAULT_PARENT_ROW_TTL);
+    await this.assertMember(rowId, principal, ctx, ttl);
     return jsonResponse(200, { isMember: true });
   }
 
   private async memberRole(
     request: Request,
-    roomId: string,
+    rowId: string,
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload, principal } = await this.requireProtectedPayload<RoleResolutionRequest>(request, {
       action: "members/role",
-      roomId,
+      rowId,
       requireRequestProof: false,
     });
-    const ttl = parseOptionalNonNegativeInteger(payload.ttl == null ? null : String(payload.ttl), DEFAULT_PARENT_ROOM_TTL);
-    const role = await this.resolveMemberRole(roomId, principal, ctx, ttl);
+    const ttl = parseOptionalNonNegativeInteger(payload.ttl == null ? null : String(payload.ttl), DEFAULT_PARENT_ROW_TTL);
+    const role = await this.resolveMemberRole(rowId, principal, ctx, ttl);
     if (!role) {
       error(401, "UNAUTHORIZED", "Members only");
     }
@@ -971,51 +971,51 @@ export class RoomWorker {
 
   private async getFields(
     request: Request,
-    roomId: string,
+    rowId: string,
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { principal } = await this.requireProtectedPayload<Record<string, never>>(request, {
       action: "fields/get",
-      roomId,
+      rowId,
     });
-    await this.assertMember(roomId, principal, ctx);
+    await this.assertMember(rowId, principal, ctx);
 
     const response: GetFieldsResponse = {
-      fields: await this.getRowFields(roomId),
-      collection: await this.getRowCollection(roomId),
+      fields: await this.getRowFields(rowId),
+      collection: await this.getRowCollection(rowId),
     };
     return jsonResponse(200, response);
   }
 
   private async postFields(
     request: Request,
-    roomId: string,
+    rowId: string,
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload: body, principal } = await this.requireProtectedPayload<PostFieldsRequest>(request, {
       action: "fields/set",
-      roomId,
+      rowId,
     });
-    await this.assertWriterOrAdmin(roomId, principal, ctx);
+    await this.assertWriterOrAdmin(rowId, principal, ctx);
     const incomingFields = toJsonRecord(body.fields);
     const merge = body.merge ?? true;
     if (!isRecord(body.fields)) {
       error(400, "BAD_REQUEST", "fields must be an object");
     }
 
-    const current = await this.getRowFields(roomId);
+    const current = await this.getRowFields(rowId);
     const next = merge
       ? { ...current, ...incomingFields }
       : incomingFields;
-    await this.kv.set(rowFieldsKey(roomId), next);
+    await this.kv.set(rowFieldsKey(rowId), next);
 
-    const currentCollection = await this.getRowCollection(roomId);
+    const currentCollection = await this.getRowCollection(rowId);
     if (body.collection) {
       if (currentCollection && currentCollection !== body.collection) {
         error(400, "BAD_REQUEST", "collection cannot be changed once set");
       }
 
-      await this.kv.set(rowCollectionKey(roomId), body.collection);
+      await this.kv.set(rowCollectionKey(rowId), body.collection);
     }
 
     const finalCollection = body.collection ?? currentCollection;
@@ -1028,12 +1028,12 @@ export class RoomWorker {
 
   private async registerChild(
     request: Request,
-    parentRoomId: string,
+    parentRowId: string,
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload: body, principal } = await this.requireProtectedPayload<RegisterChildRequest>(request, {
       action: "parents/register-child",
-      roomId: parentRoomId,
+      rowId: parentRowId,
     });
 
     const childTarget = stripTrailingSlash(body.childTarget ?? body.childWorkerUrl ?? "");
@@ -1046,11 +1046,11 @@ export class RoomWorker {
       error(401, "UNAUTHORIZED", "Only child owner can register child");
     }
 
-    await this.assertMember(parentRoomId, principal, ctx);
+    await this.assertMember(parentRowId, principal, ctx);
 
     const schema = this.normalizeChildSchema(body.schema);
     if (schema) {
-      await this.kv.set(rowChildSchemaKey(parentRoomId, body.collection), schema);
+      await this.kv.set(rowChildSchemaKey(parentRowId, body.collection), schema);
     }
 
     const childEntry: ChildEntry = {
@@ -1065,13 +1065,13 @@ export class RoomWorker {
     };
 
     await this.kv.set(
-      rowChildKey(parentRoomId, body.collection, body.childOwner, body.childRowId),
+      rowChildKey(parentRowId, body.collection, body.childOwner, body.childRowId),
       childEntry,
     );
 
-    const storedSchema = await this.getChildSchema(parentRoomId, body.collection);
+    const storedSchema = await this.getChildSchema(parentRowId, body.collection);
     if (storedSchema) {
-      await this.writeChildIndexes(parentRoomId, childEntry, storedSchema);
+      await this.writeChildIndexes(parentRowId, childEntry, storedSchema);
     }
 
     return jsonResponse(200, {
@@ -1082,24 +1082,24 @@ export class RoomWorker {
 
   private async unregisterChild(
     request: Request,
-    parentRoomId: string,
+    parentRowId: string,
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload: body, principal } = await this.requireProtectedPayload<UnregisterChildRequest>(request, {
       action: "parents/unregister-child",
-      roomId: parentRoomId,
+      rowId: parentRowId,
     });
 
     if (!body.childRowId || !body.childOwner || !body.collection) {
       error(400, "BAD_REQUEST", "childRowId, childOwner, and collection are required");
     }
 
-    const requesterIsAdmin = await this.hasRole(parentRoomId, principal, ctx, ["admin"]);
+    const requesterIsAdmin = await this.hasRole(parentRowId, principal, ctx, ["admin"]);
     if (!requesterIsAdmin && principal.username !== body.childOwner) {
       error(401, "UNAUTHORIZED", "Only child owner or parent admin can unregister child");
     }
 
-    const childKey = rowChildKey(parentRoomId, body.collection, body.childOwner, body.childRowId);
+    const childKey = rowChildKey(parentRowId, body.collection, body.childOwner, body.childRowId);
     const existing = await this.kv.get<ChildEntry>(childKey);
     if (existing) {
       await this.kv.set(childKey, {
@@ -1109,19 +1109,19 @@ export class RoomWorker {
       } satisfies ChildEntry);
     }
 
-    await this.tombstoneChildIndexes(parentRoomId, body.collection, body.childOwner, body.childRowId);
+    await this.tombstoneChildIndexes(parentRowId, body.collection, body.childOwner, body.childRowId);
 
     return jsonResponse(200, { ok: true });
   }
 
   private async updateIndex(
     request: Request,
-    parentRoomId: string,
+    parentRowId: string,
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload: body, principal } = await this.requireProtectedPayload<UpdateIndexRequest>(request, {
       action: "parents/update-index",
-      roomId: parentRoomId,
+      rowId: parentRowId,
       requireRequestProof: false,
     });
 
@@ -1133,10 +1133,10 @@ export class RoomWorker {
       error(401, "UNAUTHORIZED", "Only child owner can update indexes");
     }
 
-    await this.assertMember(parentRoomId, principal, ctx);
+    await this.assertMember(parentRowId, principal, ctx);
 
-    const schema = await this.getChildSchema(parentRoomId, body.collection);
-    const childKey = rowChildKey(parentRoomId, body.collection, body.childOwner, body.childRowId);
+    const schema = await this.getChildSchema(parentRowId, body.collection);
+    const childKey = rowChildKey(parentRowId, body.collection, body.childOwner, body.childRowId);
     const existing = await this.kv.get<ChildEntry>(childKey);
     const childTarget = stripTrailingSlash(body.childTarget ?? body.childWorkerUrl ?? existing?.target ?? "");
     const nextEntry: ChildEntry = {
@@ -1151,7 +1151,7 @@ export class RoomWorker {
     };
 
     await this.kv.set(childKey, nextEntry);
-    await this.tombstoneChildIndexes(parentRoomId, body.collection, body.childOwner, body.childRowId);
+    await this.tombstoneChildIndexes(parentRowId, body.collection, body.childOwner, body.childRowId);
 
     if (!schema) {
       return jsonResponse(200, {
@@ -1160,7 +1160,7 @@ export class RoomWorker {
       });
     }
 
-    await this.writeChildIndexes(parentRoomId, nextEntry, schema);
+    await this.writeChildIndexes(parentRowId, nextEntry, schema);
     return jsonResponse(200, {
       ok: true,
       updated: true,
@@ -1169,14 +1169,14 @@ export class RoomWorker {
 
   private async dbQuery(
     request: Request,
-    parentRoomId: string,
+    parentRowId: string,
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload, principal } = await this.requireProtectedPayload<QueryRequest>(request, {
       action: "db/query",
-      roomId: parentRoomId,
+      rowId: parentRowId,
     });
-    await this.assertMember(parentRoomId, principal, ctx);
+    await this.assertMember(parentRowId, principal, ctx);
 
     const collection = payload.collection?.trim();
     if (!collection) {
@@ -1193,9 +1193,9 @@ export class RoomWorker {
 
     let rows: ChildEntry[];
     if (indexName) {
-      rows = await this.queryByIndex(parentRoomId, collection, indexName, payload.value ?? null, order, limit);
+      rows = await this.queryByIndex(parentRowId, collection, indexName, payload.value ?? null, order, limit);
     } else {
-      rows = await this.queryByChildren(parentRoomId, collection, where, order, limit);
+      rows = await this.queryByChildren(parentRowId, collection, where, order, limit);
     }
 
     return jsonResponse(200, {
@@ -1211,21 +1211,21 @@ export class RoomWorker {
 
   private async linkParent(
     request: Request,
-    roomId: string,
+    rowId: string,
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload: body, principal } = await this.requireProtectedPayload<ParentLinkRequest>(request, {
       action: "parents/link-parent",
-      roomId,
+      rowId,
     });
-    await this.assertWriterOrAdmin(roomId, principal, ctx);
+    await this.assertWriterOrAdmin(rowId, principal, ctx);
 
     const parentRef = normalizeRowRef(body.parentRef, "parentRef");
 
-    const parentRefs = await this.getParentRefs(roomId);
+    const parentRefs = await this.getParentRefs(rowId);
     if (!parentRefs.some((existing) => sameRowRef(existing, parentRef))) {
       parentRefs.push(parentRef);
-      await this.kv.set(roomParentRefsKey(roomId), parentRefs);
+      await this.kv.set(rowParentRefsKey(rowId), parentRefs);
     }
 
     return jsonResponse(200, {
@@ -1235,20 +1235,20 @@ export class RoomWorker {
 
   private async unlinkParent(
     request: Request,
-    roomId: string,
+    rowId: string,
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload: body, principal } = await this.requireProtectedPayload<ParentLinkRequest>(request, {
       action: "parents/unlink-parent",
-      roomId,
+      rowId,
     });
-    await this.assertWriterOrAdmin(roomId, principal, ctx);
+    await this.assertWriterOrAdmin(rowId, principal, ctx);
 
     const parentRef = normalizeRowRef(body.parentRef, "parentRef");
 
-    const parentRefs = await this.getParentRefs(roomId);
+    const parentRefs = await this.getParentRefs(rowId);
     const next = parentRefs.filter((existing) => !sameRowRef(existing, parentRef));
-    await this.kv.set(roomParentRefsKey(roomId), next);
+    await this.kv.set(rowParentRefsKey(rowId), next);
 
     return jsonResponse(200, {
       parentRefs: next,
@@ -1257,29 +1257,29 @@ export class RoomWorker {
 
   private async membersAdd(
     request: Request,
-    roomId: string,
+    rowId: string,
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload: body, principal } = await this.requireProtectedPayload<MemberMutationRequest>(request, {
       action: "members/add",
-      roomId,
+      rowId,
     });
-    await this.assertAdmin(roomId, principal, ctx);
+    await this.assertAdmin(rowId, principal, ctx);
     const username = body.username?.trim();
     const role = body.role;
     if (!username || !role || (role !== "admin" && role !== "writer" && role !== "reader")) {
       error(400, "BAD_REQUEST", "username and valid role are required");
     }
 
-    const members = await this.getMembers(roomId);
+    const members = await this.getMembers(rowId);
     if (!members.includes(username)) {
       members.push(username);
-      await this.kv.set(roomMembersKey(roomId), members);
+      await this.kv.set(rowMembersKey(rowId), members);
     }
 
-    const roles = await this.getMemberRoles(roomId);
+    const roles = await this.getMemberRoles(rowId);
     roles[username] = role;
-    await this.kv.set(roomMemberRolesKey(roomId), roles);
+    await this.kv.set(rowMemberRolesKey(rowId), roles);
 
     return jsonResponse(200, {
       members,
@@ -1289,27 +1289,27 @@ export class RoomWorker {
 
   private async membersRemove(
     request: Request,
-    roomId: string,
+    rowId: string,
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload: body, principal } = await this.requireProtectedPayload<MemberMutationRequest>(request, {
       action: "members/remove",
-      roomId,
+      rowId,
     });
-    await this.assertAdmin(roomId, principal, ctx);
+    await this.assertAdmin(rowId, principal, ctx);
     const username = body.username?.trim();
     if (!username) {
       error(400, "BAD_REQUEST", "username is required");
     }
 
-    const nextMembers = (await this.getMembers(roomId)).filter((member) => member !== username);
-    await this.kv.set(roomMembersKey(roomId), nextMembers);
+    const nextMembers = (await this.getMembers(rowId)).filter((member) => member !== username);
+    await this.kv.set(rowMembersKey(rowId), nextMembers);
 
-    const roles = await this.getMemberRoles(roomId);
+    const roles = await this.getMemberRoles(rowId);
     delete roles[username];
-    await this.kv.set(roomMemberRolesKey(roomId), roles);
+    await this.kv.set(rowMemberRolesKey(rowId), roles);
     if (typeof this.kv.delete === "function") {
-      await this.kv.delete(memberPublicKeyKey(roomId, username));
+      await this.kv.delete(memberPublicKeyKey(rowId, username));
     }
 
     return jsonResponse(200, {
@@ -1320,17 +1320,17 @@ export class RoomWorker {
 
   private async membersDirect(
     request: Request,
-    roomId: string,
+    rowId: string,
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { principal } = await this.requireProtectedPayload<Record<string, never>>(request, {
       action: "members/direct",
-      roomId,
+      rowId,
     });
-    await this.assertMember(roomId, principal, ctx);
+    await this.assertMember(rowId, principal, ctx);
 
-    const members = await this.getMembers(roomId);
-    const roles = await this.getMemberRoles(roomId);
+    const members = await this.getMembers(rowId);
+    const roles = await this.getMemberRoles(rowId);
     return jsonResponse(200, {
       members: members.map((username) => ({
         username,
@@ -1341,20 +1341,20 @@ export class RoomWorker {
 
   private async membersEffective(
     request: Request,
-    roomId: string,
+    rowId: string,
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload, principal, auth } = await this.requireProtectedPayload<RoleResolutionRequest>(request, {
       action: "members/effective",
-      roomId,
+      rowId,
       requireRequestProof: false,
     });
-    const ttl = parseOptionalNonNegativeInteger(payload.ttl == null ? null : String(payload.ttl), DEFAULT_PARENT_ROOM_TTL);
-    await this.assertMember(roomId, principal, ctx, ttl);
+    const ttl = parseOptionalNonNegativeInteger(payload.ttl == null ? null : String(payload.ttl), DEFAULT_PARENT_ROW_TTL);
+    await this.assertMember(rowId, principal, ctx, ttl);
 
     const members = new Map<string, EffectiveMember>();
-    const direct = await this.getMembers(roomId);
-    const directRoles = await this.getMemberRoles(roomId);
+    const direct = await this.getMembers(rowId);
+    const directRoles = await this.getMemberRoles(rowId);
 
     for (const username of direct) {
       const role: MemberRole = username === this.config.owner ? "admin" : directRoles[username] ?? "reader";
@@ -1365,7 +1365,7 @@ export class RoomWorker {
     }
 
     if (ttl > 0 && ctx.workersExec) {
-      const parentRefs = await this.getParentRefs(roomId);
+      const parentRefs = await this.getParentRefs(rowId);
       await Promise.all(parentRefs.map(async (parentRef) => {
         try {
           const forwarded: ProtectedRequest<RoleResolutionRequest> = {
@@ -1414,7 +1414,7 @@ export class RoomWorker {
   }
 
   private async queryByIndex(
-    parentRoomId: string,
+    parentRowId: string,
     collection: string,
     indexName: string,
     valueParam: string | null,
@@ -1422,8 +1422,8 @@ export class RoomWorker {
     limit: number,
   ): Promise<ChildEntry[]> {
     const prefix = valueParam === null
-      ? rowIndexPrefix(parentRoomId, collection, indexName)
-      : `${rowIndexPrefix(parentRoomId, collection, indexName)}${valueParam}:`;
+      ? rowIndexPrefix(parentRowId, collection, indexName)
+      : `${rowIndexPrefix(parentRowId, collection, indexName)}${valueParam}:`;
 
     const entries = await this.kv.list(prefix);
     const ordered = order === "asc" ? entries : [...entries].reverse();
@@ -1460,13 +1460,13 @@ export class RoomWorker {
   }
 
   private async queryByChildren(
-    parentRoomId: string,
+    parentRowId: string,
     collection: string,
     where: Record<string, JsonValue> | undefined,
     order: "asc" | "desc",
     limit: number,
   ): Promise<ChildEntry[]> {
-    const entries = await this.kv.list(rowChildPrefix(parentRoomId, collection));
+    const entries = await this.kv.list(rowChildPrefix(parentRowId, collection));
 
     const activeChildren = entries
       .map((entry) => entry.value as ChildEntry)
@@ -1487,7 +1487,7 @@ export class RoomWorker {
   }
 
   private async writeChildIndexes(
-    parentRoomId: string,
+    parentRowId: string,
     child: ChildEntry,
     schema: ChildCollectionSchema,
   ): Promise<void> {
@@ -1504,7 +1504,7 @@ export class RoomWorker {
         }
 
         const key = rowIndexKey(
-          parentRoomId,
+          parentRowId,
           child.collection,
           indexName,
           encoded,
@@ -1528,13 +1528,13 @@ export class RoomWorker {
   }
 
   private async tombstoneChildIndexes(
-    parentRoomId: string,
+    parentRowId: string,
     collection: string,
     childOwner: string,
     childRowId: string,
   ): Promise<void> {
     const suffix = `:${childOwner}:${childRowId}`;
-    const entries = await this.kv.list(rowIndexCollectionPrefix(parentRoomId, collection));
+    const entries = await this.kv.list(rowIndexCollectionPrefix(parentRowId, collection));
 
     await Promise.all(entries.map(async (entry) => {
       if (!entry.key.endsWith(suffix)) {
@@ -1581,8 +1581,8 @@ export class RoomWorker {
     return Object.keys(normalized.indexes).length > 0 ? normalized : null;
   }
 
-  private async getChildSchema(parentRoomId: string, collection: string): Promise<ChildCollectionSchema | null> {
-    const stored = await this.kv.get<ChildCollectionSchema>(rowChildSchemaKey(parentRoomId, collection));
+  private async getChildSchema(parentRowId: string, collection: string): Promise<ChildCollectionSchema | null> {
+    const stored = await this.kv.get<ChildCollectionSchema>(rowChildSchemaKey(parentRowId, collection));
     if (!stored || !isRecord(stored.indexes)) {
       return null;
     }
@@ -1590,63 +1590,63 @@ export class RoomWorker {
     return stored;
   }
 
-  private async getParentRefs(roomId: string): Promise<DbRowRef[]> {
-    return (await this.kv.get<DbRowRef[]>(roomParentRefsKey(roomId))) ?? [];
+  private async getParentRefs(rowId: string): Promise<DbRowRef[]> {
+    return (await this.kv.get<DbRowRef[]>(rowParentRefsKey(rowId))) ?? [];
   }
 
   private async assertMember(
-    roomId: string,
+    rowId: string,
     principal: VerifiedPrincipal,
     ctx: WorkerRequestContext,
-    ttl: number = DEFAULT_PARENT_ROOM_TTL,
+    ttl: number = DEFAULT_PARENT_ROW_TTL,
   ): Promise<void> {
-    const role = await this.resolveMemberRole(roomId, principal, ctx, ttl);
+    const role = await this.resolveMemberRole(rowId, principal, ctx, ttl);
     if (!role) {
       error(401, "UNAUTHORIZED", "Members only");
     }
   }
 
   private async hasRole(
-    roomId: string,
+    rowId: string,
     principal: VerifiedPrincipal,
     ctx: WorkerRequestContext,
     roles: MemberRole[],
   ): Promise<boolean> {
-    const effectiveRole = await this.resolveMemberRole(roomId, principal, ctx);
+    const effectiveRole = await this.resolveMemberRole(rowId, principal, ctx);
     return !!effectiveRole && roles.includes(effectiveRole);
   }
 
   private async assertWriterOrAdmin(
-    roomId: string,
+    rowId: string,
     principal: VerifiedPrincipal,
     ctx: WorkerRequestContext,
   ): Promise<void> {
-    const role = await this.resolveMemberRole(roomId, principal, ctx);
+    const role = await this.resolveMemberRole(rowId, principal, ctx);
     if (role !== "admin" && role !== "writer") {
       error(401, "UNAUTHORIZED", "Writers or admins only");
     }
   }
 
-  private async assertAdmin(roomId: string, principal: VerifiedPrincipal, ctx: WorkerRequestContext): Promise<void> {
-    const role = await this.resolveMemberRole(roomId, principal, ctx);
+  private async assertAdmin(rowId: string, principal: VerifiedPrincipal, ctx: WorkerRequestContext): Promise<void> {
+    const role = await this.resolveMemberRole(rowId, principal, ctx);
     if (role !== "admin") {
       error(401, "UNAUTHORIZED", "Admins only");
     }
   }
 
   private async resolveMemberRole(
-    roomId: string,
+    rowId: string,
     principal: VerifiedPrincipal,
     ctx: WorkerRequestContext,
-    ttl: number = DEFAULT_PARENT_ROOM_TTL,
+    ttl: number = DEFAULT_PARENT_ROW_TTL,
   ): Promise<MemberRole | null> {
-    let bestRole = await this.getDirectRole(roomId, principal);
+    let bestRole = await this.getDirectRole(rowId, principal);
 
     if (ttl === 0 || !ctx.workersExec) {
       return bestRole;
     }
 
-    const parentRefs = await this.getParentRefs(roomId);
+    const parentRefs = await this.getParentRefs(rowId);
     if (parentRefs.length === 0) {
       return bestRole;
     }
@@ -1701,7 +1701,7 @@ export class RoomWorker {
     return bestRole;
   }
 
-  private async getDirectRole(roomId: string, principal: VerifiedPrincipal): Promise<MemberRole | null> {
+  private async getDirectRole(rowId: string, principal: VerifiedPrincipal): Promise<MemberRole | null> {
     if (principal.username === this.config.owner) {
       if (this.config.ownerPublicKeyJwk && canonicalize(principal.publicKeyJwk) !== canonicalize(this.config.ownerPublicKeyJwk)) {
         return null;
@@ -1709,43 +1709,43 @@ export class RoomWorker {
       return "admin";
     }
 
-    const members = await this.getMembers(roomId);
+    const members = await this.getMembers(rowId);
     if (!members.includes(principal.username)) {
       return null;
     }
-    const storedKey = await this.kv.get<JsonWebKey>(memberPublicKeyKey(roomId, principal.username));
+    const storedKey = await this.kv.get<JsonWebKey>(memberPublicKeyKey(rowId, principal.username));
     if (!storedKey) {
-      await this.kv.set(memberPublicKeyKey(roomId, principal.username), principal.publicKeyJwk);
+      await this.kv.set(memberPublicKeyKey(rowId, principal.username), principal.publicKeyJwk);
     } else if (canonicalize(storedKey) !== canonicalize(principal.publicKeyJwk)) {
       return null;
     }
 
-    const roles = await this.getMemberRoles(roomId);
+    const roles = await this.getMemberRoles(rowId);
     const role = roles[principal.username] ?? "reader";
     return role;
   }
 
-  private async getMembers(roomId: string): Promise<string[]> {
-    const stored = await this.kv.get<string[]>(roomMembersKey(roomId));
+  private async getMembers(rowId: string): Promise<string[]> {
+    const stored = await this.kv.get<string[]>(rowMembersKey(rowId));
     return stored ?? [];
   }
 
-  private async getMemberRoles(roomId: string): Promise<Record<string, MemberRole>> {
-    const stored = await this.kv.get<Record<string, MemberRole>>(roomMemberRolesKey(roomId));
+  private async getMemberRoles(rowId: string): Promise<Record<string, MemberRole>> {
+    const stored = await this.kv.get<Record<string, MemberRole>>(rowMemberRolesKey(rowId));
     return stored ?? {};
   }
 
-  private async getRowFields(roomId: string): Promise<Record<string, JsonValue>> {
-    const stored = await this.kv.get<Record<string, JsonValue>>(rowFieldsKey(roomId));
+  private async getRowFields(rowId: string): Promise<Record<string, JsonValue>> {
+    const stored = await this.kv.get<Record<string, JsonValue>>(rowFieldsKey(rowId));
     return stored ?? {};
   }
 
-  private async getRowCollection(roomId: string): Promise<string | null> {
-    return await this.kv.get<string>(rowCollectionKey(roomId));
+  private async getRowCollection(rowId: string): Promise<string | null> {
+    return await this.kv.get<string>(rowCollectionKey(rowId));
   }
 
-  private async getMessageSequence(roomId: string): Promise<number> {
-    const stored = await this.kv.get<number>(roomMessageSequenceKey(roomId));
+  private async getMessageSequence(rowId: string): Promise<number> {
+    const stored = await this.kv.get<number>(rowMessageSequenceKey(rowId));
     if (typeof stored !== "number" || !Number.isFinite(stored) || stored < 0) {
       return 0;
     }
@@ -1753,8 +1753,8 @@ export class RoomWorker {
     return Math.floor(stored);
   }
 
-  private async nextMessageSequence(roomId: string): Promise<number> {
-    const key = roomMessageSequenceKey(roomId);
+  private async nextMessageSequence(rowId: string): Promise<number> {
+    const key = rowMessageSequenceKey(rowId);
     const sequence = await this.kv.incr(key, 1);
     if (!Number.isFinite(sequence) || sequence < 1) {
       error(500, "BAD_REQUEST", "kv.incr returned an invalid sequence");
@@ -1763,28 +1763,28 @@ export class RoomWorker {
     return Math.floor(sequence);
   }
 
-  private async getRoomMeta(roomId: string, requestUrl?: string): Promise<Room> {
-    await this.ensureRoomMeta({ roomId, requestUrl });
-    const room = await this.kv.get<Room>(roomMetaKey(roomId));
-    if (!room) {
-      error(404, "BAD_REQUEST", `Room ${roomId} does not exist`);
+  private async getRowMeta(rowId: string, requestUrl?: string): Promise<Row> {
+    await this.ensureRowMeta({ rowId, requestUrl });
+    const row = await this.kv.get<Row>(rowMetaKey(rowId));
+    if (!row) {
+      error(404, "BAD_REQUEST", `Row ${rowId} does not exist`);
     }
 
-    return room;
+    return row;
   }
 
-  private async ensureRoomMeta(args: {
-    roomId: string;
-    roomName?: string;
+  private async ensureRowMeta(args: {
+    rowId: string;
+    rowName?: string;
     requestUrl?: string;
   }): Promise<void> {
-    const key = roomMetaKey(args.roomId);
+    const key = rowMetaKey(args.rowId);
     const inferredTarget = args.requestUrl
-      ? inferRoomWorkerUrlFromRequest(args.requestUrl, args.roomId, this.config.workerUrl)
+      ? inferRowWorkerUrlFromRequest(args.requestUrl, args.rowId, this.config.workerUrl)
       : this.config.workerUrl
-        ? buildRoomWorkerUrl(this.config.workerUrl, args.roomId)
+        ? buildRowWorkerUrl(this.config.workerUrl, args.rowId)
       : undefined;
-    const existing = await this.kv.get<Room>(key);
+    const existing = await this.kv.get<Row>(key);
 
     if (existing) {
       if (inferredTarget && existing.target !== inferredTarget) {
@@ -1796,38 +1796,38 @@ export class RoomWorker {
       return;
     }
 
-    if (!args.roomName) {
-      error(404, "BAD_REQUEST", `Room ${args.roomId} does not exist`);
+    if (!args.rowName) {
+      error(404, "BAD_REQUEST", `Row ${args.rowId} does not exist`);
     }
     if (!inferredTarget) {
-      error(500, "BAD_REQUEST", `Unable to infer target for room ${args.roomId}`);
+      error(500, "BAD_REQUEST", `Unable to infer target for row ${args.rowId}`);
     }
 
-    const room: Room = {
-      id: args.roomId,
-      name: args.roomName,
+    const row: Row = {
+      id: args.rowId,
+      name: args.rowName,
       owner: this.config.owner,
       target: inferredTarget,
       createdAt: this.now(),
     };
 
-    await this.kv.set(key, room);
+    await this.kv.set(key, row);
   }
 
-  private async snapshot(roomId: string, requestUrl?: string): Promise<RoomSnapshot> {
-    await this.ensureRoomMeta({ roomId, requestUrl });
+  private async snapshot(rowId: string, requestUrl?: string): Promise<RowSnapshot> {
+    await this.ensureRowMeta({ rowId, requestUrl });
 
-    const room = await this.kv.get<Room>(roomMetaKey(roomId));
-    if (!room) {
-      error(400, "BAD_REQUEST", "Room metadata missing");
+    const row = await this.kv.get<Row>(rowMetaKey(rowId));
+    if (!row) {
+      error(400, "BAD_REQUEST", "Row metadata missing");
     }
 
-    const members = await this.getMembers(roomId);
+    const members = await this.getMembers(rowId);
     return {
-      ...room,
-      collection: await this.getRowCollection(roomId),
+      ...row,
+      collection: await this.getRowCollection(rowId),
       members,
-      parentRefs: await this.getParentRefs(roomId),
+      parentRefs: await this.getParentRefs(rowId),
     };
   }
 }

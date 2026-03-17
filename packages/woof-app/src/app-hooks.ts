@@ -7,16 +7,16 @@ function emptyEntries(): ChatEntry[] {
   return [];
 }
 
-export function useRoomConnection(service: WoofService, profile: DogProfile | null): void {
+export function useRowConnection(service: WoofService, profile: DogProfile | null): void {
   useEffect(() => {
     if (!profile) {
-      service.disconnectRoom();
+      service.disconnectRow();
       return;
     }
 
-    service.connectToRoom(profile);
+    service.connectToRow(profile);
     return () => {
-      service.disconnectRoom();
+      service.disconnectRow();
     };
   }, [profile, service]);
 }

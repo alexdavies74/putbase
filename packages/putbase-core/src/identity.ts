@@ -1,10 +1,10 @@
 import { resolveBackend } from "./backend";
 import { signedOutError } from "./errors";
 import type { PutBaseOptions } from "./putbase";
-import type { AuthSession, BackendClient, RoomUser } from "./types";
+import type { AuthSession, BackendClient, PutBaseUser } from "./types";
 
 export class Identity {
-  private cached: RoomUser | null = null;
+  private cached: PutBaseUser | null = null;
   private session: AuthSession | null = null;
   private sessionPromise: Promise<AuthSession> | null = null;
   private backend: BackendClient | undefined;
@@ -60,7 +60,7 @@ export class Identity {
     return promise;
   }
 
-  async whoAmI(): Promise<RoomUser> {
+  async whoAmI(): Promise<PutBaseUser> {
     const session = await this.getSession();
     if (session.state !== "signed-in") {
       throw signedOutError();
@@ -70,7 +70,7 @@ export class Identity {
     return session.user;
   }
 
-  async signIn(): Promise<RoomUser> {
+  async signIn(): Promise<PutBaseUser> {
     this.clear();
 
     if (this.options.identityProvider) {

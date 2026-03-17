@@ -6,7 +6,7 @@ import { Parents } from "./parents";
 import { Provisioning } from "./provisioning";
 import { Query } from "./query";
 import { RowHandle, type AnyRowHandle, type RowHandleBackend } from "./row-handle";
-import { Rooms } from "./rooms";
+import { RowRuntime } from "./row-runtime";
 import { Rows } from "./rows";
 import type {
   AllowedParentCollections,
@@ -36,7 +36,7 @@ import type {
   InviteTarget,
   InviteToken,
   JsonValue,
-  RoomUser,
+  PutBaseUser,
 } from "./types";
 import { Sync } from "./sync";
 
@@ -45,7 +45,7 @@ export interface PutBaseOptions<Schema extends DbSchema = DbSchema> {
   backend?: BackendClient;
   fetchFn?: typeof fetch;
   appBaseUrl?: string;
-  identityProvider?: () => Promise<RoomUser>;
+  identityProvider?: () => Promise<PutBaseUser>;
   deployWorker?: (args: DeployWorkerArgs) => Promise<string | void>;
 }
 
@@ -54,7 +54,7 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
   private readonly transport: Transport;
   private readonly identity: Identity;
   private readonly provisioning: Provisioning;
-  private readonly roomsModule: Rooms;
+  private readonly rowRuntime: RowRuntime;
   private readonly invitesModule: Invites;
   private readonly syncModule: Sync;
   private readonly membersModule: Members<Schema>;
@@ -71,25 +71,25 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
     this.transport = new Transport(options, this.auth);
     this.provisioning = new Provisioning(options, this.transport, this.identity, this.auth);
     this.syncRuntime();
-    this.roomsModule = new Rooms(
+    this.rowRuntime = new RowRuntime(
       this.transport,
       this.identity,
       this.provisioning,
       () => this.awaitSharedReadiness(),
     );
     this.invitesModule = new Invites(options, this.transport, this.identity);
-    this.syncModule = new Sync(this.roomsModule);
+    this.syncModule = new Sync(this.rowRuntime);
     this.membersModule = new Members<Schema>(this.transport);
     this.rowsModule = new Rows(
       this.transport,
-      this.roomsModule,
+      this.rowRuntime,
       options.schema,
       this,
       (child, parent) => this.parentsModule.add(child, parent),
     );
     this.parentsModule = new Parents(
       this.transport,
-      this.roomsModule,
+      this.rowRuntime,
       options.schema,
       (row) => this.rowsModule.refreshFields(row),
     );
@@ -105,14 +105,14 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
     return this.identity.getSession();
   }
 
-  async signIn(): Promise<RoomUser> {
+  async signIn(): Promise<PutBaseUser> {
     this.resetSessionState();
     const user = await this.identity.signIn();
     void this.startReadiness().catch(() => undefined);
     return user;
   }
 
-  async whoAmI(): Promise<RoomUser> {
+  async whoAmI(): Promise<PutBaseUser> {
     return this.identity.whoAmI();
   }
 
@@ -140,7 +140,7 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
   }
 
   async openTarget(target: string): Promise<AnyRowHandle<Schema>> {
-    const snapshot = await this.roomsModule.getRoom(target);
+    const snapshot = await this.rowRuntime.getRow(target);
     const locator: DbRowLocator = {
       id: snapshot.id,
       owner: snapshot.owner,
@@ -184,14 +184,14 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
 
   async openInvite(input: string | InviteTarget): Promise<AnyRowHandle<Schema>> {
     const invite = typeof input === "string" ? this.parseInvite(input) : input;
-    await this.roomsModule.joinRoom(invite.target, {
+    await this.rowRuntime.joinRow(invite.target, {
       inviteToken: invite.inviteToken,
     });
     return this.openTarget(invite.target);
   }
 
   async listMembers(row: DbRowLocator): Promise<string[]> {
-    return this.roomsModule.listMembers(row.target);
+    return this.rowRuntime.listMembers(row.target);
   }
 
   async addParent(child: DbRowRef, parent: DbRowRef): Promise<void> {

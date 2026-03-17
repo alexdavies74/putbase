@@ -1,5 +1,5 @@
 import { RowHandle, type RowHandleBackend } from "./row-handle";
-import type { Rooms } from "./rooms";
+import type { RowRuntime } from "./row-runtime";
 import type {
   AllowedParentCollections,
   CollectionName,
@@ -24,7 +24,7 @@ interface GetFieldsResponse {
 export class Rows<Schema extends DbSchema> {
   constructor(
     private readonly transport: Transport,
-    private readonly rooms: Rooms,
+    private readonly rowRuntime: RowRuntime,
     private readonly schema: Schema,
     private readonly backend: RowHandleBackend<Schema>,
     private readonly addParent: (child: DbRowRef, parent: DbRowRef) => Promise<void>,
@@ -39,14 +39,14 @@ export class Rows<Schema extends DbSchema> {
     const parentRefs = normalizeParents(options.in);
     assertPutParents(collection, collectionSpec, parentRefs);
 
-    const room = await this.rooms.createRoom(
+    const row = await this.rowRuntime.createRow(
       options.name ?? `${collection}-${crypto.randomUUID().slice(0, 8)}`,
     );
     const rowRef: DbRowRef<TCollection> = {
-      id: room.id,
+      id: row.id,
       collection,
-      owner: room.owner,
-      target: normalizeTarget(room.target),
+      owner: row.owner,
+      target: normalizeTarget(row.target),
     };
 
     const payload = applyDefaults(
@@ -54,7 +54,7 @@ export class Rows<Schema extends DbSchema> {
       fields as InsertFields<Schema, TCollection> & DbRowFields,
     ) as Record<string, JsonValue>;
 
-    await this.transport.room(rowRef).request("fields/set", {
+    await this.transport.row(rowRef).request("fields/set", {
       fields: payload,
       collection,
     });
@@ -81,7 +81,7 @@ export class Rows<Schema extends DbSchema> {
     fields: Partial<RowFields<Schema, TCollection>>,
   ): Promise<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>> {
     const rowRef: DbRowRef<TCollection> = { ...row, collection };
-    const response = await this.transport.room(rowRef).request<GetFieldsResponse>("fields/set", {
+    const response = await this.transport.row(rowRef).request<GetFieldsResponse>("fields/set", {
       fields,
       merge: true,
       collection,
@@ -106,23 +106,23 @@ export class Rows<Schema extends DbSchema> {
   }
 
   async refreshFields(row: DbRowLocator): Promise<Record<string, JsonValue>> {
-    const response = await this.transport.room(row).request<GetFieldsResponse>("fields/get", {});
+    const response = await this.transport.row(row).request<GetFieldsResponse>("fields/get", {});
     return response.fields;
   }
 
   async fetchWithCollection(
     row: DbRowLocator,
   ): Promise<{ fields: Record<string, JsonValue>; collection: string | null }> {
-    const response = await this.transport.room(row).request<GetFieldsResponse>("fields/get", {});
+    const response = await this.transport.row(row).request<GetFieldsResponse>("fields/get", {});
     return { fields: response.fields, collection: response.collection };
   }
 
   private async syncParentIndexes(row: DbRowRef, fields: Record<string, JsonValue>): Promise<void> {
-    const room = await this.rooms.getRoom(row.target);
+    const snapshot = await this.rowRuntime.getRow(row.target);
     const childSpec = this.schema[row.collection];
     await Promise.all(
-      room.parentRefs.map((parentRef) =>
-        this.transport.room(parentRef).request("parents/register-child", {
+      snapshot.parentRefs.map((parentRef) =>
+        this.transport.row(parentRef).request("parents/register-child", {
           childRowId: row.id,
           childOwner: row.owner,
           childTarget: row.target,

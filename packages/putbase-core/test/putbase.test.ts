@@ -6,7 +6,7 @@ import { RowHandle } from "../src/row-handle";
 import { collection, defineSchema } from "../src/schema";
 import type { BackendClient } from "../src/types";
 import { InMemoryKv } from "../src/worker/in-memory-kv";
-import { RoomWorker } from "../src/worker/core";
+import { RowWorker } from "../src/worker/core";
 
 const runtimeGlobal = globalThis as { puter?: BackendClient };
 
@@ -80,13 +80,13 @@ describe("PutBase", () => {
       fetchFn: async (input: RequestInfo | URL): Promise<Response> => {
         const url = asUrl(input);
 
-        if (url.endsWith("/room/get")) {
+        if (url.endsWith("/row/get")) {
           return new Response(
             JSON.stringify({
-              id: "room_public",
+              id: "row_public",
               name: "Rex",
               owner: "owner",
-              target: "https://worker.example/rooms/room_public",
+              target: "https://worker.example/rows/row_public",
               createdAt: 1,
               collection: "rows",
               members: ["owner", "friend"],
@@ -110,11 +110,11 @@ describe("PutBase", () => {
       },
     });
 
-    const row = await db.openTarget("https://worker.example/rooms/room_public");
-    expect(row.id).toBe("room_public");
+    const row = await db.openTarget("https://worker.example/rows/row_public");
+    expect(row.id).toBe("row_public");
     expect(row.collection).toBe("rows");
     expect(row.owner).toBe("owner");
-    expect(row.target).toBe("https://worker.example/rooms/room_public");
+    expect(row.target).toBe("https://worker.example/rows/row_public");
     expect(row.fields.name).toBe("Rex");
   });
 
@@ -240,13 +240,13 @@ describe("PutBase", () => {
       fetchFn: async (input: RequestInfo | URL): Promise<Response> => {
         const url = asUrl(input);
 
-        if (url.endsWith("/room/get")) {
+        if (url.endsWith("/row/get")) {
           return new Response(
             JSON.stringify({
-              id: "room_public",
+              id: "row_public",
               name: "Rex",
               owner: "owner",
-              target: "https://worker.example/rooms/room_public",
+              target: "https://worker.example/rows/row_public",
               createdAt: 1,
               collection: null,
               members: ["owner"],
@@ -270,7 +270,7 @@ describe("PutBase", () => {
       },
     });
 
-    await expect(db.openTarget("https://worker.example/rooms/room_public")).rejects.toThrow("Row collection is missing");
+    await expect(db.openTarget("https://worker.example/rows/row_public")).rejects.toThrow("Row collection is missing");
   });
 
   it("fails openTarget when the worker collection is off-schema", async () => {
@@ -280,13 +280,13 @@ describe("PutBase", () => {
       fetchFn: async (input: RequestInfo | URL): Promise<Response> => {
         const url = asUrl(input);
 
-        if (url.endsWith("/room/get")) {
+        if (url.endsWith("/row/get")) {
           return new Response(
             JSON.stringify({
-              id: "room_public",
+              id: "row_public",
               name: "Rex",
               owner: "owner",
-              target: "https://worker.example/rooms/room_public",
+              target: "https://worker.example/rows/row_public",
               createdAt: 1,
               collection: "foreign",
               members: ["owner"],
@@ -310,7 +310,7 @@ describe("PutBase", () => {
       },
     });
 
-    await expect(db.openTarget("https://worker.example/rooms/room_public")).rejects.toThrow("Unknown collection: foreign");
+    await expect(db.openTarget("https://worker.example/rows/row_public")).rejects.toThrow("Unknown collection: foreign");
   });
 
   it("throws PutBaseError for API failures", async () => {
@@ -326,7 +326,7 @@ describe("PutBase", () => {
       ),
     });
 
-    await expect(db.openTarget("https://worker.example/rooms/room_public")).rejects.toBeInstanceOf(
+    await expect(db.openTarget("https://worker.example/rows/row_public")).rejects.toBeInstanceOf(
       PutBaseError,
     );
   });
@@ -341,7 +341,7 @@ describe("PutBase", () => {
       contexts.push(this);
       const url = asUrl(input);
 
-      if (url.endsWith("/room/join")) {
+      if (url.endsWith("/row/join")) {
         return Promise.resolve(
           new Response(JSON.stringify({ ok: true }), {
             status: 200,
@@ -350,14 +350,14 @@ describe("PutBase", () => {
         );
       }
 
-      if (url.endsWith("/room/get")) {
+      if (url.endsWith("/row/get")) {
         return Promise.resolve(
           new Response(
             JSON.stringify({
-              id: "room_1",
+              id: "row_1",
               name: "Rex",
               owner: "owner",
-              target: "https://workers.puter.site/owner-federation/rooms/room_1",
+              target: "https://workers.puter.site/owner-federation/rows/row_1",
               createdAt: 1,
               collection: "rows",
               members: ["owner"],
@@ -391,9 +391,9 @@ describe("PutBase", () => {
       fetchFn,
     });
 
-    const row = await db.openInvite("https://workers.puter.site/owner-federation/rooms/room_1");
+    const row = await db.openInvite("https://workers.puter.site/owner-federation/rows/row_1");
 
-    expect(row.id).toBe("room_1");
+    expect(row.id).toBe("row_1");
     expect(contexts.length).toBeGreaterThan(0);
     expect(contexts.every((value) => value === undefined)).toBe(true);
   });
@@ -482,20 +482,20 @@ describe("PutBase", () => {
   it("uses deployed shared worker URL returned by puter.workers.create", async () => {
     const requestedUrls: string[] = [];
     const deployedWorkerBase = "https://workers.example/owner-1234abcd-federation";
-    let roomId: string | null = null;
+    let rowId: string | null = null;
 
     const fetchFn = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const url = asUrl(input);
       requestedUrls.push(url);
 
-      if (url === `${deployedWorkerBase}/rooms` && init?.body && typeof init.body === "string") {
-        roomId = (JSON.parse(init.body) as { payload: { roomId: string } }).payload.roomId;
+      if (url === `${deployedWorkerBase}/rows` && init?.body && typeof init.body === "string") {
+        rowId = (JSON.parse(init.body) as { payload: { rowId: string } }).payload.rowId;
         return new Response(
           JSON.stringify({
-            id: roomId,
+            id: rowId,
             name: "Rex",
             owner: "owner",
-            target: `${deployedWorkerBase}/rooms/${roomId}`,
+            target: `${deployedWorkerBase}/rows/${rowId}`,
             createdAt: 1,
             collection: null,
             members: [],
@@ -505,20 +505,20 @@ describe("PutBase", () => {
         );
       }
 
-      if (roomId && url === `${deployedWorkerBase}/rooms/${roomId}/room/join`) {
+      if (rowId && url === `${deployedWorkerBase}/rows/${rowId}/row/join`) {
         return new Response(JSON.stringify({ ok: true }), {
           status: 200,
           headers: { "content-type": "application/json" },
         });
       }
 
-      if (roomId && url === `${deployedWorkerBase}/rooms/${roomId}/room/get`) {
+      if (rowId && url === `${deployedWorkerBase}/rows/${rowId}/row/get`) {
         return new Response(
           JSON.stringify({
-            id: roomId,
+            id: rowId,
             name: "Rex",
             owner: "owner",
-            target: `${deployedWorkerBase}/rooms/${roomId}`,
+            target: `${deployedWorkerBase}/rows/${rowId}`,
             createdAt: 1,
             collection: null,
             members: ["owner"],
@@ -529,9 +529,9 @@ describe("PutBase", () => {
       }
 
       if (
-        roomId
-        && (url === `${deployedWorkerBase}/rooms/${roomId}/fields/get`
-          || url === `${deployedWorkerBase}/rooms/${roomId}/fields/set`)
+        rowId
+        && (url === `${deployedWorkerBase}/rows/${rowId}/fields/get`
+          || url === `${deployedWorkerBase}/rows/${rowId}/fields/set`)
       ) {
         return new Response(
           JSON.stringify({ fields: { name: "Rex" }, collection: "rows" }),
@@ -561,10 +561,10 @@ describe("PutBase", () => {
 
     const row = await db.put("rows", { name: "Rex" });
 
-    expect(row.target.startsWith(`${deployedWorkerBase}/rooms/`)).toBe(true);
-    expect(requestedUrls).toContain(`${deployedWorkerBase}/rooms`);
-    expect(requestedUrls.some((url) => url.endsWith("/room/join"))).toBe(true);
-    expect(requestedUrls.some((url) => url.endsWith("/room/get"))).toBe(true);
+    expect(row.target.startsWith(`${deployedWorkerBase}/rows/`)).toBe(true);
+    expect(requestedUrls).toContain(`${deployedWorkerBase}/rows`);
+    expect(requestedUrls.some((url) => url.endsWith("/row/join"))).toBe(true);
+    expect(requestedUrls.some((url) => url.endsWith("/row/get"))).toBe(true);
   });
 
   it("shares constructor prewarm with put when provisioning the federation worker", async () => {
@@ -573,20 +573,20 @@ describe("PutBase", () => {
     const releaseCreate = deferred<{ url: string }>();
     const createStarted = deferred<void>();
     let deployCalls = 0;
-    let roomId: string | null = null;
+    let rowId: string | null = null;
 
     const fetchFn = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const url = asUrl(input);
       requestedUrls.push(url);
 
-      if (url === `${deployedWorkerBase}/rooms` && init?.body && typeof init.body === "string") {
-        roomId = (JSON.parse(init.body) as { payload: { roomId: string } }).payload.roomId;
+      if (url === `${deployedWorkerBase}/rows` && init?.body && typeof init.body === "string") {
+        rowId = (JSON.parse(init.body) as { payload: { rowId: string } }).payload.rowId;
         return new Response(
           JSON.stringify({
-            id: roomId,
+            id: rowId,
             name: "Rex",
             owner: "owner",
-            target: `${deployedWorkerBase}/rooms/${roomId}`,
+            target: `${deployedWorkerBase}/rows/${rowId}`,
             createdAt: 1,
             collection: null,
             members: [],
@@ -596,20 +596,20 @@ describe("PutBase", () => {
         );
       }
 
-      if (roomId && url === `${deployedWorkerBase}/rooms/${roomId}/room/join`) {
+      if (rowId && url === `${deployedWorkerBase}/rows/${rowId}/row/join`) {
         return new Response(JSON.stringify({ ok: true }), {
           status: 200,
           headers: { "content-type": "application/json" },
         });
       }
 
-      if (roomId && url === `${deployedWorkerBase}/rooms/${roomId}/room/get`) {
+      if (rowId && url === `${deployedWorkerBase}/rows/${rowId}/row/get`) {
         return new Response(
           JSON.stringify({
-            id: roomId,
+            id: rowId,
             name: "Rex",
             owner: "owner",
-            target: `${deployedWorkerBase}/rooms/${roomId}`,
+            target: `${deployedWorkerBase}/rows/${rowId}`,
             createdAt: 1,
             collection: null,
             members: ["owner"],
@@ -620,9 +620,9 @@ describe("PutBase", () => {
       }
 
       if (
-        roomId
-        && (url === `${deployedWorkerBase}/rooms/${roomId}/fields/get`
-          || url === `${deployedWorkerBase}/rooms/${roomId}/fields/set`)
+        rowId
+        && (url === `${deployedWorkerBase}/rows/${rowId}/fields/get`
+          || url === `${deployedWorkerBase}/rows/${rowId}/fields/set`)
       ) {
         return new Response(
           JSON.stringify({ fields: { name: "Rex" }, collection: "rows" }),
@@ -662,8 +662,8 @@ describe("PutBase", () => {
     const row = await rowPromise;
 
     expect(deployCalls).toBe(1);
-    expect(row.target.startsWith(`${deployedWorkerBase}/rooms/`)).toBe(true);
-    expect(requestedUrls).toContain(`${deployedWorkerBase}/rooms`);
+    expect(row.target.startsWith(`${deployedWorkerBase}/rows/`)).toBe(true);
+    expect(requestedUrls).toContain(`${deployedWorkerBase}/rows`);
   });
 
   it("reuses shared worker from KV across SDK instances for same app host", async () => {
@@ -672,7 +672,7 @@ describe("PutBase", () => {
     const deployedWorkerBase = "https://workers.example/owner-1234abcd-federation";
     let deployCalls = 0;
 
-    const worker = new RoomWorker(
+    const worker = new RowWorker(
       { owner: "owner", workerUrl: deployedWorkerBase },
       { kv: workerKv },
     );
@@ -714,8 +714,8 @@ describe("PutBase", () => {
 
     expect(deployCalls).toBe(1);
     expect(firstRow.target).not.toBe(secondRow.target);
-    expect(firstRow.target.startsWith(`${deployedWorkerBase}/rooms/`)).toBe(true);
-    expect(secondRow.target.startsWith(`${deployedWorkerBase}/rooms/`)).toBe(true);
+    expect(firstRow.target.startsWith(`${deployedWorkerBase}/rows/`)).toBe(true);
+    expect(secondRow.target.startsWith(`${deployedWorkerBase}/rows/`)).toBe(true);
   });
 
   it("reuses existing scoped worker via workers.get before creating", async () => {
@@ -725,7 +725,7 @@ describe("PutBase", () => {
     let deployCalls = 0;
     let getCalls = 0;
 
-    const worker = new RoomWorker(
+    const worker = new RowWorker(
       { owner: "owner", workerUrl: existingWorkerBase },
       { kv: workerKv },
     );
@@ -762,7 +762,7 @@ describe("PutBase", () => {
 
     expect(getCalls).toBeGreaterThan(0);
     expect(deployCalls).toBe(0);
-    expect(row.target.startsWith(`${existingWorkerBase}/rooms/`)).toBe(true);
+    expect(row.target.startsWith(`${existingWorkerBase}/rows/`)).toBe(true);
   });
 
   it("logs and redeploys when the stored federation worker version is stale", async () => {
@@ -887,13 +887,13 @@ describe("PutBase", () => {
         exec: async (url: string, init?: RequestInit): Promise<Response> => {
           execCalls.push({ url, init });
 
-          if (url.endsWith("/room/get")) {
+          if (url.endsWith("/row/get")) {
             return new Response(
             JSON.stringify({
-              id: "room_exec",
+              id: "row_exec",
               name: "Rex",
               owner: "owner",
-              target: "https://worker.example/rooms/room_exec",
+              target: "https://worker.example/rows/row_exec",
               createdAt: 1,
               collection: "rows",
               members: ["owner"],
@@ -929,24 +929,24 @@ describe("PutBase", () => {
       fetchFn: fetchFn as typeof fetch,
     });
 
-    const row = await db.openTarget("https://worker.example/rooms/room_exec");
-    expect(row.id).toBe("room_exec");
-    expect(execCalls.some((c) => c.url.endsWith("/room/get"))).toBe(true);
+    const row = await db.openTarget("https://worker.example/rows/row_exec");
+    expect(row.id).toBe("row_exec");
+    expect(execCalls.some((c) => c.url.endsWith("/row/get"))).toBe(true);
     expect(execCalls.some((c) => c.url.endsWith("/fields/get") || c.url.endsWith("/fields/set"))).toBe(true);
     expect(new Headers(execCalls[0].init?.headers).get("x-puter-username")).toBeNull();
   });
 
   it("can flush CRDT updates after client recreation", async () => {
-    const worker = new RoomWorker(
+    const worker = new RowWorker(
       { owner: "owner", workerUrl: "https://worker.example" },
       { kv: new InMemoryKv() },
     );
 
     await worker.handle(
-      new Request("https://worker.example/rooms", {
+      new Request("https://worker.example/rows", {
         method: "POST",
         headers: { "content-type": "application/json", "x-puter-username": "owner" },
-        body: JSON.stringify({ roomId: "room_reload", roomName: "Rex" }),
+        body: JSON.stringify({ rowId: "row_reload", rowName: "Rex" }),
       }),
     );
 
@@ -956,10 +956,10 @@ describe("PutBase", () => {
     };
 
     const rowRef = {
-      id: "room_reload",
+      id: "row_reload",
       collection: "rows",
       owner: "owner",
-      target: "https://worker.example/rooms/room_reload",
+      target: "https://worker.example/rows/row_reload",
     };
 
     const firstDb = new PutBase({

@@ -89,7 +89,7 @@ export class Query<Schema extends DbSchema> {
           value = selectedIndex.encodedValue;
         }
 
-        return this.transport.room(parent).request<DbQueryResponse>("db/query", {
+        return this.transport.row(parent).request<DbQueryResponse>("db/query", {
           collection,
           order: options.order ?? "asc",
           limit,

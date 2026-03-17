@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { DogProfile } from "./profile";
 import type { ChatEntry } from "./service";
-import { useChatEntries, useRoomConnection } from "./app-hooks";
+import { useChatEntries, useRowConnection } from "./app-hooks";
 import { TagsPanel } from "./tags-panel";
 import { getErrorMessage, clearInviteLocation, getInviteInputFromLocation } from "./utils";
 import { service } from "./services";
@@ -27,7 +27,7 @@ function SetupPanel(props: {
   return (
     <section className="panel">
       <h1>Adopt a dog</h1>
-      <p className="muted">Create a room for your dog, or join an existing room via invite link.</p>
+      <p className="muted">Create a row for your dog, or join an existing row via invite link.</p>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -72,8 +72,8 @@ function SignInPanel(props: {
   onSignIn(): void;
 }) {
   const description = props.hasInvite
-    ? "Log in with Puter to join this shared dog room."
-    : "Log in with Puter before creating or restoring a dog room.";
+    ? "Log in with Puter to join this shared dog row."
+    : "Log in with Puter before creating or restoring a dog row.";
 
   return (
     <section className="panel">
@@ -145,7 +145,7 @@ function ChatPanel(props: {
   );
 }
 
-function RoomScreen(props: {
+function RowScreen(props: {
   currentUsername: string | null;
   onRelinquished(): void;
   profile: DogProfile;
@@ -156,12 +156,12 @@ function RoomScreen(props: {
     await service.relinquish();
     props.onRelinquished();
   });
-  useRoomConnection(service, props.profile);
+  useRowConnection(service, props.profile);
   const entries = useChatEntries(service, props.profile, props.currentUsername);
 
   return (
     <section className="panel">
-      <h1>{String(props.profile.row.fields.name ?? "")}&apos;s Room</h1>
+      <h1>{String(props.profile.row.fields.name ?? "")}&apos;s Row</h1>
       <div className="toolbar">
         <button
           id="copy-link"
@@ -254,7 +254,7 @@ export function App() {
 
           return {
             error: null,
-            fallbackMessage: "Could not restore saved room.",
+            fallbackMessage: "Could not restore saved row.",
             profile: await service.restoreProfile(),
           };
         } catch (error) {
@@ -265,7 +265,7 @@ export function App() {
           });
           return {
             error,
-            fallbackMessage: inviteInput ? "Failed to join invite link." : "Could not restore saved room.",
+            fallbackMessage: inviteInput ? "Failed to join invite link." : "Could not restore saved row.",
             profile: null,
           };
         }
@@ -340,7 +340,7 @@ export function App() {
   }
 
   return (
-    <RoomScreen
+    <RowScreen
       currentUsername={signedInUser?.username ?? null}
       profile={profile}
       onRelinquished={() => {

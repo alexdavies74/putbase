@@ -38,7 +38,7 @@ function principalPayload(proof: Pick<PrincipalProof, "username" | "publicKeyJwk
 
 export function buildRequestProofPayload(args: {
   action: string;
-  roomId: string;
+  rowId: string;
   principalHash: string;
   payloadHash: string;
   nonce: string;
@@ -46,7 +46,7 @@ export function buildRequestProofPayload(args: {
 }): object {
   return {
     action: args.action,
-    roomId: args.roomId,
+    rowId: args.rowId,
     principalHash: args.principalHash,
     payloadHash: args.payloadHash,
     nonce: args.nonce,
@@ -144,7 +144,7 @@ export async function verifyPrincipalProof(
 
 export async function createRequestProof(args: {
   action: string;
-  roomId: string;
+  rowId: string;
   payload: unknown;
   principal: PrincipalProof;
   privateKey: CryptoKey;
@@ -160,7 +160,7 @@ export async function createRequestProof(args: {
   const signature = await signCanonicalValue(
     buildRequestProofPayload({
       action: args.action,
-      roomId: args.roomId,
+      rowId: args.rowId,
       payloadHash,
       principalHash,
       nonce,
@@ -171,7 +171,7 @@ export async function createRequestProof(args: {
 
   return {
     action: args.action,
-    roomId: args.roomId,
+    rowId: args.rowId,
     nonce,
     signedAt,
     signature,
@@ -181,7 +181,7 @@ export async function createRequestProof(args: {
 export async function verifyRequestProof(args: {
   proof: RequestProof | undefined;
   action: string;
-  roomId: string;
+  rowId: string;
   payload: unknown;
   principal: PrincipalProof;
   publicKey: CryptoKey;
@@ -193,8 +193,8 @@ export async function verifyRequestProof(args: {
   if (proof.action !== args.action) {
     throw new Error("Request proof action mismatch");
   }
-  if (proof.roomId !== args.roomId) {
-    throw new Error("Request proof roomId mismatch");
+  if (proof.rowId !== args.rowId) {
+    throw new Error("Request proof rowId mismatch");
   }
   if (typeof proof.nonce !== "string" || !proof.nonce) {
     throw new Error("Request proof nonce is required");
@@ -213,7 +213,7 @@ export async function verifyRequestProof(args: {
   const verified = await verifyCanonicalValue(
     buildRequestProofPayload({
       action: args.action,
-      roomId: args.roomId,
+      rowId: args.rowId,
       payloadHash,
       principalHash,
       nonce: proof.nonce,
@@ -258,7 +258,7 @@ export class AuthManager {
 
   async createProtectedRequest<TPayload>(args: {
     action: string;
-    roomId: string;
+    rowId: string;
     payload: TPayload;
     includeRequestProof?: boolean;
   }): Promise<ProtectedRequest<TPayload>> {
@@ -275,7 +275,7 @@ export class AuthManager {
     if (args.includeRequestProof !== false) {
       auth.request = await createRequestProof({
         action: args.action,
-        roomId: args.roomId,
+        rowId: args.rowId,
         payload: args.payload,
         principal,
         privateKey: keyPair.privateKey,

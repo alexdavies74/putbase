@@ -4,7 +4,7 @@ import { PutBase } from "../src/putbase";
 import { Query } from "../src/query";
 import { collection, defineSchema, field, index } from "../src/schema";
 import { InMemoryKv } from "../src/worker/in-memory-kv";
-import { RoomWorker } from "../src/worker/core";
+import { RowWorker } from "../src/worker/core";
 
 function asUrl(input: RequestInfo | URL): string {
   return typeof input === "string"
@@ -15,9 +15,9 @@ function asUrl(input: RequestInfo | URL): string {
 }
 
 class TestWorkerNetwork {
-  private readonly workers = new Map<string, RoomWorker>();
+  private readonly workers = new Map<string, RowWorker>();
 
-  register(baseUrl: string, worker: RoomWorker): void {
+  register(baseUrl: string, worker: RowWorker): void {
     this.workers.set(baseUrl.replace(/\/+$/g, ""), worker);
   }
 
@@ -83,7 +83,7 @@ function buildWatchRow(id: string, title: string) {
     id,
     collection: "tasks",
     owner: "alice",
-    target: `https://worker.example/rooms/${id}`,
+    target: `https://worker.example/rows/${id}`,
     fields: { title, status: "todo" },
   };
 }
@@ -93,7 +93,7 @@ function buildDb(args: { username: string; network: TestWorkerNetwork }): PutBas
 
   args.network.register(
     workerBase,
-    new RoomWorker(
+    new RowWorker(
       { owner: args.username, workerUrl: workerBase },
       { kv: new InMemoryKv() },
     ),
@@ -110,7 +110,7 @@ function buildDb(args: { username: string; network: TestWorkerNetwork }): PutBas
 
 function buildQueryForWatchTests(): Query<typeof schema> {
   return new Query(
-    { room: vi.fn() } as never,
+    { row: vi.fn() } as never,
     { getRow: vi.fn() } as never,
     schema,
   );
@@ -225,30 +225,30 @@ describe("PutBase rows", () => {
     });
   });
 
-  it("rejects legacy room-worker URLs without /rooms/{id}", async () => {
+  it("rejects legacy row-worker URLs without /rows/{id}", async () => {
     const network = new TestWorkerNetwork();
     const db = buildDb({ username: "alice", network });
 
     const project = await db.put("projects", { name: "Website" });
     await db.put("tasks", { title: "Ship v2", status: "todo" }, { in: project.toRef() });
 
-    const directTarget = `https://alice-room-${project.id}.example`;
+    const directTarget = `https://alice-row-${project.id}.example`;
     await expect(
       db.query("tasks", {
         in: { ...project.toRef(), target: directTarget },
         where: { status: "todo" },
       }),
-    ).rejects.toThrow("Legacy non-federated room targets are no longer supported");
+    ).rejects.toThrow("Legacy non-federated row targets are no longer supported");
   });
 
   it("rejects query results when canonical row hydration fails", async () => {
     const transport = {
-      room: vi.fn().mockReturnValue({
+      row: vi.fn().mockReturnValue({
         request: vi.fn().mockResolvedValue({
           rows: [{
             rowId: "task_1",
             owner: "alice",
-            target: "https://worker.example/rooms/task_1/",
+            target: "https://worker.example/rows/task_1/",
             collection: "tasks",
             fields: { title: "Embedded snapshot", status: "todo" },
           }],
@@ -267,7 +267,7 @@ describe("PutBase rows", () => {
         id: "project_1",
         collection: "projects",
         owner: "alice",
-        target: "https://worker.example/rooms/project_1",
+        target: "https://worker.example/rows/project_1",
       },
     })).rejects.toThrow("canonical fetch failed");
 
@@ -275,7 +275,7 @@ describe("PutBase rows", () => {
       id: "task_1",
       collection: "tasks",
       owner: "alice",
-      target: "https://worker.example/rooms/task_1",
+      target: "https://worker.example/rows/task_1",
     });
   });
 
@@ -320,7 +320,7 @@ describe("Query watchQuery", () => {
         id: "project_1",
         collection: "projects",
         owner: "alice",
-        target: "https://worker.example/rooms/project_1",
+        target: "https://worker.example/rows/project_1",
       },
     }, {
       onChange: (rows) => {
@@ -355,7 +355,7 @@ describe("Query watchQuery", () => {
         id: "project_1",
         collection: "projects",
         owner: "alice",
-        target: "https://worker.example/rooms/project_1",
+        target: "https://worker.example/rows/project_1",
       },
     }, { onChange() {} });
 
@@ -392,7 +392,7 @@ describe("Query watchQuery", () => {
         id: "project_1",
         collection: "projects",
         owner: "alice",
-        target: "https://worker.example/rooms/project_1",
+        target: "https://worker.example/rows/project_1",
       },
     }, {
       onChange: (rows) => { changes.push(rows.map((row) => row.id).join(",")); },
@@ -425,7 +425,7 @@ describe("Query watchQuery", () => {
         id: "project_1",
         collection: "projects",
         owner: "alice",
-        target: "https://worker.example/rooms/project_1",
+        target: "https://worker.example/rows/project_1",
       },
     }, { onChange() {} });
 

@@ -13,25 +13,25 @@ export class Members<Schema extends DbSchema> {
   constructor(private readonly transport: Transport) {}
 
   async add(row: DbRowLocator, username: string, role: MemberRole): Promise<void> {
-    await this.transport.room(row).request("members/add", {
+    await this.transport.row(row).request("members/add", {
       username,
       role,
     });
   }
 
   async remove(row: DbRowLocator, username: string): Promise<void> {
-    await this.transport.room(row).request("members/remove", {
+    await this.transport.row(row).request("members/remove", {
       username,
     });
   }
 
   async listDirect(row: DbRowLocator): Promise<Array<{ username: string; role: MemberRole }>> {
-    const payload = await this.transport.room(row).request<ListMembersResponse>("members/direct", {});
+    const payload = await this.transport.row(row).request<ListMembersResponse>("members/direct", {});
     return payload.members;
   }
 
   async listEffective(row: DbRowLocator): Promise<Array<DbMemberInfo<Schema>>> {
-    const payload = await this.transport.room(row).request<EffectiveMembersResponse>("members/effective", {});
+    const payload = await this.transport.row(row).request<EffectiveMembersResponse>("members/effective", {});
     return payload.members as Array<DbMemberInfo<Schema>>;
   }
 }

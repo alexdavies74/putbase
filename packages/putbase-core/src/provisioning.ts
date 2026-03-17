@@ -8,10 +8,10 @@ import type { Transport } from "./transport";
 import { stripTrailingSlash } from "./transport";
 import type { BackendClient, DeployWorkerArgs } from "./types";
 
-const FEDERATION_WORKER_ROOM_SENTINEL = "bootstrap";
+const FEDERATION_WORKER_ROW_SENTINEL = "bootstrap";
 // If worker runtime code changes, regenerate src/worker/dist/generated-runtime.ts first,
 // then bump this version in a separate edit so auto-reloaded clients cannot deploy stale runtime bytes under a new version.
-const FEDERATION_WORKER_VERSION = 29;
+const FEDERATION_WORKER_VERSION = 30;
 const WORKER_METADATA_NAMESPACE = "putbase";
 const LEGACY_WORKER_METADATA_NAMESPACE = `${"puter"}-${"fed"}`;
 const FEDERATION_WORKER_VERSION_KV_PREFIX = `${WORKER_METADATA_NAMESPACE}:federation-worker-version:v2`;
@@ -161,8 +161,8 @@ export class Provisioning {
 
     const deployedWorkerUrl = await this.deployWorker({
       owner: username,
-      roomId: FEDERATION_WORKER_ROOM_SENTINEL,
-      roomName: "federation",
+      rowId: FEDERATION_WORKER_ROW_SENTINEL,
+      rowName: "federation",
       ownerPublicKeyJwk,
       workerName,
       workerVersion: FEDERATION_WORKER_VERSION,

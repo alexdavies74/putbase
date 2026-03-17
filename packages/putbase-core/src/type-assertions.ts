@@ -90,7 +90,7 @@ void db.put("tasks", { title: "Ship v2" }, { in: projectRef }).then((task) => {
   void task.in.add(teamRef);
 });
 
-void db.openTarget("https://workers.example/rooms/room_1").then((row) => {
+void db.openTarget("https://workers.example/rows/row_1").then((row) => {
   const collection: "projects" | "teams" | "tasks" = row.collection;
   void collection;
 

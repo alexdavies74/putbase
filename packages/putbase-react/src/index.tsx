@@ -18,8 +18,8 @@ import type {
   DbRowRef,
   DbSchema,
   MemberRole,
+  PutBaseUser,
   RowFields,
-  RoomUser,
 } from "@putbase/core";
 import type { RowHandle } from "@putbase/core";
 
@@ -55,7 +55,7 @@ export interface UseQueryResult<TRow> extends UseResourceResult<TRow[]> {
 
 export interface UseSessionResult extends UseResourceResult<AuthSession> {
   session: { state: "loading" } | AuthSession;
-  signIn(): Promise<RoomUser>;
+  signIn(): Promise<PutBaseUser>;
 }
 
 export interface UseHookOptions<Schema extends DbSchema> {
@@ -198,7 +198,7 @@ export function useSession<Schema extends DbSchema>(
     session: resource.status === "success" && resource.data
       ? resource.data
       : { state: "loading" },
-    async signIn(): Promise<RoomUser> {
+    async signIn(): Promise<PutBaseUser> {
       const user = await runtime.client.signIn();
       await resource.refresh();
       return user;
@@ -208,7 +208,7 @@ export function useSession<Schema extends DbSchema>(
 
 export function useCurrentUser<Schema extends DbSchema>(
   options: UseHookOptions<Schema> = {},
-): UseResourceResult<RoomUser> {
+): UseResourceResult<PutBaseUser> {
   const runtime = useRuntime(options.client);
   const session = useSessionResource(runtime, options.enabled ?? true);
   if (session.status === "error") {

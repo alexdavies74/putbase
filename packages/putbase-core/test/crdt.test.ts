@@ -32,10 +32,10 @@ const MINIMAL_SCHEMA = defineSchema({
 
 function buildRow(db: PutBase) {
   return new RowHandle(db, {
-    id: "room_1",
+    id: "row_1",
     collection: "rows",
     owner: "owner",
-    target: "https://worker.example/rooms/room_1",
+    target: "https://worker.example/rows/row_1",
   }, {});
 }
 
@@ -50,7 +50,7 @@ describe("connectCrdt", () => {
 
     const remoteMessage = {
       id: "msg_remote",
-      roomId: "room_1",
+      rowId: "row_1",
       body: { type: "crdt-update", data: "AAAA" },
       createdAt: 50,
       signedBy: "friend",
@@ -68,7 +68,7 @@ describe("connectCrdt", () => {
           capturedBodies.push(JSON.parse(init.body));
         }
 
-        if (url.includes("/messages")) {
+        if (url.includes("/sync/poll")) {
           const sinceSequence = Number(bodyPayload(init)?.sinceSequence ?? 0);
           const messages = sinceSequence < 1 ? [remoteMessage] : [];
           return new Response(JSON.stringify({ messages, latestSequence: 1 }), {
@@ -77,7 +77,7 @@ describe("connectCrdt", () => {
           });
         }
 
-        if (url.includes("/message")) {
+        if (url.includes("/sync/send")) {
           const body = (capturedBodies[capturedBodies.length - 1] as { payload?: Record<string, unknown> }).payload ?? {};
           return new Response(JSON.stringify({ message: { ...body, signedBy: "owner", sequence: 2 } }), {
             status: 200,
@@ -117,7 +117,7 @@ describe("connectCrdt", () => {
     ) as { payload: { body: unknown } } | undefined;
     expect(sentMessage?.payload.body).toEqual({ type: "crdt-update", data: "BBBB" });
 
-    expect(requestedUrls.some((u) => u.endsWith("/messages"))).toBe(true);
+    expect(requestedUrls.some((u) => u.endsWith("/sync/poll"))).toBe(true);
   });
 
   it("polls immediately and stops after disconnect", async () => {
@@ -131,7 +131,7 @@ describe("connectCrdt", () => {
       identityProvider: async () => ({ username: "owner" }),
       fetchFn: async (input: RequestInfo | URL): Promise<Response> => {
         const url = asUrl(input);
-        if (url.includes("/messages")) {
+        if (url.includes("/sync/poll")) {
           requestedAt.push(Date.now());
           return new Response(JSON.stringify({ messages: [], latestSequence: 0 }), {
             status: 200,
@@ -174,7 +174,7 @@ describe("connectCrdt", () => {
       identityProvider: async () => ({ username: "owner" }),
       fetchFn: async (input: RequestInfo | URL): Promise<Response> => {
         const url = asUrl(input);
-        if (url.includes("/messages")) {
+        if (url.includes("/sync/poll")) {
           requestedAt.push(Date.now());
           return new Response(JSON.stringify({ messages: [], latestSequence: 0 }), {
             status: 200,
@@ -222,7 +222,7 @@ describe("connectCrdt", () => {
 
     const remoteMessage = {
       id: "msg_remote",
-      roomId: "room_1",
+      rowId: "row_1",
       body: { type: "crdt-update", data: "AAAA" },
       createdAt: 75_000,
       signedBy: "friend",
@@ -234,7 +234,7 @@ describe("connectCrdt", () => {
       identityProvider: async () => ({ username: "owner" }),
       fetchFn: async (input: RequestInfo | URL): Promise<Response> => {
         const url = asUrl(input);
-        if (url.includes("/messages")) {
+        if (url.includes("/sync/poll")) {
           requestedAt.push(Date.now());
           const messages = Date.now() === Date.parse("2026-03-13T00:01:15.000Z")
             ? [remoteMessage]
@@ -291,7 +291,7 @@ describe("connectCrdt", () => {
       identityProvider: async () => ({ username: "owner" }),
       fetchFn: async (input: RequestInfo | URL): Promise<Response> => {
         const url = asUrl(input);
-        if (url.includes("/messages")) {
+        if (url.includes("/sync/poll")) {
           requestedAt.push(Date.now());
           return new Response(JSON.stringify({ messages: [], latestSequence: 0 }), {
             status: 200,

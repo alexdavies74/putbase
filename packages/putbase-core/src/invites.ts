@@ -17,12 +17,12 @@ function normalizeInviteTarget(target: string): string {
   return normalizeTarget(target);
 }
 
-function assertRoomTarget(target: string): void {
+function assertRowTarget(target: string): void {
   const parsed = new URL(target);
   const segments = parsed.pathname.split("/").filter(Boolean);
-  const roomsIndex = segments.indexOf("rooms");
-  if (roomsIndex < 0 || roomsIndex + 1 >= segments.length) {
-    throw new Error("Invite input must include a room target.");
+  const rowsIndex = segments.indexOf("rows");
+  if (rowsIndex < 0 || rowsIndex + 1 >= segments.length) {
+    throw new Error("Invite input must include a row target.");
   }
 }
 
@@ -34,7 +34,7 @@ export class Invites {
   ) {}
 
   async getExistingInviteToken(row: DbRowLocator): Promise<InviteToken | null> {
-    const response = await this.transport.room(row).request<GetInviteResponse>("invite-token/get", {});
+    const response = await this.transport.row(row).request<GetInviteResponse>("invite-token/get", {});
     return response.inviteToken;
   }
 
@@ -43,12 +43,12 @@ export class Invites {
 
     const payload: InviteToken = {
       token: this.transport.createId("invite"),
-      roomId: row.id,
+      rowId: row.id,
       invitedBy: user.username,
       createdAt: Date.now(),
     };
 
-    const response = await this.transport.room(row).request<PostInviteResponse>("invite-token/create", payload);
+    const response = await this.transport.row(row).request<PostInviteResponse>("invite-token/create", payload);
 
     return response.inviteToken;
   }
@@ -72,22 +72,22 @@ export class Invites {
     const target = url.searchParams.get("target") ?? url.searchParams.get("worker");
 
     if (target) {
-      assertRoomTarget(target);
+      assertRowTarget(target);
       return {
         target: normalizeInviteTarget(target),
         inviteToken,
       };
     }
 
-    if (url.searchParams.has("owner") || url.searchParams.has("room")) {
+    if (url.searchParams.has("owner") || url.searchParams.has("row")) {
       throw new Error(
-        "Invite links with owner/room parameters are no longer supported. Use target-based invite links.",
+        "Invite links with owner/row parameters are no longer supported. Use target-based invite links.",
       );
     }
 
     const directTarget = new URL(url.toString());
     directTarget.searchParams.delete("token");
-    assertRoomTarget(directTarget.toString());
+    assertRowTarget(directTarget.toString());
 
     return {
       target: normalizeInviteTarget(directTarget.toString()),
