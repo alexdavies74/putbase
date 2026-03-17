@@ -227,7 +227,7 @@ export type AllowedParentCollections<
 export interface DbRowLocator {
   id: string;
   owner: string;
-  workerUrl: string;
+  target: string;
 }
 
 export type DbRowRef<TCollection extends string = string> = DbRowLocator & {

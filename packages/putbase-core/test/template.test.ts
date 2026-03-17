@@ -10,8 +10,8 @@ describe("buildClassicWorkerScript", () => {
     });
 
     expect(script).toMatch(/router\.post\((\"|')\/rooms(\"|')/);
-    expect(script).toMatch(/router\.post\((\"|')\/rooms\/:roomId\/room(\"|')/);
-    expect(script).toMatch(/router\.post\((\"|')\/rooms\/:roomId\/message(\"|')/);
+    expect(script).toMatch(/router\.post\((\"|')\/rooms\/:roomId\/room\/get(\"|')/);
+    expect(script).toMatch(/router\.post\((\"|')\/rooms\/:roomId\/room\/message(\"|')/);
     expect(script).toContain("me.puter.kv.get(");
     expect(script).toContain("me.puter.kv.set(");
     expect(script).toContain("me.puter.kv.incr(");

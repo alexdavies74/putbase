@@ -1,8 +1,8 @@
 import type { Identity } from "./identity";
 import type { PutBaseOptions } from "./putbase";
 import type { Transport } from "./transport";
-import { stripTrailingSlash } from "./transport";
-import type { InviteToken, ParsedInviteInput } from "./types";
+import { normalizeTarget } from "./transport";
+import type { InviteTarget, InviteToken } from "./types";
 import type { DbRowLocator } from "./schema";
 
 interface GetInviteResponse {
@@ -13,16 +13,16 @@ interface PostInviteResponse {
   inviteToken: InviteToken;
 }
 
-function normalizeWorkerUrl(workerUrl: string): string {
-  return workerUrl.replace(/\/+$/g, "");
+function normalizeInviteTarget(target: string): string {
+  return normalizeTarget(target);
 }
 
-function assertRoomWorkerUrl(workerUrl: string): void {
-  const parsed = new URL(workerUrl);
+function assertRoomTarget(target: string): void {
+  const parsed = new URL(target);
   const segments = parsed.pathname.split("/").filter(Boolean);
   const roomsIndex = segments.indexOf("rooms");
   if (roomsIndex < 0 || roomsIndex + 1 >= segments.length) {
-    throw new Error("Invite input must include a room worker URL.");
+    throw new Error("Invite input must include a room target.");
   }
 }
 
@@ -34,12 +34,7 @@ export class Invites {
   ) {}
 
   async getExistingInviteToken(row: DbRowLocator): Promise<InviteToken | null> {
-    const response = await this.transport.request<GetInviteResponse>({
-      url: `${stripTrailingSlash(row.workerUrl)}/invite-token/get`,
-      action: "invite-token.get",
-      roomId: row.id,
-      payload: {},
-    });
+    const response = await this.transport.room(row).request<GetInviteResponse>("invite-token/get", {});
     return response.inviteToken;
   }
 
@@ -53,54 +48,49 @@ export class Invites {
       createdAt: Date.now(),
     };
 
-    const response = await this.transport.request<PostInviteResponse>({
-      url: `${stripTrailingSlash(row.workerUrl)}/invite-token/create`,
-      action: "invite-token.create",
-      roomId: row.id,
-      payload,
-    });
+    const response = await this.transport.room(row).request<PostInviteResponse>("invite-token/create", payload);
 
     return response.inviteToken;
   }
 
-  createInviteLink(row: Pick<DbRowLocator, "workerUrl">, inviteToken: string): string {
+  createInviteLink(row: Pick<DbRowLocator, "target">, inviteToken: string): string {
     const appBaseUrl =
       this.options.appBaseUrl ??
       (typeof window !== "undefined" ? window.location.origin : "http://localhost:5173");
 
     const url = new URL("/", appBaseUrl);
-    url.searchParams.set("worker", normalizeWorkerUrl(row.workerUrl));
+    url.searchParams.set("target", normalizeInviteTarget(row.target));
     url.searchParams.set("token", inviteToken);
     return url.toString();
   }
 
-  parseInviteInput(input: string): ParsedInviteInput {
+  parseInvite(input: string): InviteTarget {
     const trimmed = input.trim();
     const url = new URL(trimmed);
 
     const inviteToken = url.searchParams.get("token") ?? undefined;
-    const workerUrl = url.searchParams.get("worker");
+    const target = url.searchParams.get("target") ?? url.searchParams.get("worker");
 
-    if (workerUrl) {
-      assertRoomWorkerUrl(workerUrl);
+    if (target) {
+      assertRoomTarget(target);
       return {
-        workerUrl: normalizeWorkerUrl(workerUrl),
+        target: normalizeInviteTarget(target),
         inviteToken,
       };
     }
 
     if (url.searchParams.has("owner") || url.searchParams.has("room")) {
       throw new Error(
-        "Invite links with owner/room parameters are no longer supported. Use worker-based invite links.",
+        "Invite links with owner/room parameters are no longer supported. Use target-based invite links.",
       );
     }
 
-    const directWorkerUrl = new URL(url.toString());
-    directWorkerUrl.searchParams.delete("token");
-    assertRoomWorkerUrl(directWorkerUrl.toString());
+    const directTarget = new URL(url.toString());
+    directTarget.searchParams.delete("token");
+    assertRoomTarget(directTarget.toString());
 
     return {
-      workerUrl: normalizeWorkerUrl(directWorkerUrl.toString()),
+      target: normalizeInviteTarget(directTarget.toString()),
       inviteToken,
     };
   }

@@ -83,7 +83,7 @@ function buildWatchRow(id: string, title: string) {
     id,
     collection: "tasks",
     owner: "alice",
-    workerUrl: `https://worker.example/rooms/${id}`,
+    target: `https://worker.example/rooms/${id}`,
     fields: { title, status: "todo" },
   };
 }
@@ -110,7 +110,7 @@ function buildDb(args: { username: string; network: TestWorkerNetwork }): PutBas
 
 function buildQueryForWatchTests(): Query<typeof schema> {
   return new Query(
-    { request: vi.fn() } as never,
+    { room: vi.fn() } as never,
     { getRow: vi.fn() } as never,
     schema,
   );
@@ -204,7 +204,7 @@ describe("PutBase rows", () => {
     const bobTask = await bobDb.put("tasks", { title: "Review" }, { in: bobProject.toRef() });
     await bobTask.in.add(aliceProject.toRef());
 
-    const aliceTask = await aliceDb.getRowByUrl(bobTask.workerUrl);
+    const aliceTask = await aliceDb.openTarget(bobTask.target);
     expect(aliceTask.collection).toBe("tasks");
     if (aliceTask.collection !== "tasks") {
       throw new Error(`Expected tasks row, got ${aliceTask.collection}`);
@@ -220,7 +220,7 @@ describe("PutBase rows", () => {
         id: aliceProject.id,
         collection: "projects",
         owner: "alice",
-        workerUrl: aliceProject.workerUrl,
+        target: aliceProject.target,
       },
     });
   });
@@ -232,25 +232,27 @@ describe("PutBase rows", () => {
     const project = await db.put("projects", { name: "Website" });
     await db.put("tasks", { title: "Ship v2", status: "todo" }, { in: project.toRef() });
 
-    const directRoomWorkerUrl = `https://alice-room-${project.id}.example`;
+    const directTarget = `https://alice-room-${project.id}.example`;
     await expect(
       db.query("tasks", {
-        in: { ...project.toRef(), workerUrl: directRoomWorkerUrl },
+        in: { ...project.toRef(), target: directTarget },
         where: { status: "todo" },
       }),
-    ).rejects.toThrow("Legacy non-federated room URLs are no longer supported");
+    ).rejects.toThrow("Legacy non-federated room targets are no longer supported");
   });
 
   it("rejects query results when canonical row hydration fails", async () => {
     const transport = {
-      request: vi.fn().mockResolvedValue({
-        rows: [{
-          rowId: "task_1",
-          owner: "alice",
-          workerUrl: "https://worker.example/rooms/task_1/",
-          collection: "tasks",
-          fields: { title: "Embedded snapshot", status: "todo" },
-        }],
+      room: vi.fn().mockReturnValue({
+        request: vi.fn().mockResolvedValue({
+          rows: [{
+            rowId: "task_1",
+            owner: "alice",
+            target: "https://worker.example/rooms/task_1/",
+            collection: "tasks",
+            fields: { title: "Embedded snapshot", status: "todo" },
+          }],
+        }),
       }),
     };
     const getRow = vi.fn().mockRejectedValue(new Error("canonical fetch failed"));
@@ -265,7 +267,7 @@ describe("PutBase rows", () => {
         id: "project_1",
         collection: "projects",
         owner: "alice",
-        workerUrl: "https://worker.example/rooms/project_1",
+        target: "https://worker.example/rooms/project_1",
       },
     })).rejects.toThrow("canonical fetch failed");
 
@@ -273,7 +275,7 @@ describe("PutBase rows", () => {
       id: "task_1",
       collection: "tasks",
       owner: "alice",
-      workerUrl: "https://worker.example/rooms/task_1",
+      target: "https://worker.example/rooms/task_1",
     });
   });
 
@@ -318,7 +320,7 @@ describe("Query watchQuery", () => {
         id: "project_1",
         collection: "projects",
         owner: "alice",
-        workerUrl: "https://worker.example/rooms/project_1",
+        target: "https://worker.example/rooms/project_1",
       },
     }, {
       onChange: (rows) => {
@@ -353,7 +355,7 @@ describe("Query watchQuery", () => {
         id: "project_1",
         collection: "projects",
         owner: "alice",
-        workerUrl: "https://worker.example/rooms/project_1",
+        target: "https://worker.example/rooms/project_1",
       },
     }, { onChange() {} });
 
@@ -390,7 +392,7 @@ describe("Query watchQuery", () => {
         id: "project_1",
         collection: "projects",
         owner: "alice",
-        workerUrl: "https://worker.example/rooms/project_1",
+        target: "https://worker.example/rooms/project_1",
       },
     }, {
       onChange: (rows) => { changes.push(rows.map((row) => row.id).join(",")); },
@@ -423,7 +425,7 @@ describe("Query watchQuery", () => {
         id: "project_1",
         collection: "projects",
         owner: "alice",
-        workerUrl: "https://worker.example/rooms/project_1",
+        target: "https://worker.example/rooms/project_1",
       },
     }, { onChange() {} });
 

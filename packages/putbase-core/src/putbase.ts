@@ -25,16 +25,16 @@ import type {
 } from "./schema";
 import { resolveBackend } from "./backend";
 import { resolveCollectionName } from "./schema";
-import { stripTrailingSlash } from "./transport";
+import { normalizeTarget } from "./transport";
 import { Transport } from "./transport";
 import type {
   BackendClient,
   CrdtConnectCallbacks,
   CrdtConnection,
   DeployWorkerArgs,
+  InviteTarget,
   InviteToken,
   JsonValue,
-  ParsedInviteInput,
   RoomUser,
 } from "./types";
 import { Sync } from "./sync";
@@ -127,12 +127,12 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
     return this.rowsModule.getRow(collection, row);
   }
 
-  async getRowByUrl(workerUrl: string): Promise<AnyRowHandle<Schema>> {
-    const snapshot = await this.roomsModule.getRoom(workerUrl);
+  async openTarget(target: string): Promise<AnyRowHandle<Schema>> {
+    const snapshot = await this.roomsModule.getRoom(target);
     const locator: DbRowLocator = {
       id: snapshot.id,
       owner: snapshot.owner,
-      workerUrl: stripTrailingSlash(workerUrl),
+      target: normalizeTarget(target),
     };
     const { fields, collection: discoveredCollection } = await this.rowsModule.fetchWithCollection(locator);
     const collection = resolveCollectionName(this.options.schema, discoveredCollection ?? snapshot.collection);
@@ -162,24 +162,24 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
     return this.invitesModule.createInviteToken(row);
   }
 
-  createInviteLink(row: Pick<DbRowLocator, "workerUrl">, inviteToken: string): string {
+  createInviteLink(row: Pick<DbRowLocator, "target">, inviteToken: string): string {
     return this.invitesModule.createInviteLink(row, inviteToken);
   }
 
-  parseInviteInput(input: string): ParsedInviteInput {
-    return this.invitesModule.parseInviteInput(input);
+  parseInvite(input: string): InviteTarget {
+    return this.invitesModule.parseInvite(input);
   }
 
-  async joinRow(
-    workerUrl: string,
-    options: { inviteToken?: string } = {},
-  ): Promise<AnyRowHandle<Schema>> {
-    await this.roomsModule.joinRoom(workerUrl, options);
-    return this.getRowByUrl(workerUrl);
+  async openInvite(input: string | InviteTarget): Promise<AnyRowHandle<Schema>> {
+    const invite = typeof input === "string" ? this.parseInvite(input) : input;
+    await this.roomsModule.joinRoom(invite.target, {
+      inviteToken: invite.inviteToken,
+    });
+    return this.openTarget(invite.target);
   }
 
   async listMembers(row: DbRowLocator): Promise<string[]> {
-    return this.roomsModule.listMembers(row.workerUrl);
+    return this.roomsModule.listMembers(row.target);
   }
 
   async addParent(child: DbRowRef, parent: DbRowRef): Promise<void> {

@@ -11,7 +11,7 @@ export class Sync {
 
     const poller = createAdaptivePoller({
       run: async ({ markActivity }) => {
-        const poll = await this.rooms.pollMessages(row.workerUrl, lastSequence);
+        const poll = await this.rooms.pollMessages(row.target, lastSequence);
         const messages = poll.messages.slice().sort(
           (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
         );
@@ -31,7 +31,7 @@ export class Sync {
 
         const update = callbacks.produceLocalUpdate();
         if (update !== null) {
-          const sent = await this.rooms.sendMessage(row.workerUrl, row.id, update);
+          const sent = await this.rooms.sendMessage(row.target, row.id, update);
           lastSequence = Math.max(lastSequence, sent.sequence);
           markActivity();
         }

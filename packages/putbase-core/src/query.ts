@@ -14,13 +14,13 @@ import type {
 } from "./schema";
 import { getCollectionSpec, pickIndex } from "./schema";
 import type { Transport } from "./transport";
-import { roomEndpointUrl, stripTrailingSlash } from "./transport";
+import { normalizeTarget } from "./transport";
 import type { JsonValue } from "./types";
 
 interface DbQueryRow {
   rowId: string;
   owner: string;
-  workerUrl: string;
+  target: string;
   collection: string;
   fields: Record<string, JsonValue>;
 }
@@ -50,7 +50,7 @@ function snapshotRows(rows: Array<RowHandle<string, DbRowFields>>): string {
     id: row.id,
     collection: row.collection,
     owner: row.owner,
-    workerUrl: row.workerUrl,
+    target: row.target,
     fields: row.fields,
   }));
   return stableJsonStringify(snapshot);
@@ -89,18 +89,13 @@ export class Query<Schema extends DbSchema> {
           value = selectedIndex.encodedValue;
         }
 
-        return this.transport.request<DbQueryResponse>({
-          url: roomEndpointUrl(parent, "db-query"),
-          action: "db.query",
-          roomId: parent.id,
-          payload: {
-            collection,
-            order: options.order ?? "asc",
-            limit,
-            index: indexName,
-            value,
-            where: selectedIndex ? undefined : options.where,
-          },
+        return this.transport.room(parent).request<DbQueryResponse>("db/query", {
+          collection,
+          order: options.order ?? "asc",
+          limit,
+          index: indexName,
+          value,
+          where: selectedIndex ? undefined : options.where,
         });
       }),
     );
@@ -122,7 +117,7 @@ export class Query<Schema extends DbSchema> {
           id: row.rowId,
           collection,
           owner: row.owner,
-          workerUrl: stripTrailingSlash(row.workerUrl),
+          target: normalizeTarget(row.target),
         };
 
         return this.rows.getRow(collection, rowRef);

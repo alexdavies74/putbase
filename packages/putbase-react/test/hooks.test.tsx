@@ -20,7 +20,7 @@ import {
   usePutBase,
   useQuery,
   useRow,
-  useRowByUrl,
+  useRowTarget,
 } from "../src/index";
 
 const schema = defineSchema({
@@ -66,7 +66,7 @@ function makeDogRow(name: string) {
       id: "dog_1",
       collection: "dogs",
       owner: "alex",
-      workerUrl: "https://worker.example/rooms/dog_1",
+      target: "https://worker.example/rooms/dog_1",
     },
     { name },
   );
@@ -79,7 +79,7 @@ function makeTagRow(id: string, label: string) {
       id,
       collection: "tags",
       owner: "alex",
-      workerUrl: `https://worker.example/rooms/${id}`,
+      target: `https://worker.example/rooms/${id}`,
     },
     { label, createdAt: 1 },
   );
@@ -89,7 +89,7 @@ class FakeDb {
   username = "alex";
   queryCalls = 0;
   getRowCalls = 0;
-  getRowByUrlCalls = 0;
+  openTargetCalls = 0;
   ensureReadyCalls = 0;
   failWhoAmI = false;
   dogName = "Rex";
@@ -117,8 +117,8 @@ class FakeDb {
     return makeDogRow(this.dogName);
   }
 
-  async getRowByUrl(): Promise<ReturnType<typeof makeDogRow>> {
-    this.getRowByUrlCalls += 1;
+  async openTarget(): Promise<ReturnType<typeof makeDogRow>> {
+    this.openTargetCalls += 1;
     return makeDogRow(this.dogName);
   }
 
@@ -151,8 +151,8 @@ class FakeDb {
     };
   }
 
-  createInviteLink(row: Pick<DbRowRef, "workerUrl">, token: string): string {
-    return `${row.workerUrl}?token=${token}`;
+  createInviteLink(row: Pick<DbRowRef, "target">, token: string): string {
+    return `${row.target}?token=${token}`;
   }
 }
 
@@ -259,7 +259,7 @@ describe("@putbase/react", () => {
         id: "dog_1",
         collection: "dogs",
         owner: "alex",
-        workerUrl: "https://worker.example/rooms/dog_1",
+        target: "https://worker.example/rooms/dog_1",
       },
       index: "byCreatedAt" as const,
       order: "asc" as const,
@@ -299,7 +299,7 @@ describe("@putbase/react", () => {
       id: "dog_1",
       collection: "dogs",
       owner: "alex",
-      workerUrl: "https://worker.example/rooms/dog_1",
+      target: "https://worker.example/rooms/dog_1",
     };
     let latest: ReturnType<typeof useRow<TestSchema, "dogs">> | null = null;
 
@@ -330,7 +330,7 @@ describe("@putbase/react", () => {
         id: "dog_1",
         collection: "dogs",
         owner: "alex",
-        workerUrl: "https://worker.example/rooms/dog_1",
+        target: "https://worker.example/rooms/dog_1",
       },
       index: "byCreatedAt" as const,
       order: "asc" as const,
@@ -358,17 +358,17 @@ describe("@putbase/react", () => {
 
   it("stays idle when a required input is missing", async () => {
     const db = new FakeDb();
-    let latest: ReturnType<typeof useRowByUrl<TestSchema>> | null = null;
+    let latest: ReturnType<typeof useRowTarget<TestSchema>> | null = null;
 
     function Probe() {
-      latest = useRowByUrl<TestSchema>(null, { client: db as unknown as PutBase<TestSchema> });
+      latest = useRowTarget<TestSchema>(null, { client: db as unknown as PutBase<TestSchema> });
       return <div>{latest.status}</div>;
     }
 
     const app = await renderApp(<Probe />);
 
     expect(latest?.status).toBe("idle");
-    expect(db.getRowByUrlCalls).toBe(0);
+    expect(db.openTargetCalls).toBe(0);
     await app.unmount();
   });
 
@@ -380,7 +380,7 @@ describe("@putbase/react", () => {
         id: "dog_1",
         collection: "dogs",
         owner: "alex",
-        workerUrl: "https://worker.example/rooms/dog_1",
+        target: "https://worker.example/rooms/dog_1",
       },
       index: "byCreatedAt" as const,
       order: "asc" as const,
@@ -412,7 +412,7 @@ describe("@putbase/react", () => {
         id: "dog_1",
         collection: "dogs",
         owner: "alex",
-        workerUrl: "https://worker.example/rooms/dog_1",
+        target: "https://worker.example/rooms/dog_1",
       },
       index: "byCreatedAt" as const,
       order: "asc" as const,

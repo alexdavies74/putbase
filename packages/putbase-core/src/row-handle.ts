@@ -45,7 +45,7 @@ export class RowHandle<
 
   readonly owner: string;
 
-  readonly workerUrl: string;
+  readonly target: string;
 
   fields: TFields;
 
@@ -71,7 +71,7 @@ export class RowHandle<
     this.id = row.id;
     this.collection = row.collection;
     this.owner = row.owner;
-    this.workerUrl = row.workerUrl;
+    this.target = row.target;
     this.fields = fields;
 
     this.in = {
@@ -111,7 +111,7 @@ export class RowHandle<
       id: this.id,
       collection: this.collection,
       owner: this.owner,
-      workerUrl: this.workerUrl,
+      target: this.target,
     };
   }
 }

@@ -35,7 +35,7 @@ function buildRow(db: PutBase) {
     id: "room_1",
     collection: "rows",
     owner: "owner",
-    workerUrl: "https://worker.example/rooms/room_1",
+    target: "https://worker.example/rooms/room_1",
   }, {});
 }
 

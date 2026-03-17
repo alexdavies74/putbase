@@ -1,7 +1,7 @@
 import type { Identity } from "./identity";
 import type { Provisioning } from "./provisioning";
 import type { Transport } from "./transport";
-import { stripTrailingSlash } from "./transport";
+import { buildRoomTarget } from "./transport";
 import type { JoinOptions, Room, RoomSnapshot } from "./types";
 
 interface PostMessageResponse {
@@ -22,11 +22,11 @@ export class Rooms {
     const user = await this.identity.whoAmI();
     const federationWorkerUrl = await this.provisioning.getFederationWorkerUrl(user.username);
     const roomId = this.transport.createId("room");
-    const roomWorkerUrl = buildRoomWorkerUrl(federationWorkerUrl, roomId);
+    const roomTarget = buildRoomTarget(federationWorkerUrl, roomId);
 
     await this.transport.request({
       url: `${federationWorkerUrl}/rooms`,
-      action: "rooms.create",
+      action: "rooms/create",
       roomId,
       payload: {
         roomId,
@@ -34,56 +34,47 @@ export class Rooms {
       },
     });
 
-    await this.joinRoom(roomWorkerUrl, {});
+    await this.joinRoom(roomTarget, {});
 
-    const room = await this.getRoom(roomWorkerUrl);
+    const room = await this.getRoom(roomTarget);
     return {
       id: room.id,
       name: room.name,
       owner: room.owner,
-      workerUrl: room.workerUrl,
+      target: room.target,
       createdAt: room.createdAt,
     };
   }
 
-  async joinRoom(workerUrl: string, options: JoinOptions = {}): Promise<Room> {
+  async joinRoom(target: string, options: JoinOptions = {}): Promise<Room> {
     const user = await this.identity.whoAmI();
+    const room = this.transport.room(target);
 
-    await this.transport.request({
-      url: `${stripTrailingSlash(workerUrl)}/join`,
-      action: "rooms.join",
-      roomId: roomIdFromWorkerUrl(workerUrl),
-      payload: {
-        username: user.username,
-        inviteToken: options.inviteToken,
-      },
+    await room.request("room/join", {
+      username: user.username,
+      inviteToken: options.inviteToken,
     });
 
-    const room = await this.getRoom(workerUrl);
+    const snapshot = await this.getRoom(target);
     return {
-      id: room.id,
-      name: room.name,
-      owner: room.owner,
-      workerUrl: room.workerUrl,
-      createdAt: room.createdAt,
+      id: snapshot.id,
+      name: snapshot.name,
+      owner: snapshot.owner,
+      target: snapshot.target,
+      createdAt: snapshot.createdAt,
     };
   }
 
-  async getRoom(workerUrl: string): Promise<RoomSnapshot> {
-    return this.transport.request<RoomSnapshot>({
-      url: `${stripTrailingSlash(workerUrl)}/room`,
-      action: "rooms.room",
-      roomId: roomIdFromWorkerUrl(workerUrl),
-      payload: {},
-    });
+  async getRoom(target: string): Promise<RoomSnapshot> {
+    return this.transport.room(target).request<RoomSnapshot>("room/get", {});
   }
 
-  async listMembers(workerUrl: string): Promise<string[]> {
-    const snapshot = await this.getRoom(workerUrl);
+  async listMembers(target: string): Promise<string[]> {
+    const snapshot = await this.getRoom(target);
     return snapshot.members;
   }
 
-  async sendMessage(workerUrl: string, roomId: string, body: unknown): Promise<{ sequence: number }> {
+  async sendMessage(target: string, roomId: string, body: unknown): Promise<{ sequence: number }> {
     const payload = {
       id: this.transport.createId("msg"),
       roomId,
@@ -91,44 +82,15 @@ export class Rooms {
       createdAt: Date.now(),
     };
 
-    const response = await this.transport.request<PostMessageResponse>(
-      {
-        url: `${stripTrailingSlash(workerUrl)}/message`,
-        action: "rooms.message",
-        roomId,
-        payload,
-      },
-    );
+    const response = await this.transport.room({ id: roomId, target }).request<PostMessageResponse>("room/message", payload);
 
     return response.message;
   }
 
   async pollMessages(
-    workerUrl: string,
+    target: string,
     sinceSequence: number,
   ): Promise<{ messages: Array<{ body: unknown; sequence: number; createdAt: number; id: string }>; latestSequence: number }> {
-    return this.transport.request({
-      url: `${stripTrailingSlash(workerUrl)}/messages`,
-      action: "rooms.messages",
-      roomId: roomIdFromWorkerUrl(workerUrl),
-      payload: {
-        sinceSequence,
-      },
-    });
+    return this.transport.room(target).request("room/messages", { sinceSequence });
   }
-}
-
-function buildRoomWorkerUrl(federationWorkerBaseUrl: string, roomId: string): string {
-  return `${stripTrailingSlash(federationWorkerBaseUrl)}/rooms/${encodeURIComponent(roomId)}`;
-}
-
-function roomIdFromWorkerUrl(workerUrl: string): string {
-  const parsed = new URL(workerUrl);
-  const segments = parsed.pathname.split("/").filter(Boolean);
-  const roomsIndex = segments.indexOf("rooms");
-  if (roomsIndex < 0 || roomsIndex + 1 >= segments.length) {
-    throw new Error(`Unsupported room worker URL: ${workerUrl}`);
-  }
-
-  return decodeURIComponent(segments[roomsIndex + 1]);
 }

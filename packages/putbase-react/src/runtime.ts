@@ -64,7 +64,7 @@ function snapshotRowHandle<Schema extends DbSchema>(
     id: row.id,
     collection: row.collection,
     owner: row.owner,
-    workerUrl: row.workerUrl,
+    target: row.target,
     fields: row.fields,
   });
 }
@@ -75,7 +75,7 @@ function snapshotRowRefArray(value: DbRowRef[]): string {
       id: row.id,
       collection: row.collection,
       owner: row.owner,
-      workerUrl: row.workerUrl,
+      target: row.target,
     })),
   );
 }
@@ -104,7 +104,7 @@ function snapshotQueryRows<Schema extends DbSchema>(value: Array<AnyRowHandle<Sc
       id: row.id,
       collection: row.collection,
       owner: row.owner,
-      workerUrl: row.workerUrl,
+      target: row.target,
       fields: row.fields,
     })),
   );
@@ -326,8 +326,8 @@ export function makeRowKey<TCollection extends string>(
   return `row:${collection}:${stableJsonStringify(row)}`;
 }
 
-export function makeRowByUrlKey(workerUrl: string): string {
-  return `row-by-url:${workerUrl}`;
+export function makeRowTargetKey(target: string): string {
+  return `row-target:${target}`;
 }
 
 export function makeParentsKey(row: DbRowLocator): string {
@@ -338,8 +338,8 @@ export function makeMembersKey(kind: "usernames" | "direct" | "effective", row: 
   return `${kind}:${stableJsonStringify(row)}`;
 }
 
-export function makeInviteLinkKey(row: Pick<DbRowLocator, "workerUrl">): string {
-  return `invite-link:${row.workerUrl}`;
+export function makeInviteLinkKey(row: Pick<DbRowLocator, "target">): string {
+  return `invite-link:${row.target}`;
 }
 
 export const snapshots = {

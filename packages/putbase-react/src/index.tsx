@@ -30,8 +30,8 @@ import {
   makeMembersKey,
   makeParentsKey,
   makeQueryKey,
-  makeRowByUrlKey,
   makeRowKey,
+  makeRowTargetKey,
   type LoadStatus,
   type PutBaseReactRuntime,
   type QueryRows,
@@ -201,19 +201,19 @@ export function useRow<
   );
 }
 
-export function useRowByUrl<Schema extends DbSchema>(
-  workerUrl: string | null | undefined,
+export function useRowTarget<Schema extends DbSchema>(
+  target: string | null | undefined,
   options: UseHookOptions<Schema> = {},
 ): UseResourceResult<AnyRowHandle<Schema>> {
   const runtime = useRuntime(options.client);
-  const resourceKey = workerUrl ? makeRowByUrlKey(workerUrl) : null;
+  const resourceKey = target ? makeRowTargetKey(target) : null;
   return useOptionalResource(
-    (options.enabled ?? true) && !!workerUrl,
+    (options.enabled ?? true) && !!target,
     resourceKey,
     runtime,
     () => runtime.getLive(
       resourceKey as string,
-      () => runtime.client.getRowByUrl(workerUrl as string),
+      () => runtime.client.openTarget(target as string),
       snapshots.row,
     ),
   );

@@ -6,6 +6,29 @@ import type { PutBaseOptions } from "./putbase";
 import type { BackendClient } from "./types";
 import type { DbRowLocator } from "./schema";
 
+type RoomAction =
+  | "db/query"
+  | "fields/get"
+  | "fields/set"
+  | "invite-token/create"
+  | "invite-token/get"
+  | "members/add"
+  | "members/direct"
+  | "members/effective"
+  | "members/remove"
+  | "parents/link-parent"
+  | "parents/register-child"
+  | "parents/unlink-parent"
+  | "parents/unregister-child"
+  | "room/get"
+  | "room/join"
+  | "room/message"
+  | "room/messages";
+
+interface RoomRequestOptions {
+  includeRequestProof?: boolean;
+}
+
 function resolveBoundWorkersExec(
   workers: Partial<Pick<WorkersHandler, "exec">> | null | undefined,
 ): WorkersHandler["exec"] | null {
@@ -20,34 +43,54 @@ export function stripTrailingSlash(input: string): string {
   return input.replace(/\/+$/g, "");
 }
 
-export function roomEndpointUrl(
-  row: Pick<DbRowLocator, "id" | "workerUrl">,
-  endpoint: string,
-  searchParams?: URLSearchParams,
-): string {
-  const workerUrl = new URL(stripTrailingSlash(row.workerUrl));
-  const segments = workerUrl.pathname.split("/").filter(Boolean);
+export function roomIdFromTarget(target: string): string {
+  const parsed = new URL(target);
+  const segments = parsed.pathname.split("/").filter(Boolean);
   const roomsIndex = segments.indexOf("rooms");
 
   if (roomsIndex < 0 || roomsIndex + 1 >= segments.length) {
     throw new Error(
-      `Unsupported room worker URL: ${row.workerUrl}. Legacy non-federated room URLs are no longer supported.`,
+      `Unsupported room target: ${target}. Legacy non-federated room targets are no longer supported.`,
+    );
+  }
+
+  return decodeURIComponent(segments[roomsIndex + 1]);
+}
+
+export function normalizeTarget(input: string): string {
+  return stripTrailingSlash(input);
+}
+
+export function buildRoomTarget(federationWorkerBaseUrl: string, roomId: string): string {
+  return `${stripTrailingSlash(federationWorkerBaseUrl)}/rooms/${encodeURIComponent(roomId)}`;
+}
+
+function roomEndpointUrl(
+  target: string,
+  roomId: string,
+  endpoint: string,
+): string {
+  const targetUrl = new URL(normalizeTarget(target));
+  const segments = targetUrl.pathname.split("/").filter(Boolean);
+  const roomsIndex = segments.indexOf("rooms");
+
+  if (roomsIndex < 0 || roomsIndex + 1 >= segments.length) {
+    throw new Error(
+      `Unsupported room target: ${target}. Legacy non-federated room targets are no longer supported.`,
     );
   }
 
   const routeRoomId = decodeURIComponent(segments[roomsIndex + 1]);
-  if (routeRoomId !== row.id) {
-    throw new Error(
-      `Room worker URL/id mismatch: ${row.workerUrl} does not match row id ${row.id}.`,
-    );
+  if (routeRoomId !== roomId) {
+    throw new Error(`Room target/id mismatch: ${target} does not match row id ${roomId}.`);
   }
 
   const prefix = segments.slice(0, roomsIndex + 2).join("/");
-  workerUrl.pathname = `/${prefix}/${endpoint}`;
+  targetUrl.pathname = `/${prefix}/${endpoint}`;
 
-  workerUrl.search = searchParams?.toString() ?? "";
-  workerUrl.hash = "";
-  return workerUrl.toString();
+  targetUrl.search = "";
+  targetUrl.hash = "";
+  return targetUrl.toString();
 }
 
 export class Transport {
@@ -82,6 +125,38 @@ export class Transport {
       includeRequestProof: args.includeRequestProof,
     });
     return this.postJson<T>(args.url, body);
+  }
+
+  room(rowOrTarget: string | Pick<DbRowLocator, "id" | "target">): {
+    request<T, TPayload = unknown>(action: RoomAction, payload: TPayload, options?: RoomRequestOptions): Promise<T>;
+    target: string;
+    roomId: string;
+  } {
+    const target = typeof rowOrTarget === "string" ? normalizeTarget(rowOrTarget) : normalizeTarget(rowOrTarget.target);
+    const roomId = typeof rowOrTarget === "string" ? roomIdFromTarget(target) : rowOrTarget.id;
+    const parsedRoomId = roomIdFromTarget(target);
+
+    if (parsedRoomId !== roomId) {
+      throw new Error(`Room target/id mismatch: ${target} does not match row id ${roomId}.`);
+    }
+
+    return {
+      request: <T, TPayload = unknown>(
+        action: RoomAction,
+        payload: TPayload,
+        options?: RoomRequestOptions,
+      ): Promise<T> => {
+        return this.request<T, TPayload>({
+          url: roomEndpointUrl(target, roomId, action),
+          action,
+          roomId,
+          payload,
+          includeRequestProof: options?.includeRequestProof,
+        });
+      },
+      target,
+      roomId,
+    };
   }
 
   async postJson<T>(

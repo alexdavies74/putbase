@@ -92,60 +92,60 @@ async function route({ request }: RouterContext): Promise<Response> {
 }
 
 router.options("/rooms", () => new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
-router.options("/rooms/:roomId/room", () => new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
-router.options("/rooms/:roomId/messages", () => new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
-router.options("/rooms/:roomId/join", () => new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
+router.options("/rooms/:roomId/room/get", () => new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
+router.options("/rooms/:roomId/room/messages", () => new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
+router.options("/rooms/:roomId/room/join", () => new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
 router.options("/rooms/:roomId/invite-token/get", () =>
   new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
 router.options("/rooms/:roomId/invite-token/create", () =>
   new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
-router.options("/rooms/:roomId/message", () => new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
-router.options("/rooms/:roomId/is-member", () =>
+router.options("/rooms/:roomId/room/message", () => new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
+router.options("/rooms/:roomId/members/is-member", () =>
   new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
-router.options("/rooms/:roomId/member-role", () =>
+router.options("/rooms/:roomId/members/role", () =>
   new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
 router.options("/rooms/:roomId/fields/get", () =>
   new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
 router.options("/rooms/:roomId/fields/set", () =>
   new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
-router.options("/rooms/:roomId/register-child", () =>
+router.options("/rooms/:roomId/parents/register-child", () =>
   new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
-router.options("/rooms/:roomId/unregister-child", () =>
+router.options("/rooms/:roomId/parents/unregister-child", () =>
   new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
-router.options("/rooms/:roomId/update-index", () =>
+router.options("/rooms/:roomId/parents/update-index", () =>
   new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
-router.options("/rooms/:roomId/db-query", () =>
+router.options("/rooms/:roomId/db/query", () =>
   new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
-router.options("/rooms/:roomId/link-parent", () =>
+router.options("/rooms/:roomId/parents/link-parent", () =>
   new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
-router.options("/rooms/:roomId/unlink-parent", () =>
+router.options("/rooms/:roomId/parents/unlink-parent", () =>
   new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
-router.options("/rooms/:roomId/members-add", () =>
+router.options("/rooms/:roomId/members/add", () =>
   new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
-router.options("/rooms/:roomId/members-remove", () =>
+router.options("/rooms/:roomId/members/remove", () =>
   new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
-router.options("/rooms/:roomId/members-direct", () =>
+router.options("/rooms/:roomId/members/direct", () =>
   new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
-router.options("/rooms/:roomId/members-effective", () =>
+router.options("/rooms/:roomId/members/effective", () =>
   new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
 router.post("/rooms", route);
-router.post("/rooms/:roomId/join", route);
-router.post("/rooms/:roomId/room", route);
-router.post("/rooms/:roomId/messages", route);
-router.post("/rooms/:roomId/is-member", route);
-router.post("/rooms/:roomId/member-role", route);
+router.post("/rooms/:roomId/room/join", route);
+router.post("/rooms/:roomId/room/get", route);
+router.post("/rooms/:roomId/room/messages", route);
+router.post("/rooms/:roomId/members/is-member", route);
+router.post("/rooms/:roomId/members/role", route);
 router.post("/rooms/:roomId/fields/get", route);
 router.post("/rooms/:roomId/fields/set", route);
-router.post("/rooms/:roomId/db-query", route);
-router.post("/rooms/:roomId/members-direct", route);
-router.post("/rooms/:roomId/members-effective", route);
+router.post("/rooms/:roomId/db/query", route);
+router.post("/rooms/:roomId/members/direct", route);
+router.post("/rooms/:roomId/members/effective", route);
 router.post("/rooms/:roomId/invite-token/get", route);
 router.post("/rooms/:roomId/invite-token/create", route);
-router.post("/rooms/:roomId/message", route);
-router.post("/rooms/:roomId/register-child", route);
-router.post("/rooms/:roomId/unregister-child", route);
-router.post("/rooms/:roomId/update-index", route);
-router.post("/rooms/:roomId/link-parent", route);
-router.post("/rooms/:roomId/unlink-parent", route);
-router.post("/rooms/:roomId/members-add", route);
-router.post("/rooms/:roomId/members-remove", route);
+router.post("/rooms/:roomId/room/message", route);
+router.post("/rooms/:roomId/parents/register-child", route);
+router.post("/rooms/:roomId/parents/unregister-child", route);
+router.post("/rooms/:roomId/parents/update-index", route);
+router.post("/rooms/:roomId/parents/link-parent", route);
+router.post("/rooms/:roomId/parents/unlink-parent", route);
+router.post("/rooms/:roomId/members/add", route);
+router.post("/rooms/:roomId/members/remove", route);

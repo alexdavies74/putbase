@@ -75,7 +75,8 @@ interface ChildSchemaPayload {
 interface RegisterChildRequest {
   childRowId: string;
   childOwner: string;
-  childWorkerUrl: string;
+  childTarget?: string;
+  childWorkerUrl?: string;
   collection: string;
   fields?: Record<string, JsonValue>;
   schema?: ChildSchemaPayload;
@@ -90,6 +91,7 @@ interface UnregisterChildRequest {
 interface UpdateIndexRequest {
   childRowId: string;
   childOwner: string;
+  childTarget?: string;
   childWorkerUrl?: string;
   collection: string;
   fields: Record<string, JsonValue>;
@@ -120,7 +122,7 @@ interface ChildCollectionSchema {
 interface ChildEntry {
   rowId: string;
   owner: string;
-  workerUrl: string;
+  target: string;
   collection: string;
   fields: Record<string, JsonValue>;
   addedAt: number;
@@ -131,7 +133,7 @@ interface ChildEntry {
 interface IndexEntry {
   rowId: string;
   owner: string;
-  workerUrl: string;
+  target: string;
   collection: string;
   fields: Record<string, JsonValue>;
   updatedAt: number;
@@ -391,17 +393,21 @@ function normalizeRowRef(value: unknown, fieldName: string): DbRowRef {
   const id = typeof value.id === "string" ? value.id.trim() : "";
   const collection = typeof value.collection === "string" ? value.collection.trim() : "";
   const owner = typeof value.owner === "string" ? value.owner.trim() : "";
-  const workerUrl = typeof value.workerUrl === "string" ? stripTrailingSlash(value.workerUrl) : "";
+  const target = typeof value.target === "string"
+    ? stripTrailingSlash(value.target)
+    : typeof value.workerUrl === "string"
+      ? stripTrailingSlash(value.workerUrl)
+      : "";
 
-  if (!id || !collection || !owner || !workerUrl) {
-    error(400, "BAD_REQUEST", `${fieldName} must include id, collection, owner, and workerUrl`);
+  if (!id || !collection || !owner || !target) {
+    error(400, "BAD_REQUEST", `${fieldName} must include id, collection, owner, and target`);
   }
 
   return {
     id,
     collection,
     owner,
-    workerUrl,
+    target,
   };
 }
 
@@ -409,7 +415,7 @@ function sameRowRef(left: DbRowRef, right: DbRowRef): boolean {
   return left.id === right.id
     && left.collection === right.collection
     && left.owner === right.owner
-    && stripTrailingSlash(left.workerUrl) === stripTrailingSlash(right.workerUrl);
+    && stripTrailingSlash(left.target) === stripTrailingSlash(right.target);
 }
 
 function roleRank(role: MemberRole | null): number {
@@ -519,15 +525,15 @@ export class RoomWorker {
         });
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "room") {
+      if (request.method === "POST" && roomRoute.endpoint === "room/get") {
         return await this.getRoom(request, roomRoute.roomId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "messages") {
+      if (request.method === "POST" && roomRoute.endpoint === "room/messages") {
         return await this.getMessages(request, roomRoute.roomId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "join") {
+      if (request.method === "POST" && roomRoute.endpoint === "room/join") {
         return await this.join(request, roomRoute.roomId);
       }
 
@@ -539,15 +545,15 @@ export class RoomWorker {
         return await this.createInviteToken(request, roomRoute.roomId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "message") {
+      if (request.method === "POST" && roomRoute.endpoint === "room/message") {
         return await this.postMessage(request, roomRoute.roomId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "is-member") {
+      if (request.method === "POST" && roomRoute.endpoint === "members/is-member") {
         return await this.isMember(request, roomRoute.roomId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "member-role") {
+      if (request.method === "POST" && roomRoute.endpoint === "members/role") {
         return await this.memberRole(request, roomRoute.roomId, ctx);
       }
 
@@ -559,43 +565,43 @@ export class RoomWorker {
         return await this.postFields(request, roomRoute.roomId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "register-child") {
+      if (request.method === "POST" && roomRoute.endpoint === "parents/register-child") {
         return await this.registerChild(request, roomRoute.roomId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "unregister-child") {
+      if (request.method === "POST" && roomRoute.endpoint === "parents/unregister-child") {
         return await this.unregisterChild(request, roomRoute.roomId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "update-index") {
+      if (request.method === "POST" && roomRoute.endpoint === "parents/update-index") {
         return await this.updateIndex(request, roomRoute.roomId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "db-query") {
+      if (request.method === "POST" && roomRoute.endpoint === "db/query") {
         return await this.dbQuery(request, roomRoute.roomId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "link-parent") {
+      if (request.method === "POST" && roomRoute.endpoint === "parents/link-parent") {
         return await this.linkParent(request, roomRoute.roomId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "unlink-parent") {
+      if (request.method === "POST" && roomRoute.endpoint === "parents/unlink-parent") {
         return await this.unlinkParent(request, roomRoute.roomId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "members-add") {
+      if (request.method === "POST" && roomRoute.endpoint === "members/add") {
         return await this.membersAdd(request, roomRoute.roomId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "members-remove") {
+      if (request.method === "POST" && roomRoute.endpoint === "members/remove") {
         return await this.membersRemove(request, roomRoute.roomId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "members-direct") {
+      if (request.method === "POST" && roomRoute.endpoint === "members/direct") {
         return await this.membersDirect(request, roomRoute.roomId, ctx);
       }
 
-      if (request.method === "POST" && roomRoute.endpoint === "members-effective") {
+      if (request.method === "POST" && roomRoute.endpoint === "members/effective") {
         return await this.membersEffective(request, roomRoute.roomId, ctx);
       }
 
@@ -715,7 +721,7 @@ export class RoomWorker {
       principal = await verifyPrincipalProof(protectedRequest.auth.principal);
       await verifyRequestProof({
         proof: protectedRequest.auth.request,
-        action: "rooms.create",
+        action: "rooms/create",
         roomId,
         payload: body,
         principal: protectedRequest.auth.principal,
@@ -747,7 +753,7 @@ export class RoomWorker {
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { principal } = await this.requireProtectedPayload<Record<string, never>>(request, {
-      action: "rooms.room",
+      action: "room/get",
       roomId,
     });
     await this.assertMember(roomId, principal, ctx);
@@ -762,7 +768,7 @@ export class RoomWorker {
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { principal, payload } = await this.requireProtectedPayload<MessagesRequest>(request, {
-      action: "rooms.messages",
+      action: "room/messages",
       roomId,
     });
     if (payload.sinceSequence == null) {
@@ -799,7 +805,7 @@ export class RoomWorker {
 
   private async join(request: Request, roomId: string): Promise<Response> {
     const { payload: body, principal } = await this.requireProtectedPayload<JoinRequest>(request, {
-      action: "rooms.join",
+      action: "room/join",
       roomId,
       verifyBinding: false,
     });
@@ -857,7 +863,7 @@ export class RoomWorker {
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { principal } = await this.requireProtectedPayload<Record<string, never>>(request, {
-      action: "invite-token.get",
+      action: "invite-token/get",
       roomId,
     });
     await this.assertMember(roomId, principal, ctx);
@@ -876,7 +882,7 @@ export class RoomWorker {
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload, principal } = await this.requireProtectedPayload<InvitePayload>(request, {
-      action: "invite-token.create",
+      action: "invite-token/create",
       roomId,
     });
     await this.assertMember(roomId, principal, ctx);
@@ -905,7 +911,7 @@ export class RoomWorker {
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload, principal } = await this.requireProtectedPayload<MessagePayload>(request, {
-      action: "rooms.message",
+      action: "room/message",
       roomId,
     });
     await this.assertMember(roomId, principal, ctx);
@@ -936,7 +942,7 @@ export class RoomWorker {
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload, principal } = await this.requireProtectedPayload<RoleResolutionRequest>(request, {
-      action: "members.is-member",
+      action: "members/is-member",
       roomId,
     });
     const ttl = parseOptionalNonNegativeInteger(payload.ttl == null ? null : String(payload.ttl), DEFAULT_PARENT_ROOM_TTL);
@@ -950,7 +956,7 @@ export class RoomWorker {
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload, principal } = await this.requireProtectedPayload<RoleResolutionRequest>(request, {
-      action: "members.role",
+      action: "members/role",
       roomId,
       requireRequestProof: false,
     });
@@ -969,7 +975,7 @@ export class RoomWorker {
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { principal } = await this.requireProtectedPayload<Record<string, never>>(request, {
-      action: "fields.get",
+      action: "fields/get",
       roomId,
     });
     await this.assertMember(roomId, principal, ctx);
@@ -987,7 +993,7 @@ export class RoomWorker {
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload: body, principal } = await this.requireProtectedPayload<PostFieldsRequest>(request, {
-      action: "fields.set",
+      action: "fields/set",
       roomId,
     });
     await this.assertWriterOrAdmin(roomId, principal, ctx);
@@ -1026,12 +1032,14 @@ export class RoomWorker {
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload: body, principal } = await this.requireProtectedPayload<RegisterChildRequest>(request, {
-      action: "parents.register-child",
+      action: "parents/register-child",
       roomId: parentRoomId,
     });
 
-    if (!body.childRowId || !body.childOwner || !body.childWorkerUrl || !body.collection) {
-      error(400, "BAD_REQUEST", "childRowId, childOwner, childWorkerUrl, and collection are required");
+    const childTarget = stripTrailingSlash(body.childTarget ?? body.childWorkerUrl ?? "");
+
+    if (!body.childRowId || !body.childOwner || !childTarget || !body.collection) {
+      error(400, "BAD_REQUEST", "childRowId, childOwner, childTarget, and collection are required");
     }
 
     if (principal.username !== body.childOwner) {
@@ -1048,7 +1056,7 @@ export class RoomWorker {
     const childEntry: ChildEntry = {
       rowId: body.childRowId,
       owner: body.childOwner,
-      workerUrl: stripTrailingSlash(body.childWorkerUrl),
+      target: childTarget,
       collection: body.collection,
       fields: toJsonRecord(body.fields),
       addedAt: this.now(),
@@ -1078,7 +1086,7 @@ export class RoomWorker {
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload: body, principal } = await this.requireProtectedPayload<UnregisterChildRequest>(request, {
-      action: "parents.unregister-child",
+      action: "parents/unregister-child",
       roomId: parentRoomId,
     });
 
@@ -1112,7 +1120,7 @@ export class RoomWorker {
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload: body, principal } = await this.requireProtectedPayload<UpdateIndexRequest>(request, {
-      action: "parents.update-index",
+      action: "parents/update-index",
       roomId: parentRoomId,
       requireRequestProof: false,
     });
@@ -1130,10 +1138,11 @@ export class RoomWorker {
     const schema = await this.getChildSchema(parentRoomId, body.collection);
     const childKey = rowChildKey(parentRoomId, body.collection, body.childOwner, body.childRowId);
     const existing = await this.kv.get<ChildEntry>(childKey);
+    const childTarget = stripTrailingSlash(body.childTarget ?? body.childWorkerUrl ?? existing?.target ?? "");
     const nextEntry: ChildEntry = {
       rowId: body.childRowId,
       owner: body.childOwner,
-      workerUrl: stripTrailingSlash(body.childWorkerUrl ?? existing?.workerUrl ?? ""),
+      target: childTarget,
       collection: body.collection,
       fields: toJsonRecord(body.fields),
       addedAt: existing?.addedAt ?? this.now(),
@@ -1164,7 +1173,7 @@ export class RoomWorker {
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload, principal } = await this.requireProtectedPayload<QueryRequest>(request, {
-      action: "db.query",
+      action: "db/query",
       roomId: parentRoomId,
     });
     await this.assertMember(parentRoomId, principal, ctx);
@@ -1193,7 +1202,7 @@ export class RoomWorker {
       rows: rows.map((row) => ({
         rowId: row.rowId,
         owner: row.owner,
-        workerUrl: row.workerUrl,
+        target: row.target,
         collection: row.collection,
         fields: row.fields,
       })),
@@ -1206,7 +1215,7 @@ export class RoomWorker {
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload: body, principal } = await this.requireProtectedPayload<ParentLinkRequest>(request, {
-      action: "parents.link-parent",
+      action: "parents/link-parent",
       roomId,
     });
     await this.assertWriterOrAdmin(roomId, principal, ctx);
@@ -1230,7 +1239,7 @@ export class RoomWorker {
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload: body, principal } = await this.requireProtectedPayload<ParentLinkRequest>(request, {
-      action: "parents.unlink-parent",
+      action: "parents/unlink-parent",
       roomId,
     });
     await this.assertWriterOrAdmin(roomId, principal, ctx);
@@ -1252,7 +1261,7 @@ export class RoomWorker {
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload: body, principal } = await this.requireProtectedPayload<MemberMutationRequest>(request, {
-      action: "members.add",
+      action: "members/add",
       roomId,
     });
     await this.assertAdmin(roomId, principal, ctx);
@@ -1284,7 +1293,7 @@ export class RoomWorker {
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload: body, principal } = await this.requireProtectedPayload<MemberMutationRequest>(request, {
-      action: "members.remove",
+      action: "members/remove",
       roomId,
     });
     await this.assertAdmin(roomId, principal, ctx);
@@ -1315,7 +1324,7 @@ export class RoomWorker {
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { principal } = await this.requireProtectedPayload<Record<string, never>>(request, {
-      action: "members.direct",
+      action: "members/direct",
       roomId,
     });
     await this.assertMember(roomId, principal, ctx);
@@ -1336,7 +1345,7 @@ export class RoomWorker {
     ctx: WorkerRequestContext,
   ): Promise<Response> {
     const { payload, principal, auth } = await this.requireProtectedPayload<RoleResolutionRequest>(request, {
-      action: "members.effective",
+      action: "members/effective",
       roomId,
       requireRequestProof: false,
     });
@@ -1368,7 +1377,7 @@ export class RoomWorker {
             },
           };
           const response = await ctx.workersExec!(
-            `${stripTrailingSlash(parentRef.workerUrl)}/members-effective`,
+            `${stripTrailingSlash(parentRef.target)}/members/effective`,
             {
               method: "POST",
               headers: {
@@ -1429,7 +1438,7 @@ export class RoomWorker {
       const child: ChildEntry = {
         rowId: value.rowId,
         owner: value.owner,
-        workerUrl: value.workerUrl,
+        target: value.target,
         collection: value.collection,
         fields: value.fields,
         addedAt: value.updatedAt,
@@ -1506,7 +1515,7 @@ export class RoomWorker {
         const payload: IndexEntry = {
           rowId: child.rowId,
           owner: child.owner,
-          workerUrl: child.workerUrl,
+          target: child.target,
           collection: child.collection,
           fields: indexedFields,
           updatedAt: this.now(),
@@ -1654,7 +1663,7 @@ export class RoomWorker {
             },
           };
           const response = await ctx.workersExec!(
-            `${stripTrailingSlash(parentRef.workerUrl)}/member-role`,
+            `${stripTrailingSlash(parentRef.target)}/members/role`,
             {
               method: "POST",
               headers: {
@@ -1770,7 +1779,7 @@ export class RoomWorker {
     requestUrl?: string;
   }): Promise<void> {
     const key = roomMetaKey(args.roomId);
-    const inferredRoomUrl = args.requestUrl
+    const inferredTarget = args.requestUrl
       ? inferRoomWorkerUrlFromRequest(args.requestUrl, args.roomId, this.config.workerUrl)
       : this.config.workerUrl
         ? buildRoomWorkerUrl(this.config.workerUrl, args.roomId)
@@ -1778,10 +1787,10 @@ export class RoomWorker {
     const existing = await this.kv.get<Room>(key);
 
     if (existing) {
-      if (inferredRoomUrl && existing.workerUrl !== inferredRoomUrl) {
+      if (inferredTarget && existing.target !== inferredTarget) {
         await this.kv.set(key, {
           ...existing,
-          workerUrl: inferredRoomUrl,
+          target: inferredTarget,
         });
       }
       return;
@@ -1790,15 +1799,15 @@ export class RoomWorker {
     if (!args.roomName) {
       error(404, "BAD_REQUEST", `Room ${args.roomId} does not exist`);
     }
-    if (!inferredRoomUrl) {
-      error(500, "BAD_REQUEST", `Unable to infer worker URL for room ${args.roomId}`);
+    if (!inferredTarget) {
+      error(500, "BAD_REQUEST", `Unable to infer target for room ${args.roomId}`);
     }
 
     const room: Room = {
       id: args.roomId,
       name: args.roomName,
       owner: this.config.owner,
-      workerUrl: inferredRoomUrl,
+      target: inferredTarget,
       createdAt: this.now(),
     };
 

@@ -10,7 +10,34 @@ async function jsonBody(response: Response) {
 }
 
 function roomEndpoint(roomId: string, endpoint: string): string {
-  return `https://worker.example/rooms/${encodeURIComponent(roomId)}/${endpoint}`;
+  const normalized = (() => {
+    switch (endpoint) {
+      case "join":
+        return "room/join";
+      case "room":
+        return "room/get";
+      case "messages":
+        return "room/messages";
+      case "message":
+        return "room/message";
+      case "fields":
+        return "fields";
+      case "link-parent":
+        return "parents/link-parent";
+      case "unlink-parent":
+        return "parents/unlink-parent";
+      case "register-child":
+        return "parents/register-child";
+      case "unregister-child":
+        return "parents/unregister-child";
+      case "db-query":
+        return "db/query";
+      default:
+        return endpoint;
+    }
+  })();
+
+  return `https://worker.example/rooms/${encodeURIComponent(roomId)}/${normalized}`;
 }
 
 const signerState = new Map<string, Promise<{ keyPair: CryptoKeyPair; publicKeyJwk: JsonWebKey }>>();
@@ -43,7 +70,7 @@ function translateRequest(args: {
     const body = args.body as { roomId?: string; roomName?: string } | undefined;
     return {
       url: url.toString(),
-      action: "rooms.create",
+      action: "rooms/create",
       roomId: body?.roomId ?? "room_missing",
       payload: body ?? {},
     };
@@ -54,39 +81,42 @@ function translateRequest(args: {
   const endpoint = segments.slice(roomsIndex + 2).join("/");
 
   switch (endpoint) {
-    case "join":
-      return { url: url.toString(), action: "rooms.join", roomId, payload: args.body ?? {} };
-    case "room":
-      return { url: url.toString(), action: "rooms.room", roomId, payload: {} };
-    case "messages":
+    case "room/join":
+      return { url: url.toString(), action: "room/join", roomId, payload: args.body ?? {} };
+    case "room/get":
+      return { url: url.toString(), action: "room/get", roomId, payload: {} };
+    case "room/messages":
       return {
         url: url.origin + url.pathname,
-        action: "rooms.messages",
+        action: "room/messages",
         roomId,
         payload: url.searchParams.has("sinceSequence")
           ? { sinceSequence: Number(url.searchParams.get("sinceSequence")) }
           : {},
       };
     case "invite-token":
-      return { url: `${url.toString()}/create`, action: "invite-token.create", roomId, payload: args.body ?? {} };
-    case "message":
-      return { url: url.toString(), action: "rooms.message", roomId, payload: args.body ?? {} };
+    case "invite-token/create":
+      return { url: endpoint === "invite-token" ? `${url.toString()}/create` : url.toString(), action: "invite-token/create", roomId, payload: args.body ?? {} };
+    case "room/message":
+      return { url: url.toString(), action: "room/message", roomId, payload: args.body ?? {} };
     case "fields":
+    case "fields/get":
+    case "fields/set":
       return args.method === "GET"
-        ? { url: `${url.toString()}/get`, action: "fields.get", roomId, payload: {} }
-        : { url: `${url.toString()}/set`, action: "fields.set", roomId, payload: args.body ?? {} };
-    case "link-parent":
-      return { url: url.toString(), action: "parents.link-parent", roomId, payload: args.body ?? {} };
-    case "unlink-parent":
-      return { url: url.toString(), action: "parents.unlink-parent", roomId, payload: args.body ?? {} };
-    case "register-child":
-      return { url: url.toString(), action: "parents.register-child", roomId, payload: args.body ?? {} };
-    case "unregister-child":
-      return { url: url.toString(), action: "parents.unregister-child", roomId, payload: args.body ?? {} };
-    case "db-query":
+        ? { url: endpoint === "fields" ? `${url.toString()}/get` : url.toString(), action: "fields/get", roomId, payload: {} }
+        : { url: endpoint === "fields" ? `${url.toString()}/set` : url.toString(), action: "fields/set", roomId, payload: args.body ?? {} };
+    case "parents/link-parent":
+      return { url: url.toString(), action: "parents/link-parent", roomId, payload: args.body ?? {} };
+    case "parents/unlink-parent":
+      return { url: url.toString(), action: "parents/unlink-parent", roomId, payload: args.body ?? {} };
+    case "parents/register-child":
+      return { url: url.toString(), action: "parents/register-child", roomId, payload: args.body ?? {} };
+    case "parents/unregister-child":
+      return { url: url.toString(), action: "parents/unregister-child", roomId, payload: args.body ?? {} };
+    case "db/query":
       return {
         url: url.origin + url.pathname,
-        action: "db.query",
+        action: "db/query",
         roomId,
         payload: {
           collection: url.searchParams.get("collection") ?? "",
@@ -239,7 +269,7 @@ describe("RoomWorker", () => {
       }),
     );
     expect(ownerJoin.status).toBe(200);
-    expect((await jsonBody(ownerJoin)).workerUrl).toBe("https://worker.example/rooms/room_1");
+    expect((await jsonBody(ownerJoin)).target).toBe("https://worker.example/rooms/room_1");
 
     const guestJoinWithoutInvite = await worker.handle(
       await authedRequest({
@@ -405,7 +435,7 @@ describe("RoomWorker", () => {
       id: "project_1",
       collection: "projects",
       owner: "owner",
-      workerUrl: "https://worker.example/rooms/project_1",
+      target: "https://worker.example/rooms/project_1",
     };
 
     const link = await worker.handle(
@@ -873,7 +903,7 @@ describe("RoomWorker", () => {
       body: {
         childRowId: "tag_1",
         childOwner: "bob",
-        childWorkerUrl: `${bobBase}/rooms/tag_1`,
+        childTarget: `${bobBase}/rooms/tag_1`,
         collection: "tags",
         fields: { label: "friendly", createdBy: "bob", createdAt: 1 },
       },
@@ -888,7 +918,7 @@ describe("RoomWorker", () => {
           id: "dog_1",
           collection: "dogs",
           owner: "alice",
-          workerUrl: `${aliceBase}/rooms/dog_1`,
+          target: `${aliceBase}/rooms/dog_1`,
         },
       },
     })).toMatchObject({ status: 200 });
@@ -903,7 +933,7 @@ describe("RoomWorker", () => {
       expect.objectContaining({
         rowId: "tag_1",
         owner: "bob",
-        workerUrl: `${bobBase}/rooms/tag_1`,
+        target: `${bobBase}/rooms/tag_1`,
       }),
     ]);
 

@@ -31,7 +31,7 @@ export interface Room {
   id: string;
   name: string;
   owner: string;
-  workerUrl: string;
+  target: string;
   createdAt: number;
 }
 
@@ -99,8 +99,8 @@ export interface CrdtConnection {
   flush(): Promise<void>;
 }
 
-export interface ParsedInviteInput {
-  workerUrl: string;
+export interface InviteTarget {
+  target: string;
   inviteToken?: string;
 }
 

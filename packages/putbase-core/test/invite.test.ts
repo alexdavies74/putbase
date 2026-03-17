@@ -12,46 +12,58 @@ function buildDb(appBaseUrl = "https://woof.example") {
 }
 
 describe("invite parsing", () => {
-  it("creates and parses worker-based app invite links", () => {
+  it("creates and parses target-based app invite links", () => {
     const db = buildDb("https://woof.example");
     const link = db.createInviteLink(
-      { workerUrl: "https://workers.example/alex-1234abcd-federation/rooms/room_abc" },
+      { target: "https://workers.example/alex-1234abcd-federation/rooms/room_abc" },
       "invite_xyz",
     );
 
     expect(link).toBe(
-      "https://woof.example/?worker=https%3A%2F%2Fworkers.example%2Falex-1234abcd-federation%2Frooms%2Froom_abc&token=invite_xyz",
+      "https://woof.example/?target=https%3A%2F%2Fworkers.example%2Falex-1234abcd-federation%2Frooms%2Froom_abc&token=invite_xyz",
     );
 
-    const parsed = db.parseInviteInput(link);
+    const parsed = db.parseInvite(link);
     expect(parsed).toEqual({
-      workerUrl: "https://workers.example/alex-1234abcd-federation/rooms/room_abc",
+      target: "https://workers.example/alex-1234abcd-federation/rooms/room_abc",
       inviteToken: "invite_xyz",
     });
   });
 
-  it("supports worker URL input with token", () => {
+  it("supports room target input with token", () => {
     const db = buildDb();
-    const parsed = db.parseInviteInput(
+    const parsed = db.parseInvite(
       "https://workers.example/alex-1234abcd-federation/rooms/room_abc?token=invite_xyz",
     );
 
-    expect(parsed.workerUrl).toBe("https://workers.example/alex-1234abcd-federation/rooms/room_abc");
+    expect(parsed.target).toBe("https://workers.example/alex-1234abcd-federation/rooms/room_abc");
     expect(parsed.inviteToken).toBe("invite_xyz");
   });
 
-  it("supports plain worker URL input", () => {
+  it("supports plain room target input", () => {
     const db = buildDb();
-    const parsed = db.parseInviteInput("https://workers.example/alex-1234abcd-federation/rooms/room_abc");
+    const parsed = db.parseInvite("https://workers.example/alex-1234abcd-federation/rooms/room_abc");
 
-    expect(parsed.workerUrl).toBe("https://workers.example/alex-1234abcd-federation/rooms/room_abc");
+    expect(parsed.target).toBe("https://workers.example/alex-1234abcd-federation/rooms/room_abc");
     expect(parsed.inviteToken).toBeUndefined();
+  });
+
+  it("parses legacy worker query params for old invite links", () => {
+    const db = buildDb();
+    const parsed = db.parseInvite(
+      "https://woof.example/?worker=https%3A%2F%2Fworkers.example%2Falex-1234abcd-federation%2Frooms%2Froom_abc&token=invite_xyz",
+    );
+
+    expect(parsed).toEqual({
+      target: "https://workers.example/alex-1234abcd-federation/rooms/room_abc",
+      inviteToken: "invite_xyz",
+    });
   });
 
   it("rejects owner+room legacy invites", () => {
     const db = buildDb();
     expect(() =>
-      db.parseInviteInput("https://woof.example/?owner=alex&room=room_abc&token=invite_xyz"),
+      db.parseInvite("https://woof.example/?owner=alex&room=room_abc&token=invite_xyz"),
     ).toThrow("owner/room parameters are no longer supported");
   });
 });
