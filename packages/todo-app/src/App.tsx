@@ -16,23 +16,33 @@ export default function App() {
   const [loginStatus, setLoginStatus] = useState<"idle" | "loading">("idle");
   const session = useSession({ client: db });
   const signedIn = session.status === "success" && session.data?.state === "signed-in";
-  const invitePending = new URLSearchParams(window.location.search).has("target");
+  const inviteUrl = new URLSearchParams(window.location.search).has("target")
+    ? window.location.href
+    : null;
+  const invitePending = inviteUrl !== null;
 
   useEffect(() => {
-    if (!signedIn) {
+    if (!signedIn || board !== null || inviteUrl === null) {
       return;
     }
 
-    const params = new URLSearchParams(window.location.search);
-    if (params.has("target")) {
-      db.openInvite(window.location.href)
-        .then((handle) => {
+    let cancelled = false;
+
+    db.openInvite(inviteUrl)
+      .then((handle) => {
+        if (cancelled) {
+          return;
+        }
+
           setBoard(handle as BoardHandle);
           window.history.replaceState({}, "", window.location.pathname);
         })
         .catch(console.error);
-    }
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [board, inviteUrl, signedIn]);
 
   return (
     <PutBaseProvider client={db}>
