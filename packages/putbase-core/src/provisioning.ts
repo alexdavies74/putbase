@@ -9,7 +9,9 @@ import { stripTrailingSlash } from "./transport";
 import type { BackendClient, DeployWorkerArgs } from "./types";
 
 const FEDERATION_WORKER_ROOM_SENTINEL = "bootstrap";
-const FEDERATION_WORKER_VERSION = 28;
+// If worker runtime code changes, regenerate src/worker/dist/generated-runtime.ts first,
+// then bump this version in a separate edit so auto-reloaded clients cannot deploy stale runtime bytes under a new version.
+const FEDERATION_WORKER_VERSION = 29;
 const WORKER_METADATA_NAMESPACE = "putbase";
 const LEGACY_WORKER_METADATA_NAMESPACE = `${"puter"}-${"fed"}`;
 const FEDERATION_WORKER_VERSION_KV_PREFIX = `${WORKER_METADATA_NAMESPACE}:federation-worker-version:v2`;

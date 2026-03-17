@@ -11,6 +11,9 @@ const entryPoint = resolve(packageDir, "src/worker/deploy-runtime.ts");
 const outputDir = resolve(packageDir, "src/worker/dist");
 const outputPath = resolve(outputDir, "generated-runtime.ts");
 
+// Workflow reminder: when deploy-runtime.ts or its transitive worker code changes,
+// regenerate generated-runtime.ts before bumping FEDERATION_WORKER_VERSION in src/provisioning.ts.
+
 const buildResult = await build({
   entryPoints: [entryPoint],
   bundle: true,
