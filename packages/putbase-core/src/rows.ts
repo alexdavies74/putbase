@@ -14,6 +14,7 @@ import type {
 import { applyDefaults, assertPutParents, getCollectionSpec } from "./schema";
 import type { Transport } from "./transport";
 import { normalizeTarget } from "./transport";
+import { toRowLocator, toRowRef } from "./row-reference";
 import type { JsonValue } from "./types";
 
 interface GetFieldsResponse {
@@ -42,12 +43,12 @@ export class Rows<Schema extends DbSchema> {
     const row = await this.rowRuntime.createRow(
       options.name ?? `${collection}-${crypto.randomUUID().slice(0, 8)}`,
     );
-    const rowRef: DbRowRef<TCollection> = {
+    const rowRef: DbRowRef<TCollection> = toRowRef({
       id: row.id,
       collection,
       owner: row.owner,
       target: normalizeTarget(row.target),
-    };
+    });
 
     const payload = applyDefaults(
       collectionSpec,
@@ -80,7 +81,12 @@ export class Rows<Schema extends DbSchema> {
     row: DbRowRef<TCollection>,
     fields: Partial<RowFields<Schema, TCollection>>,
   ): Promise<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>> {
-    const rowRef: DbRowRef<TCollection> = { ...row, collection };
+    const rowRef: DbRowRef<TCollection> = toRowRef({
+      id: row.id,
+      collection,
+      owner: row.owner,
+      target: row.target,
+    });
     const response = await this.transport.row(rowRef).request<GetFieldsResponse>("fields/set", {
       fields,
       merge: true,
@@ -95,7 +101,12 @@ export class Rows<Schema extends DbSchema> {
     collection: TCollection,
     row: DbRowRef<TCollection>,
   ): Promise<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>> {
-    const rowRef: DbRowRef<TCollection> = { ...row, collection };
+    const rowRef: DbRowRef<TCollection> = toRowRef({
+      id: row.id,
+      collection,
+      owner: row.owner,
+      target: row.target,
+    });
     const fields = await this.refreshFields(rowRef);
     return new RowHandle<
       TCollection,
@@ -106,14 +117,14 @@ export class Rows<Schema extends DbSchema> {
   }
 
   async refreshFields(row: DbRowLocator): Promise<Record<string, JsonValue>> {
-    const response = await this.transport.row(row).request<GetFieldsResponse>("fields/get", {});
+    const response = await this.transport.row(toRowLocator(row)).request<GetFieldsResponse>("fields/get", {});
     return response.fields;
   }
 
   async fetchWithCollection(
     row: DbRowLocator,
   ): Promise<{ fields: Record<string, JsonValue>; collection: string | null }> {
-    const response = await this.transport.row(row).request<GetFieldsResponse>("fields/get", {});
+    const response = await this.transport.row(toRowLocator(row)).request<GetFieldsResponse>("fields/get", {});
     return { fields: response.fields, collection: response.collection };
   }
 
@@ -139,5 +150,5 @@ export class Rows<Schema extends DbSchema> {
 
 function normalizeParents(input: DbRowRef | DbRowRef[] | undefined): DbRowRef[] {
   if (!input) return [];
-  return Array.isArray(input) ? input : [input];
+  return (Array.isArray(input) ? input : [input]).map((row) => toRowRef(row));
 }

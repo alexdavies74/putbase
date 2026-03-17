@@ -370,6 +370,28 @@ describe("@putbase/react", () => {
     await app.unmount();
   });
 
+  it("accepts a row handle in live query options", async () => {
+    const db = new FakeDb();
+    const boardHandle = makeDogRow("Rex");
+    let latest: ReturnType<typeof useQuery<TestSchema, "tags">> | null = null;
+
+    function Probe() {
+      latest = useQuery("tags", {
+        in: boardHandle,
+        index: "byCreatedAt",
+        order: "asc",
+      }, { client: db as unknown as PutBase<TestSchema> });
+      return <div>{latest.rows.map((row) => row.fields.label).join(",")}</div>;
+    }
+
+    const app = await renderApp(<Probe />);
+
+    expect(db.queryCalls).toBe(1);
+    expect(latest?.status).toBe("success");
+    expect(app.container.textContent).toContain("friendly");
+    await app.unmount();
+  });
+
   it("polls row reads reactively", async () => {
     vi.useFakeTimers();
     const db = new FakeDb();

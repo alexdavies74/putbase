@@ -13,6 +13,7 @@ import type {
   RowFields,
 } from "./schema";
 import { getCollectionSpec, pickIndex } from "./schema";
+import { toRowRef } from "./row-reference";
 import type { Transport } from "./transport";
 import { normalizeTarget } from "./transport";
 import type { JsonValue } from "./types";
@@ -57,7 +58,7 @@ function snapshotRows(rows: Array<RowHandle<string, DbRowFields>>): string {
 }
 
 function normalizeParents(input: DbRowRef | DbRowRef[]): DbRowRef[] {
-  return Array.isArray(input) ? input : [input];
+  return (Array.isArray(input) ? input : [input]).map((row) => toRowRef(row));
 }
 
 export class Query<Schema extends DbSchema> {

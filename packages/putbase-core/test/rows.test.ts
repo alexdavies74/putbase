@@ -141,6 +141,23 @@ describe("PutBase rows", () => {
     expect(done[0].fields.status).toBe("done");
   });
 
+  it("accepts a parent row handle for put and query inputs", async () => {
+    const network = new TestWorkerNetwork();
+    const db = buildDb({ username: "alice", network });
+
+    const project = await db.put("projects", { name: "Website" });
+    const task = await db.put("tasks", { title: "Ship v2" }, { in: project });
+
+    const tasks = await db.query("tasks", {
+      in: project,
+      where: { status: "todo" },
+    });
+
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].id).toBe(task.id);
+    expect(tasks[0].fields.title).toBe("Ship v2");
+  });
+
   it("supports cross-owner linking and scoped queries", async () => {
     const network = new TestWorkerNetwork();
     const aliceDb = buildDb({ username: "alice", network });

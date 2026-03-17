@@ -58,6 +58,64 @@ function stableJsonStringify(value: unknown): string {
   return `{${entries.join(",")}}`;
 }
 
+function isRowLocatorLike(value: unknown): value is DbRowLocator & { collection?: string } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.id === "string"
+    && typeof record.owner === "string"
+    && typeof record.target === "string"
+  );
+}
+
+function canonicalizeRowLocator(value: DbRowLocator & { collection?: string }): Record<string, string> {
+  const canonical: Record<string, string> = {
+    id: value.id,
+    owner: value.owner,
+    target: value.target,
+  };
+
+  if (typeof value.collection === "string") {
+    canonical.collection = value.collection;
+  }
+
+  return canonical;
+}
+
+function canonicalizeKeyPart(value: unknown, seen = new WeakSet<object>()): unknown {
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+
+  if (isRowLocatorLike(value)) {
+    return canonicalizeRowLocator(value);
+  }
+
+  if (seen.has(value)) {
+    return "[Circular]";
+  }
+
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => canonicalizeKeyPart(entry, seen));
+  }
+
+  const record = value as Record<string, unknown>;
+  const canonical: Record<string, unknown> = {};
+  for (const key of Object.keys(record)) {
+    const entry = record[key];
+    if (typeof entry === "function" || typeof entry === "symbol" || typeof entry === "undefined") {
+      continue;
+    }
+    canonical[key] = canonicalizeKeyPart(entry, seen);
+  }
+  return canonical;
+}
+
 function snapshotRowHandle<Schema extends DbSchema>(
   row: AnyRowHandle<Schema>,
 ): string {
@@ -321,14 +379,14 @@ export function makeQueryKey<Schema extends DbSchema, TCollection extends Collec
   collection: TCollection,
   options: DbQueryOptions<Schema, TCollection>,
 ): string {
-  return `query:${collection}:${stableJsonStringify(options)}`;
+  return `query:${collection}:${stableJsonStringify(canonicalizeKeyPart(options))}`;
 }
 
 export function makeRowKey<TCollection extends string>(
   collection: TCollection,
   row: DbRowRef<TCollection>,
 ): string {
-  return `row:${collection}:${stableJsonStringify(row)}`;
+  return `row:${collection}:${stableJsonStringify(canonicalizeKeyPart(row))}`;
 }
 
 export function makeRowTargetKey(target: string): string {
@@ -336,11 +394,11 @@ export function makeRowTargetKey(target: string): string {
 }
 
 export function makeParentsKey(row: DbRowLocator): string {
-  return `parents:${stableJsonStringify(row)}`;
+  return `parents:${stableJsonStringify(canonicalizeKeyPart(row))}`;
 }
 
 export function makeMembersKey(kind: "usernames" | "direct" | "effective", row: DbRowLocator): string {
-  return `${kind}:${stableJsonStringify(row)}`;
+  return `${kind}:${stableJsonStringify(canonicalizeKeyPart(row))}`;
 }
 
 export function makeInviteLinkKey(row: Pick<DbRowLocator, "target">): string {

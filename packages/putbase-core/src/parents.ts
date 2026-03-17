@@ -2,6 +2,7 @@ import type { RowRuntime } from "./row-runtime";
 import type { Transport } from "./transport";
 import type { DbSchema, DbRowRef } from "./schema";
 import { assertParentAllowed } from "./schema";
+import { toRowRef } from "./row-reference";
 import type { JsonValue } from "./types";
 
 export class Parents {
@@ -13,41 +14,47 @@ export class Parents {
   ) {}
 
   async add(child: DbRowRef, parent: DbRowRef): Promise<void> {
-    assertParentAllowed(this.schema, child.collection, parent.collection);
+    const childRef = toRowRef(child);
+    const parentRef = toRowRef(parent);
+    assertParentAllowed(this.schema, childRef.collection, parentRef.collection);
 
-    const childFields = await this.refreshFields(child);
-    const childSpec = this.schema[child.collection];
+    const childFields = await this.refreshFields(childRef);
+    const childSpec = this.schema[childRef.collection];
 
-    await this.transport.row(parent).request("parents/register-child", {
-      childRowId: child.id,
-      childOwner: child.owner,
-      childTarget: child.target,
-      collection: child.collection,
+    await this.transport.row(parentRef).request("parents/register-child", {
+      childRowId: childRef.id,
+      childOwner: childRef.owner,
+      childTarget: childRef.target,
+      collection: childRef.collection,
       fields: childFields,
       schema: {
         indexes: childSpec?.indexes,
       },
     });
 
-    await this.transport.row(child).request("parents/link-parent", {
-      parentRef: parent,
+    await this.transport.row(childRef).request("parents/link-parent", {
+      parentRef,
     });
   }
 
   async remove(child: DbRowRef, parent: DbRowRef): Promise<void> {
-    await this.transport.row(parent).request("parents/unregister-child", {
-      childRowId: child.id,
-      childOwner: child.owner,
-      collection: child.collection,
+    const childRef = toRowRef(child);
+    const parentRef = toRowRef(parent);
+
+    await this.transport.row(parentRef).request("parents/unregister-child", {
+      childRowId: childRef.id,
+      childOwner: childRef.owner,
+      collection: childRef.collection,
     });
 
-    await this.transport.row(child).request("parents/unlink-parent", {
-      parentRef: parent,
+    await this.transport.row(childRef).request("parents/unlink-parent", {
+      parentRef,
     });
   }
 
   async list<TParentCollection extends string>(child: DbRowRef): Promise<Array<DbRowRef<TParentCollection>>> {
-    const row = await this.rowRuntime.getRow(child.target);
+    const childRef = toRowRef(child);
+    const row = await this.rowRuntime.getRow(childRef.target);
     return row.parentRefs as Array<DbRowRef<TParentCollection>>;
   }
 }
