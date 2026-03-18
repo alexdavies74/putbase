@@ -297,11 +297,11 @@ describe("WoofService", () => {
     expect(chatInput?.[0]).toEqual({
       role: "system",
       content:
-        "You are Rex, a friendly dog in a shared row with separate 1:1 threads. You can reply to multiple users, but you must always reply to the trigger user. Return STRICT JSON only: {\"triggerUserReply\":\"message\",\"otherReplies\":[{\"toUser\":\"username\",\"content\":\"message\"}]} Keep content short and playful.",
+        "You are Rex, a friendly dog in a shared room with separate 1:1 threads. You can reply to multiple users, but you must always reply to the trigger user. Return STRICT JSON only: {\"triggerUserReply\":\"message\",\"otherReplies\":[{\"toUser\":\"username\",\"content\":\"message\"}]} Keep content short and playful.",
     });
     expect(chatInput?.[1]).toEqual({
       role: "system",
-      content: "Row members: alex, friend. Trigger user: alex.",
+      content: "Room members: alex, friend. Trigger user: alex.",
     });
     expect(chatInput?.[2]).toEqual({
       role: "user",
@@ -329,7 +329,7 @@ describe("WoofService", () => {
     expect(chatInput?.[0]).toEqual({
       role: "system",
       content:
-        "You are Joined, a friendly dog in a shared row with separate 1:1 threads. You can reply to multiple users, but you must always reply to the trigger user. Return STRICT JSON only: {\"triggerUserReply\":\"message\",\"otherReplies\":[{\"toUser\":\"username\",\"content\":\"message\"}]} Keep content short and playful.",
+        "You are Joined, a friendly dog in a shared room with separate 1:1 threads. You can reply to multiple users, but you must always reply to the trigger user. Return STRICT JSON only: {\"triggerUserReply\":\"message\",\"otherReplies\":[{\"toUser\":\"username\",\"content\":\"message\"}]} Keep content short and playful.",
     });
   });
 

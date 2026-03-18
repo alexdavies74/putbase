@@ -298,7 +298,7 @@ function buildDogPrompt(args: {
     {
       role: "system",
       content: [
-        `You are ${args.dogName}, a friendly dog in a shared row with separate 1:1 threads.`,
+        `You are ${args.dogName}, a friendly dog in a shared room with separate 1:1 threads.`,
         "You can reply to multiple users, but you must always reply to the trigger user.",
         "Return STRICT JSON only: {\"triggerUserReply\":\"message\",\"otherReplies\":[{\"toUser\":\"username\",\"content\":\"message\"}]}",
         "Keep content short and playful.",
@@ -306,7 +306,7 @@ function buildDogPrompt(args: {
     },
     {
       role: "system",
-      content: `Row members: ${args.members.join(", ")}. Trigger user: ${args.actor.username}.`,
+      content: `Room members: ${args.members.join(", ")}. Trigger user: ${args.actor.username}.`,
     },
     ...sortedEntries.map((entry) => {
       const fromUser = entry.userType === "dog" ? args.dogName : entry.signedBy;

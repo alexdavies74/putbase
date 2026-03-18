@@ -29,7 +29,7 @@ function SetupPanel(props: {
   return (
     <section className="panel">
       <h1>Adopt a dog</h1>
-      <p className="muted">Create a row for your dog, or join an existing row via invite link.</p>
+      <p className="muted">Create a room for your dog, or join an existing room via invite link.</p>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -74,8 +74,8 @@ function SignInPanel(props: {
   onSignIn(): void;
 }) {
   const description = props.hasInvite
-    ? "Log in with Puter to join this shared dog row."
-    : "Log in with Puter before creating or restoring a dog row.";
+    ? "Log in with Puter to join this shared dog room."
+    : "Log in with Puter before creating or restoring a dog room.";
 
   return (
     <section className="panel">
@@ -147,7 +147,7 @@ function ChatPanel(props: {
   );
 }
 
-function RowScreen(props: {
+function RoomScreen(props: {
   currentUsername: string | null;
   onRelinquished(): void;
   profile: DogProfile;
@@ -163,7 +163,7 @@ function RowScreen(props: {
 
   return (
     <section className="panel">
-      <h1>{String(props.profile.row.fields.name ?? "")}&apos;s Row</h1>
+      <h1>{String(props.profile.row.fields.name ?? "")}&apos;s Room</h1>
       <div className="toolbar">
         <button
           id="copy-link"
@@ -292,7 +292,7 @@ export function App() {
         }
 
         setProfile(null);
-        setBootError(getErrorMessage(error, "Could not restore saved row."));
+        setBootError(getErrorMessage(error, "Could not restore saved room."));
         setBootStatus("ready");
       });
 
@@ -342,7 +342,7 @@ export function App() {
   if (bootStatus === "loading") {
     return (
       <SetupPanel
-        busyMessage={invitePending ? "Opening shared dog row…" : "Initializing app…"}
+        busyMessage={invitePending ? "Opening shared dog room…" : "Initializing app…"}
         disabled
         initialError=""
         onEnter={setProfile}
@@ -355,7 +355,7 @@ export function App() {
   }
 
   return (
-    <RowScreen
+        <RoomScreen
       currentUsername={signedInUser?.username ?? null}
       profile={profile}
       onRelinquished={() => {
