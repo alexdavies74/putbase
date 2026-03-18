@@ -1,12 +1,13 @@
 import { encodeCompositeFieldValues, encodeFieldValue } from "./key-encoding";
-import type { JsonValue } from "./types";
 
-export type FieldType = "string" | "number" | "boolean" | "date" | "json";
+export type DbFieldValue = string | number | boolean;
 
-export type DbRowFields = { [key: string]: JsonValue | undefined };
+export type FieldType = "string" | "number" | "boolean" | "date";
+
+export type DbRowFields = { [key: string]: DbFieldValue | undefined };
 
 export interface DbFieldBuilder<
-  TValue extends JsonValue = JsonValue,
+  TValue extends DbFieldValue = DbFieldValue,
   TType extends FieldType = FieldType,
   TOptional extends boolean = false,
   THasDefault extends boolean = false,
@@ -21,10 +22,10 @@ export interface DbFieldBuilder<
   readonly __value?: TValue;
 }
 
-type AnyDbFieldBuilder = DbFieldBuilder<JsonValue, FieldType, boolean, boolean>;
+type AnyDbFieldBuilder = DbFieldBuilder<DbFieldValue, FieldType, boolean, boolean>;
 
 function createFieldBuilder<
-  TValue extends JsonValue,
+  TValue extends DbFieldValue,
   TType extends FieldType,
   TOptional extends boolean,
   THasDefault extends boolean,
@@ -81,13 +82,6 @@ export const field = {
   date() {
     return createFieldBuilder<string, "date", false, false>({
       type: "date",
-      isOptional: false,
-      hasDefault: false,
-    });
-  },
-  json<TValue extends JsonValue = JsonValue>() {
-    return createFieldBuilder<TValue, "json", false, false>({
-      type: "json",
       isOptional: false,
       hasDefault: false,
     });
@@ -169,10 +163,10 @@ type InferFieldValue<TField extends AnyDbFieldBuilder> =
   TField extends DbFieldBuilder<infer TValue, FieldType, boolean, boolean> ? TValue : never;
 
 type FieldIsOptional<TField extends AnyDbFieldBuilder> =
-  TField extends DbFieldBuilder<JsonValue, FieldType, infer TOptional, boolean> ? TOptional : never;
+  TField extends DbFieldBuilder<infer _TValue, FieldType, infer TOptional, boolean> ? TOptional : never;
 
 type FieldHasDefault<TField extends AnyDbFieldBuilder> =
-  TField extends DbFieldBuilder<JsonValue, FieldType, boolean, infer THasDefault> ? THasDefault : never;
+  TField extends DbFieldBuilder<infer _TValue, FieldType, boolean, infer THasDefault> ? THasDefault : never;
 
 type FieldDefinitions<
   Schema extends DbSchema,
@@ -430,9 +424,61 @@ export function assertParentAllowed(
   }
 }
 
+function describeExpectedFieldType(fieldType: FieldType): string {
+  switch (fieldType) {
+    case "string":
+      return "a string";
+    case "number":
+      return "a number";
+    case "boolean":
+      return "a boolean";
+    case "date":
+      return "an ISO date string";
+  }
+}
+
+function isFieldValueType(value: unknown, fieldType: FieldType): value is DbFieldValue {
+  switch (fieldType) {
+    case "string":
+    case "date":
+      return typeof value === "string";
+    case "number":
+      return typeof value === "number";
+    case "boolean":
+      return typeof value === "boolean";
+  }
+}
+
+export function assertValidFieldValues(
+  collection: string,
+  collectionSpec: AnyDbCollectionDefinition,
+  fields: Record<string, unknown>,
+): void {
+  if (typeof fields !== "object" || fields === null || Array.isArray(fields)) {
+    throw new Error(`Fields for ${collection} must be an object`);
+  }
+
+  for (const [fieldName, value] of Object.entries(fields)) {
+    if (value === undefined) {
+      continue;
+    }
+
+    const fieldSpec = collectionSpec.fields[fieldName];
+    if (!fieldSpec) {
+      throw new Error(`Unknown field ${collection}.${fieldName}`);
+    }
+
+    if (!isFieldValueType(value, fieldSpec.type)) {
+      throw new Error(
+        `Field ${collection}.${fieldName} must be ${describeExpectedFieldType(fieldSpec.type)}`,
+      );
+    }
+  }
+}
+
 function encodeQueryIndexValue(
   indexSpec: DbIndexDefinition,
-  value: JsonValue | readonly JsonValue[],
+  value: DbFieldValue | readonly DbFieldValue[],
 ): string {
   if (indexSpec.fields.length > 1) {
     if (!Array.isArray(value)) {
@@ -441,7 +487,7 @@ function encodeQueryIndexValue(
     return encodeCompositeFieldValues(Array.from(value));
   }
 
-  return encodeFieldValue(value as JsonValue);
+  return encodeFieldValue(value as DbFieldValue);
 }
 
 export function pickIndex<
@@ -465,7 +511,7 @@ export function pickIndex<
       name: options.index,
       encodedValue: encodeQueryIndexValue(
         explicit,
-        options.value as JsonValue | readonly JsonValue[],
+        options.value as DbFieldValue | readonly DbFieldValue[],
       ),
     };
   }
@@ -484,7 +530,7 @@ export function pickIndex<
     if (indexSpec.fields.length === 1 && indexSpec.fields[0] === whereField) {
       return {
         name: indexName,
-        encodedValue: encodeFieldValue(whereValue as JsonValue),
+        encodedValue: encodeFieldValue(whereValue as DbFieldValue),
       };
     }
   }

@@ -11,7 +11,7 @@ import type {
   InsertFields,
   RowFields,
 } from "./schema";
-import { applyDefaults, assertPutParents, getCollectionSpec } from "./schema";
+import { applyDefaults, assertPutParents, assertValidFieldValues, getCollectionSpec } from "./schema";
 import type { Transport } from "./transport";
 import { normalizeTarget } from "./transport";
 import { toRowLocator, toRowRef } from "./row-reference";
@@ -39,6 +39,7 @@ export class Rows<Schema extends DbSchema> {
     const collectionSpec = getCollectionSpec(this.schema, collection);
     const parentRefs = normalizeParents(options.in);
     assertPutParents(collection, collectionSpec, parentRefs);
+    assertValidFieldValues(collection, collectionSpec, fields as Record<string, unknown>);
 
     const row = await this.rowRuntime.createRow(
       options.name ?? `${collection}-${crypto.randomUUID().slice(0, 8)}`,
@@ -87,6 +88,8 @@ export class Rows<Schema extends DbSchema> {
       owner: row.owner,
       target: row.target,
     });
+    const collectionSpec = getCollectionSpec(this.schema, collection);
+    assertValidFieldValues(collection, collectionSpec, fields as Record<string, unknown>);
     const response = await this.transport.row(rowRef).request<GetFieldsResponse>("fields/set", {
       fields,
       merge: true,

@@ -18,6 +18,7 @@ export type {
 } from "./types";
 export type {
   CollectionName,
+  DbFieldValue,
   DbMemberInfo,
   DbPutOptions,
   DbQueryOptions,

@@ -275,6 +275,26 @@ describe("PutBase rows", () => {
     ]));
   });
 
+  it("rejects unknown and non-scalar field payloads", async () => {
+    const network = new TestWorkerNetwork();
+    const db = buildDb({ username: "alice", network });
+
+    await expect(
+      db.put("projects", { name: "Website", extra: "ignored" } as never),
+    ).rejects.toThrow("Unknown field projects.extra");
+
+    await expect(
+      db.put("projects", { name: { label: "Website" } } as never),
+    ).rejects.toThrow("Field projects.name must be a string");
+
+    const project = await db.put("projects", { name: "Website" });
+    const task = await db.put("tasks", { title: "Ship v2" }, { in: project.toRef() });
+
+    await expect(
+      db.update("tasks", task.toRef(), { status: ["done"] } as never),
+    ).rejects.toThrow("Field tasks.status must be a string");
+  });
+
   it("rejects legacy row-worker URLs without /rows/{id}", async () => {
     const network = new TestWorkerNetwork();
     const db = buildDb({ username: "alice", network });

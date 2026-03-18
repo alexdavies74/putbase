@@ -78,8 +78,10 @@ export type Schema = typeof schema;
 ```
 
 - `collection({ in: [...] })` — `in` lists the allowed parent collections; omit it for top-level rows
-- `field.string()` / `.number()` / `.boolean()` / `.date()` / `.json()` — typed fields; chain `.optional()` or `.default(value)` as needed
+- `field.string()` / `.number()` / `.boolean()` / `.date()` — typed scalar fields; chain `.optional()` or `.default(value)` as needed
 - `index(fieldName)` — makes a field queryable with ordering and range filters
+
+Fields are for scalar metadata that you want to query or index. For richer collaborative document state, use PutBase's CRDT sync instead of storing nested JSON in row fields.
 
 ---
 

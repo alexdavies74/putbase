@@ -2,7 +2,7 @@ import { encodeCompositeFieldValues } from "../key-encoding";
 import { parseProtectedRequest, verifyPrincipalProof, verifyRequestProof } from "../auth";
 import { canonicalize } from "../crypto";
 import type { WorkersHandler } from "@heyputer/puter.js";
-import type { DbRowRef, MemberRole } from "../schema";
+import type { DbFieldValue, DbRowRef, MemberRole } from "../schema";
 import type {
   ApiError,
   InviteToken,
@@ -63,7 +63,7 @@ interface GetFieldsResponse {
 }
 
 interface PostFieldsRequest {
-  fields: Record<string, JsonValue>;
+  fields: Record<string, DbFieldValue>;
   merge?: boolean;
   collection?: string;
 }
@@ -78,7 +78,7 @@ interface RegisterChildRequest {
   childTarget?: string;
   childWorkerUrl?: string;
   collection: string;
-  fields?: Record<string, JsonValue>;
+  fields?: Record<string, DbFieldValue>;
   schema?: ChildSchemaPayload;
 }
 
@@ -94,7 +94,7 @@ interface UpdateIndexRequest {
   childTarget?: string;
   childWorkerUrl?: string;
   collection: string;
-  fields: Record<string, JsonValue>;
+  fields: Record<string, DbFieldValue>;
 }
 
 interface ParentLinkRequest {
@@ -112,7 +112,7 @@ interface QueryRequest {
   value?: string | null;
   order?: "asc" | "desc";
   limit?: number;
-  where?: Record<string, JsonValue>;
+  where?: Record<string, DbFieldValue>;
 }
 
 interface ChildCollectionSchema {
@@ -363,23 +363,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function toJsonRecord(value: unknown): Record<string, JsonValue> {
+function toFieldRecord(value: unknown, fieldName: string): Record<string, DbFieldValue> {
   if (!isRecord(value)) {
-    return {};
+    error(400, "BAD_REQUEST", `${fieldName} must be an object`);
   }
 
-  const output: Record<string, JsonValue> = {};
+  const output: Record<string, DbFieldValue> = {};
   for (const [key, candidate] of Object.entries(value)) {
     if (
-      candidate === null
-      || typeof candidate === "string"
+      typeof candidate === "string"
       || typeof candidate === "number"
       || typeof candidate === "boolean"
-      || Array.isArray(candidate)
-      || isRecord(candidate)
     ) {
-      output[key] = candidate as JsonValue;
+      output[key] = candidate;
+      continue;
     }
+
+    error(400, "BAD_REQUEST", `${fieldName}.${key} must be a string, number, or boolean`);
   }
 
   return output;
@@ -1001,11 +1001,8 @@ export class RowWorker {
       rowId,
     });
     await this.assertWriterOrAdmin(rowId, principal, ctx);
-    const incomingFields = toJsonRecord(body.fields);
+    const incomingFields = toFieldRecord(body.fields, "fields");
     const merge = body.merge ?? true;
-    if (!isRecord(body.fields)) {
-      error(400, "BAD_REQUEST", "fields must be an object");
-    }
 
     const current = await this.getRowFields(rowId);
     const next = merge
@@ -1067,7 +1064,7 @@ export class RowWorker {
       owner: body.childOwner,
       target: childTarget,
       collection: body.collection,
-      fields: toJsonRecord(body.fields),
+      fields: body.fields ? toFieldRecord(body.fields, "fields") : {},
       addedAt: this.now(),
       updatedAt: this.now(),
       active: true,
@@ -1134,7 +1131,7 @@ export class RowWorker {
       requireRequestProof: false,
     });
 
-    if (!body.childRowId || !body.childOwner || !body.collection || !isRecord(body.fields)) {
+    if (!body.childRowId || !body.childOwner || !body.collection) {
       error(400, "BAD_REQUEST", "childRowId, childOwner, collection, and fields are required");
     }
 
@@ -1158,7 +1155,7 @@ export class RowWorker {
       owner: body.childOwner,
       target: childTarget || stripTrailingSlash(existing?.target ?? ""),
       collection: body.collection,
-      fields: toJsonRecord(body.fields),
+      fields: toFieldRecord(body.fields, "fields"),
       addedAt: existing?.addedAt ?? this.now(),
       updatedAt: this.now(),
       active: true,
@@ -1220,7 +1217,7 @@ export class RowWorker {
       1,
       Math.min(MAX_QUERY_LIMIT, parseOptionalNonNegativeInteger(payload.limit == null ? null : String(payload.limit), 50)),
     );
-    const where = payload.where ? toJsonRecord(payload.where) : undefined;
+    const where = payload.where ? toFieldRecord(payload.where, "where") : undefined;
 
     let rows: ChildEntry[];
     if (indexName) {

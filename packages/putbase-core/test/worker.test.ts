@@ -407,6 +407,48 @@ describe("RowWorker", () => {
     expect((await jsonBody(unlink)).parentRefs).toEqual([]);
   });
 
+  it("rejects non-scalar row fields", async () => {
+    const worker = new RowWorker(
+      {
+        owner: "owner",
+        workerUrl: "https://worker.example",
+      },
+      { kv: new InMemoryKv() },
+    );
+
+    await createRow(worker, "row_fields");
+    await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("row_fields", "row/join"),
+        action: "row/join",
+        rowId: "row_fields",
+        username: "owner",
+        body: { username: "owner" },
+      }),
+    );
+
+    const response = await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("row_fields", "fields/set"),
+        action: "fields/set",
+        rowId: "row_fields",
+        username: "owner",
+        body: {
+          fields: {
+            title: { nested: true },
+          },
+          collection: "notes",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(jsonBody(response)).resolves.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "fields.title must be a string, number, or boolean",
+    });
+  });
+
   it("stamps message sender from authenticated requester", async () => {
     const worker = new RowWorker(
       {

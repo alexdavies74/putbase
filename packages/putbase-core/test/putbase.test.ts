@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PutBaseError } from "../src/errors";
 import { PutBase } from "../src/putbase";
 import { RowHandle } from "../src/row-handle";
-import { collection, defineSchema } from "../src/schema";
+import { collection, defineSchema, field } from "../src/schema";
 import type { BackendClient } from "../src/types";
 import { InMemoryKv } from "../src/worker/in-memory-kv";
 import { RowWorker } from "../src/worker/core";
@@ -64,7 +64,11 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 const MINIMAL_SCHEMA = defineSchema({
-  rows: collection({ fields: {} }),
+  rows: collection({
+    fields: {
+      name: field.string().optional(),
+    },
+  }),
 });
 
 describe("PutBase", () => {
