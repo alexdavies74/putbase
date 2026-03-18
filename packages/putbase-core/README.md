@@ -10,6 +10,22 @@ This makes PutBase particularly well-suited for:
 - **Apps built by AI coding agents** — the explicit-grant access model is simple enough that even a small-context agent can reason about it correctly
 - **Apps with user-pays AI** — Puter provides AI APIs billed to the user's own account, so you can build AI-powered features with zero hosting cost and a single login flow
 
+```ts
+// Write
+const board = await db.put("boards", { title: "Launch checklist" });
+await db.put("cards", { text: "Ship it", done: false, createdAt: Date.now() }, { in: board });
+
+// Read (React)
+const { rows: cards } = useQuery<Schema, "cards">("cards", {
+  in: board,
+  index: "byCreatedAt",
+  order: "asc",
+});
+
+// Share
+const { data: inviteLink } = useInviteLink(board);
+```
+
 ---
 
 ## How it works
