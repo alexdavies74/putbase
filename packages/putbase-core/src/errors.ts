@@ -1,6 +1,6 @@
 import type { ApiError, ErrorCode } from "./types";
 
-const PUTER_SETUP_HINT = "Load puter.js from https://js.puter.com/v2/, import @heyputer/puter.js, or pass backend to new PutBase(...).";
+const PUTER_SETUP_HINT = "import @heyputer/puter.js, or pass backend to new PutBase(...).";
 
 export class PutBaseError extends Error {
   readonly code: ErrorCode;

@@ -1,4 +1,6 @@
-import "@heyputer/puter.js";
+if (typeof window !== "undefined" && !(globalThis as { puter?: unknown }).puter) {
+  await import("@heyputer/puter.js");
+}
 
 import { PUTBASE_INVITE_TARGET_PARAM } from "@putbase/core";
 import {
