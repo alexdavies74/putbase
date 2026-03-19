@@ -1,5 +1,6 @@
 import "@heyputer/puter.js";
 
+import { PUTBASE_INVITE_TARGET_PARAM } from "@putbase/core";
 import {
   createContext,
   type ReactNode,
@@ -199,11 +200,7 @@ function getInviteHrefFromLocation(): string | null {
   }
 
   const url = new URL(window.location.href);
-  if (
-    url.searchParams.has("target")
-    || url.searchParams.has("worker")
-    || (url.searchParams.has("owner") && url.searchParams.has("row"))
-  ) {
+  if (url.searchParams.has(PUTBASE_INVITE_TARGET_PARAM)) {
     return url.toString();
   }
 

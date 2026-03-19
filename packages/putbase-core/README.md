@@ -208,7 +208,7 @@ const token = await db.createInviteToken(board);
 
 // 2. Build a link the recipient can open in their browser
 const link = db.createInviteLink(board, token.token);
-// → "https://yourapp.com/?target=...&token=..."
+// → "https://yourapp.com/?pb=...&token=..."
 
 // 3. Recipient opens the link; your app calls openInvite
 const board = await db.openInvite(link);

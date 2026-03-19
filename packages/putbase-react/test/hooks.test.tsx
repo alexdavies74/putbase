@@ -4,6 +4,7 @@ import { act, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  PUTBASE_INVITE_TARGET_PARAM,
   RowHandle,
   collection,
   defineSchema,
@@ -409,7 +410,7 @@ describe("@putbase/react", () => {
     window.history.replaceState(
       {},
       "",
-      "/?target=https%3A%2F%2Fworker.example%2Frows%2Fdog_1&token=invite_1",
+      `/?${PUTBASE_INVITE_TARGET_PARAM}=https%3A%2F%2Fworker.example%2Frows%2Fdog_1&token=invite_1`,
     );
 
     const db = new FakeDb();
@@ -440,9 +441,35 @@ describe("@putbase/react", () => {
     });
 
     expect(db.openInviteCalls).toBe(1);
-    expect(db.lastInviteInput).toBe("http://localhost:3000/?target=https%3A%2F%2Fworker.example%2Frows%2Fdog_1&token=invite_1");
+    expect(db.lastInviteInput).toBe(
+      `http://localhost:3000/?${PUTBASE_INVITE_TARGET_PARAM}=https%3A%2F%2Fworker.example%2Frows%2Fdog_1&token=invite_1`,
+    );
     expect(openedDogName).toBe("Buddy");
     expect(window.location.search).toBe("");
+    await app.unmount();
+  });
+
+  it("ignores non-invite routes that happen to use a target query param", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/game?target=https%3A%2F%2Fworker.example%2Frows%2Fdog_1",
+    );
+
+    const db = new FakeDb();
+    let latest: ReturnType<typeof useInviteFromLocation<TestSchema>> | null = null;
+
+    function Probe() {
+      latest = useInviteFromLocation<TestSchema>(db as unknown as PutBase<TestSchema>);
+      return <div>{latest.status}</div>;
+    }
+
+    const app = await renderApp(<Probe />);
+
+    expect(latest?.hasInvite).toBe(false);
+    expect(latest?.inviteInput).toBeNull();
+    expect(latest?.status).toBe("idle");
+    expect(db.openInviteCalls).toBe(0);
     await app.unmount();
   });
 
@@ -450,7 +477,7 @@ describe("@putbase/react", () => {
     window.history.replaceState(
       {},
       "",
-      "/?target=https%3A%2F%2Fworker.example%2Frows%2Fdog_1&token=invite_1",
+      `/?${PUTBASE_INVITE_TARGET_PARAM}=https%3A%2F%2Fworker.example%2Frows%2Fdog_1&token=invite_1`,
     );
 
     const db = new FakeDb();
@@ -485,11 +512,11 @@ describe("@putbase/react", () => {
 
     await waitFor(() => {
       expect(openInvite).toHaveBeenCalledWith(
-        "http://localhost:3000/?target=https%3A%2F%2Fworker.example%2Frows%2Fdog_1&token=invite_1",
+        `http://localhost:3000/?${PUTBASE_INVITE_TARGET_PARAM}=https%3A%2F%2Fworker.example%2Frows%2Fdog_1&token=invite_1`,
       );
       expect(latest?.status).toBe("success");
       expect(latest?.data?.inviteInput).toBe(
-        "http://localhost:3000/?target=https%3A%2F%2Fworker.example%2Frows%2Fdog_1&token=invite_1",
+        `http://localhost:3000/?${PUTBASE_INVITE_TARGET_PARAM}=https%3A%2F%2Fworker.example%2Frows%2Fdog_1&token=invite_1`,
       );
       expect(latest?.data?.row.fields.name).toBe("Buddy");
     });
@@ -554,7 +581,7 @@ describe("@putbase/react", () => {
     window.history.replaceState(
       {},
       "",
-      "/?target=https%3A%2F%2Fworker.example%2Frows%2Fdog_2&token=invite_1",
+      `/?${PUTBASE_INVITE_TARGET_PARAM}=https%3A%2F%2Fworker.example%2Frows%2Fdog_2&token=invite_1`,
     );
 
     const db = new FakeDb();

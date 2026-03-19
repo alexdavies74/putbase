@@ -5,6 +5,8 @@ import { normalizeTarget } from "./transport";
 import type { InviteTarget, InviteToken } from "./types";
 import type { DbRowLocator } from "./schema";
 
+export const PUTBASE_INVITE_TARGET_PARAM = "pb";
+
 interface GetInviteResponse {
   inviteToken: InviteToken | null;
 }
@@ -59,7 +61,7 @@ export class Invites {
       (typeof window !== "undefined" ? window.location.origin : "http://localhost:5173");
 
     const url = new URL("/", appBaseUrl);
-    url.searchParams.set("target", normalizeInviteTarget(row.target));
+    url.searchParams.set(PUTBASE_INVITE_TARGET_PARAM, normalizeInviteTarget(row.target));
     url.searchParams.set("token", inviteToken);
     return url.toString();
   }
@@ -69,7 +71,10 @@ export class Invites {
     const url = new URL(trimmed);
 
     const inviteToken = url.searchParams.get("token") ?? undefined;
-    const target = url.searchParams.get("target") ?? url.searchParams.get("worker");
+    const target =
+      url.searchParams.get(PUTBASE_INVITE_TARGET_PARAM)
+      ?? url.searchParams.get("target")
+      ?? url.searchParams.get("worker");
 
     if (target) {
       assertRowTarget(target);
@@ -81,7 +86,7 @@ export class Invites {
 
     if (url.searchParams.has("owner") || url.searchParams.has("row")) {
       throw new Error(
-        "Invite links with owner/row parameters are no longer supported. Use target-based invite links.",
+        "Invite links with owner/row parameters are no longer supported. Use PutBase invite links.",
       );
     }
 

@@ -2,6 +2,7 @@ export { PutBase } from "./putbase";
 export { RowHandle } from "./row-handle";
 export type { AnyRowHandle } from "./row-handle";
 export { PutBaseError } from "./errors";
+export { PUTBASE_INVITE_TARGET_PARAM } from "./invites";
 export { collection, defineSchema, field, index } from "./schema";
 export type { PutBaseOptions } from "./putbase";
 export type {

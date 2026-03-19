@@ -89,7 +89,7 @@ function CardList({ board }: { board: BoardHandle }) {
 
 ## Invite links
 
-`useInviteLink` lazily generates (or reuses) an invite link for a row. `useInviteFromLocation` handles the recipient side: it detects an invite in the current URL, waits for the session, calls `openInvite`, and clears the URL params.
+`useInviteLink` lazily generates (or reuses) an invite link for a row. `useInviteFromLocation` handles the recipient side: it detects PutBase invite URLs in the current location, waits for the session, calls `openInvite`, and clears the invite params.
 
 ```tsx
 import { useInviteLink, useInviteFromLocation } from "@putbase/react";

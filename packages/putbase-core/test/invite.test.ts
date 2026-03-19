@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { PUTBASE_INVITE_TARGET_PARAM } from "../src/invites";
 import { PutBase } from "../src/putbase";
 import { defineSchema } from "../src/schema";
 
@@ -12,7 +13,7 @@ function buildDb(appBaseUrl = "https://woof.example") {
 }
 
 describe("invite parsing", () => {
-  it("creates and parses target-based app invite links", () => {
+  it("creates and parses app invite links with a dedicated PutBase param", () => {
     const db = buildDb("https://woof.example");
     const link = db.createInviteLink(
       { target: "https://workers.example/alex-1234abcd-federation/rows/row_abc" },
@@ -20,7 +21,7 @@ describe("invite parsing", () => {
     );
 
     expect(link).toBe(
-      "https://woof.example/?target=https%3A%2F%2Fworkers.example%2Falex-1234abcd-federation%2Frows%2Frow_abc&token=invite_xyz",
+      `https://woof.example/?${PUTBASE_INVITE_TARGET_PARAM}=https%3A%2F%2Fworkers.example%2Falex-1234abcd-federation%2Frows%2Frow_abc&token=invite_xyz`,
     );
 
     const parsed = db.parseInvite(link);
