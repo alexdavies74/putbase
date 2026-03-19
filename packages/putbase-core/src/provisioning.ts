@@ -1,5 +1,5 @@
 import type { AuthManager } from "./auth";
-import { buildClassicWorkerScript } from "./worker/template";
+import { CLASSIC_WORKER_RUNTIME_ID, buildClassicWorkerScript } from "./worker/template";
 import { resolveBackend } from "./backend";
 import { missingPuterProvisioningMessage } from "./errors";
 import type { WorkerDeployment } from "@heyputer/puter.js";
@@ -10,14 +10,10 @@ import { stripTrailingSlash } from "./transport";
 import type { BackendClient, DeployWorkerArgs } from "./types";
 
 const FEDERATION_WORKER_ROW_SENTINEL = "bootstrap";
-// If worker runtime code changes, regenerate src/worker/dist/generated-runtime.ts first,
-// then bump this version in a separate edit so auto-reloaded clients cannot deploy stale runtime bytes under a new version.
-const FEDERATION_WORKER_VERSION = 30;
 const WORKER_METADATA_NAMESPACE = "putbase";
 const LEGACY_WORKER_METADATA_NAMESPACE = `${"puter"}-${"fed"}`;
-const FEDERATION_WORKER_VERSION_KV_PREFIX = `${WORKER_METADATA_NAMESPACE}:federation-worker-version:v2`;
 const FEDERATION_WORKER_URL_KV_PREFIX = `${WORKER_METADATA_NAMESPACE}:federation-worker-url:v2`;
-const LEGACY_FEDERATION_WORKER_VERSION_KV_PREFIX = `${LEGACY_WORKER_METADATA_NAMESPACE}:federation-worker-version:v2`;
+const FEDERATION_WORKER_RUNTIME_KV_PREFIX = `${WORKER_METADATA_NAMESPACE}:federation-worker-runtime:v2`;
 const LEGACY_FEDERATION_WORKER_URL_KV_PREFIX = `${LEGACY_WORKER_METADATA_NAMESPACE}:federation-worker-url:v2`;
 const FEDERATION_WORKER_DIR = `${WORKER_METADATA_NAMESPACE}/workers`;
 const sharedFederationWorkerPromises = new Map<string, Promise<string>>();
@@ -122,33 +118,32 @@ export class Provisioning {
   ): Promise<string> {
     const workerName = this.federationWorkerName(username, appHostHash);
 
-    const storedVersion = await this.loadFederationWorkerVersion(username, appHostHash);
     const storedUrl = await this.loadFederationWorkerUrl(username, appHostHash);
-    if (storedUrl && storedVersion >= FEDERATION_WORKER_VERSION) {
+    const storedRuntimeId = await this.loadFederationWorkerRuntimeId(username, appHostHash);
+    if (storedUrl && storedRuntimeId === CLASSIC_WORKER_RUNTIME_ID) {
       await this.saveFederationWorkerMetadata(username, appHostHash, storedUrl);
       return stripTrailingSlash(storedUrl);
     }
 
-    const requiresUpgrade = storedVersion > 0 && storedVersion < FEDERATION_WORKER_VERSION;
-    if (!requiresUpgrade) {
-      const existingWorkerUrl = await this.loadExistingFederationWorkerUrl(workerName);
-      if (existingWorkerUrl) {
-        await this.saveFederationWorkerMetadata(username, appHostHash, existingWorkerUrl);
-        return stripTrailingSlash(existingWorkerUrl);
-      }
+    const existingWorkerUrl = await this.loadExistingFederationWorkerUrl(workerName);
+    if (existingWorkerUrl) {
+      await this.saveFederationWorkerMetadata(username, appHostHash, existingWorkerUrl);
+      return stripTrailingSlash(existingWorkerUrl);
     }
 
     if (!this.canDeployFederationWorker()) {
       throw new Error(missingPuterProvisioningMessage());
     }
 
-    if (requiresUpgrade) {
+    const hadPriorWorkerMetadata = !!storedUrl || !!storedRuntimeId;
+    if (hadPriorWorkerMetadata) {
+      const priorRuntime = storedRuntimeId ?? "missing-runtime-id";
       console.info(
-        `[putbase] upgrading federation worker ${workerName} for ${username} on ${appHostname} from version ${storedVersion} to ${FEDERATION_WORKER_VERSION}`,
+        `[putbase] upgrading federation worker ${workerName} for ${username} on ${appHostname} from runtime ${priorRuntime} to ${CLASSIC_WORKER_RUNTIME_ID}`,
       );
     } else {
       console.info(
-        `[putbase] deploying federation worker ${workerName} for ${username} on ${appHostname} at version ${FEDERATION_WORKER_VERSION}`,
+        `[putbase] deploying federation worker ${workerName} for ${username} on ${appHostname} at runtime ${CLASSIC_WORKER_RUNTIME_ID}`,
       );
     }
 
@@ -164,7 +159,6 @@ export class Provisioning {
       rowName: "federation",
       ownerPublicKeyJwk,
       workerName,
-      workerVersion: FEDERATION_WORKER_VERSION,
       script,
       appHostname,
       appHostHash,
@@ -178,7 +172,7 @@ export class Provisioning {
 
     const activeWorkerUrl = stripTrailingSlash(deployedWorkerUrl);
     console.info(
-      `[putbase] federation worker ready ${workerName} version ${FEDERATION_WORKER_VERSION} ${activeWorkerUrl}`,
+      `[putbase] federation worker ready ${workerName} runtime ${CLASSIC_WORKER_RUNTIME_ID} ${activeWorkerUrl}`,
     );
     await this.saveFederationWorkerMetadata(username, appHostHash, activeWorkerUrl);
     return activeWorkerUrl;
@@ -282,44 +276,19 @@ export class Provisioning {
   }
 
   private federationWorkerName(username: string, appHostHash: string): string {
-    return `${username}-${appHostHash}-federation`.toLowerCase();
-  }
-
-  private federationWorkerVersionKey(username: string, appHostHash: string): string {
-    return `${FEDERATION_WORKER_VERSION_KV_PREFIX}:${username}:${appHostHash}`;
-  }
-
-  private legacyFederationWorkerVersionKey(username: string, appHostHash: string): string {
-    return `${LEGACY_FEDERATION_WORKER_VERSION_KV_PREFIX}:${username}:${appHostHash}`;
+    return `${username}-${appHostHash}-${CLASSIC_WORKER_RUNTIME_ID}-federation`.toLowerCase();
   }
 
   private federationWorkerUrlKey(username: string, appHostHash: string): string {
     return `${FEDERATION_WORKER_URL_KV_PREFIX}:${username}:${appHostHash}`;
   }
 
-  private legacyFederationWorkerUrlKey(username: string, appHostHash: string): string {
-    return `${LEGACY_FEDERATION_WORKER_URL_KV_PREFIX}:${username}:${appHostHash}`;
+  private federationWorkerRuntimeKey(username: string, appHostHash: string): string {
+    return `${FEDERATION_WORKER_RUNTIME_KV_PREFIX}:${username}:${appHostHash}`;
   }
 
-  private async loadFederationWorkerVersion(username: string, appHostHash: string): Promise<number> {
-    this.backend = resolveBackend(this.backend);
-
-    const kv = this.backend?.kv;
-    if (!kv?.get) {
-      return 0;
-    }
-
-    for (const key of [
-      this.federationWorkerVersionKey(username, appHostHash),
-      this.legacyFederationWorkerVersionKey(username, appHostHash),
-    ]) {
-      const value = await kv.get<unknown>(key).catch(() => undefined);
-      if (typeof value === "number" && Number.isFinite(value)) {
-        return Math.max(0, Math.floor(value));
-      }
-    }
-
-    return 0;
+  private legacyFederationWorkerUrlKey(username: string, appHostHash: string): string {
+    return `${LEGACY_FEDERATION_WORKER_URL_KV_PREFIX}:${username}:${appHostHash}`;
   }
 
   private async loadFederationWorkerUrl(username: string, appHostHash: string): Promise<string | null> {
@@ -341,6 +310,18 @@ export class Provisioning {
     }
 
     return null;
+  }
+
+  private async loadFederationWorkerRuntimeId(username: string, appHostHash: string): Promise<string | null> {
+    this.backend = resolveBackend(this.backend);
+
+    const kv = this.backend?.kv;
+    if (!kv?.get) {
+      return null;
+    }
+
+    const value = await kv.get<unknown>(this.federationWorkerRuntimeKey(username, appHostHash)).catch(() => undefined);
+    return typeof value === "string" && value.trim() ? value.trim() : null;
   }
 
   private async loadExistingFederationWorkerUrl(workerName: string): Promise<string | null> {
@@ -374,8 +355,8 @@ export class Provisioning {
     }
 
     await Promise.all([
-      kv.set(this.federationWorkerVersionKey(username, appHostHash), FEDERATION_WORKER_VERSION),
       kv.set(this.federationWorkerUrlKey(username, appHostHash), stripTrailingSlash(workerUrl)),
+      kv.set(this.federationWorkerRuntimeKey(username, appHostHash), CLASSIC_WORKER_RUNTIME_ID),
     ]).catch(() => undefined);
   }
 }

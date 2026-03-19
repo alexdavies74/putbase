@@ -1,4 +1,6 @@
-import { CLASSIC_WORKER_RUNTIME } from "./dist/generated-runtime";
+import { CLASSIC_WORKER_RUNTIME, CLASSIC_WORKER_RUNTIME_ID } from "./dist/generated-runtime";
+
+export { CLASSIC_WORKER_RUNTIME_ID };
 
 function escapeForLiteral(input: string): string {
   return input.replace(/\\/g, "\\\\").replace(/\"/g, '\\\"');

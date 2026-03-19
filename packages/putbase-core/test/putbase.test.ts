@@ -5,6 +5,7 @@ import { PutBase } from "../src/putbase";
 import { RowHandle } from "../src/row-handle";
 import { collection, defineSchema, field } from "../src/schema";
 import type { BackendClient } from "../src/types";
+import { CLASSIC_WORKER_RUNTIME_ID } from "../src/worker/template";
 import { InMemoryKv } from "../src/worker/in-memory-kv";
 import { RowWorker } from "../src/worker/core";
 
@@ -27,13 +28,21 @@ function hashHostname(hostname: string): string {
   return hash.toString(16).padStart(8, "0");
 }
 
-function workerMetadataKey(kind: "version" | "url", hostHash: string): string {
+function workerMetadataKey(kind: "runtime" | "url", hostHash: string): string {
   return `putbase:federation-worker-${kind}:v2:owner:${hostHash}`;
 }
 
-function legacyWorkerMetadataKey(kind: "version" | "url", hostHash: string): string {
+function legacyWorkerMetadataKey(kind: "url", hostHash: string): string {
   const legacyNamespace = `${"puter"}-${"fed"}`;
   return `${legacyNamespace}:federation-worker-${kind}:v2:owner:${hostHash}`;
+}
+
+function scopedWorkerName(hostHash: string): string {
+  return `owner-${hostHash}-${CLASSIC_WORKER_RUNTIME_ID}-federation`;
+}
+
+function scopedWorkerBase(hostHash: string): string {
+  return `https://workers.example/${scopedWorkerName(hostHash)}`;
 }
 
 class MapKv {
@@ -346,8 +355,8 @@ describe("PutBase", () => {
     const kv = new MapKv();
     const appHost = "late-backend.example";
     const hostHash = hashHostname(appHost);
-    const expectedWorkerName = `owner-${hostHash}-federation`;
-    const deployedWorkerBase = `https://workers.example/${expectedWorkerName}`;
+    const expectedWorkerName = scopedWorkerName(hostHash);
+    const deployedWorkerBase = scopedWorkerBase(hostHash);
     const createStarted = deferred<void>();
     let createCalls = 0;
 
@@ -379,10 +388,8 @@ describe("PutBase", () => {
     await expect(readyPromise).resolves.toBeUndefined();
 
     expect(createCalls).toBe(1);
-    await expect(kv.get(workerMetadataKey("version", hostHash))).resolves.toSatisfy(
-      (value) => typeof value === "number" && Number.isFinite(value) && value > 0,
-    );
     await expect(kv.get(workerMetadataKey("url", hostHash))).resolves.toBe(deployedWorkerBase);
+    await expect(kv.get(workerMetadataKey("runtime", hostHash))).resolves.toBe(CLASSIC_WORKER_RUNTIME_ID);
   });
 
   it("fails openTarget when the worker omits collection metadata", async () => {
@@ -555,8 +562,8 @@ describe("PutBase", () => {
     const kv = new MapKv();
     const appHost = "woof.example";
     const hostHash = hashHostname(appHost);
-    const expectedWorkerName = `owner-${hostHash}-federation`;
-    const deployedWorkerBase = `https://workers.example/${expectedWorkerName}`;
+    const expectedWorkerName = scopedWorkerName(hostHash);
+    const deployedWorkerBase = scopedWorkerBase(hostHash);
     let createdName: string | null = null;
     const createStarted = deferred<void>();
 
@@ -587,15 +594,13 @@ describe("PutBase", () => {
     await db.ensureReady();
 
     expect(createdName).toBe(expectedWorkerName);
-    await expect(kv.get(workerMetadataKey("version", hostHash))).resolves.toSatisfy(
-      (value) => typeof value === "number" && Number.isFinite(value) && value > 0,
-    );
     await expect(kv.get(workerMetadataKey("url", hostHash))).resolves.toBe(deployedWorkerBase);
+    await expect(kv.get(workerMetadataKey("runtime", hostHash))).resolves.toBe(CLASSIC_WORKER_RUNTIME_ID);
     expect(consoleInfo).toHaveBeenCalledWith(
-      expect.stringContaining(`[putbase] deploying federation worker ${expectedWorkerName} for owner on ${appHost} at version `),
+      `[putbase] deploying federation worker ${expectedWorkerName} for owner on ${appHost} at runtime ${CLASSIC_WORKER_RUNTIME_ID}`,
     );
     expect(consoleInfo).toHaveBeenCalledWith(
-      expect.stringContaining(`[putbase] federation worker ready ${expectedWorkerName} version `),
+      `[putbase] federation worker ready ${expectedWorkerName} runtime ${CLASSIC_WORKER_RUNTIME_ID} ${deployedWorkerBase}`,
     );
     consoleInfo.mockRestore();
   });
@@ -667,15 +672,15 @@ describe("PutBase", () => {
     await Promise.all([firstDb.ensureReady(), secondDb.ensureReady()]);
 
     expect(createdNames).toEqual(expect.arrayContaining([
-      `owner-${firstHash}-federation`,
-      `owner-${secondHash}-federation`,
+      scopedWorkerName(firstHash),
+      scopedWorkerName(secondHash),
     ]));
     expect(new Set(createdNames).size).toBe(2);
     await expect(kv.get(workerMetadataKey("url", firstHash))).resolves.toBe(
-      `https://workers.example/owner-${firstHash}-federation`,
+      scopedWorkerBase(firstHash),
     );
     await expect(kv.get(workerMetadataKey("url", secondHash))).resolves.toBe(
-      `https://workers.example/owner-${secondHash}-federation`,
+      scopedWorkerBase(secondHash),
     );
   });
 
@@ -921,7 +926,8 @@ describe("PutBase", () => {
   it("reuses existing scoped worker via workers.get before creating", async () => {
     const workerKv = new InMemoryKv();
     const kv = new MapKv();
-    const existingWorkerBase = "https://workers.example/owner-deadbeef-federation";
+    const hostHash = hashHostname("reuse-existing.example");
+    const existingWorkerBase = scopedWorkerBase(hostHash);
     let deployCalls = 0;
     let getCalls = 0;
 
@@ -965,18 +971,17 @@ describe("PutBase", () => {
     expect(row.target.startsWith(`${existingWorkerBase}/rows/`)).toBe(true);
   });
 
-  it("logs and redeploys when the stored federation worker version is stale", async () => {
+  it("logs and redeploys when legacy federation worker url metadata is stale", async () => {
     const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => {});
     const kv = new MapKv();
     const appHost = "upgrade.example";
     const hostHash = hashHostname(appHost);
-    const workerName = `owner-${hostHash}-federation`;
+    const workerName = scopedWorkerName(hostHash);
     const staleWorkerBase = `https://workers.example/${workerName}-stale`;
-    const upgradedWorkerBase = `https://workers.example/${workerName}`;
+    const upgradedWorkerBase = scopedWorkerBase(hostHash);
     let getCalls = 0;
     let createCalls = 0;
 
-    await kv.set(legacyWorkerMetadataKey("version", hostHash), 1);
     await kv.set(legacyWorkerMetadataKey("url", hostHash), staleWorkerBase);
 
     const db = new PutBase({
@@ -988,7 +993,7 @@ describe("PutBase", () => {
         workers: {
           get: async () => {
             getCalls += 1;
-            return { url: staleWorkerBase };
+            return null;
           },
           create: async () => {
             createCalls += 1;
@@ -1001,16 +1006,60 @@ describe("PutBase", () => {
 
     await db.ensureReady();
 
-    expect(getCalls).toBe(0);
+    expect(getCalls).toBe(1);
     expect(createCalls).toBe(1);
     await expect(kv.get(workerMetadataKey("url", hostHash))).resolves.toBe(upgradedWorkerBase);
+    await expect(kv.get(workerMetadataKey("runtime", hostHash))).resolves.toBe(CLASSIC_WORKER_RUNTIME_ID);
     expect(consoleInfo).toHaveBeenCalledWith(
-      expect.stringContaining(
-        `[putbase] upgrading federation worker ${workerName} for owner on ${appHost} from version 1 to `,
-      ),
+      `[putbase] upgrading federation worker ${workerName} for owner on ${appHost} from runtime missing-runtime-id to ${CLASSIC_WORKER_RUNTIME_ID}`,
     );
     expect(consoleInfo).toHaveBeenCalledWith(
-      expect.stringContaining(`[putbase] federation worker ready ${workerName} version `),
+      `[putbase] federation worker ready ${workerName} runtime ${CLASSIC_WORKER_RUNTIME_ID} ${upgradedWorkerBase}`,
+    );
+    consoleInfo.mockRestore();
+  });
+
+  it("redeploys when stored metadata has no current runtime id", async () => {
+    const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => {});
+    const kv = new MapKv();
+    const appHost = "runtime-metadata.example";
+    const hostHash = hashHostname(appHost);
+    const workerName = scopedWorkerName(hostHash);
+    const staleWorkerBase = `https://workers.example/owner-${hostHash}-federation`;
+    const upgradedWorkerBase = scopedWorkerBase(hostHash);
+    let getCalls = 0;
+    let createCalls = 0;
+
+    await kv.set(workerMetadataKey("url", hostHash), staleWorkerBase);
+
+    const db = new PutBase({
+      schema: MINIMAL_SCHEMA,
+      identityProvider: async () => ({ username: "owner" }),
+      appBaseUrl: `https://${appHost}`,
+      backend: {
+        fs: { mkdir: async () => undefined, write: async () => undefined },
+        workers: {
+          get: async () => {
+            getCalls += 1;
+            return null;
+          },
+          create: async () => {
+            createCalls += 1;
+            return { url: upgradedWorkerBase };
+          },
+        },
+        kv,
+      },
+    });
+
+    await db.ensureReady();
+
+    expect(getCalls).toBe(1);
+    expect(createCalls).toBe(1);
+    await expect(kv.get(workerMetadataKey("url", hostHash))).resolves.toBe(upgradedWorkerBase);
+    await expect(kv.get(workerMetadataKey("runtime", hostHash))).resolves.toBe(CLASSIC_WORKER_RUNTIME_ID);
+    expect(consoleInfo).toHaveBeenCalledWith(
+      `[putbase] upgrading federation worker ${workerName} for owner on ${appHost} from runtime missing-runtime-id to ${CLASSIC_WORKER_RUNTIME_ID}`,
     );
     consoleInfo.mockRestore();
   });
