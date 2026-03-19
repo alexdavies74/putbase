@@ -13,6 +13,10 @@ function rowEndpoint(rowId: string, endpoint: string): string {
   return `https://worker.example/rows/${encodeURIComponent(rowId)}/${endpoint}`;
 }
 
+function rowMemberRolesStorageKey(rowId: string): string {
+  return `row:${rowId}:member_roles`;
+}
+
 const signerState = new Map<string, Promise<{ keyPair: CryptoKeyPair; publicKeyJwk: JsonWebKey }>>();
 
 async function getSigner(username: string): Promise<{ keyPair: CryptoKeyPair; publicKeyJwk: JsonWebKey }> {
@@ -232,7 +236,7 @@ describe("RowWorker", () => {
 
     expect(directMembers.status).toBe(200);
     expect((await jsonBody(directMembers)).members).toEqual(expect.arrayContaining([
-      expect.objectContaining({ username: "owner", role: "admin" }),
+      expect.objectContaining({ username: "owner", role: "writer" }),
       expect.objectContaining({ username: "guest", role: "writer" }),
     ]));
 
@@ -574,6 +578,246 @@ describe("RowWorker", () => {
 
     expect(post.status).toBe(401);
     expect((await jsonBody(post)).code).toBe("UNAUTHORIZED");
+  });
+
+  it("allows writer members to manage membership", async () => {
+    const worker = new RowWorker(
+      {
+        owner: "owner",
+        workerUrl: "https://worker.example",
+      },
+      { kv: new InMemoryKv() },
+    );
+
+    await createRow(worker, "row_writer_manage");
+
+    await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("row_writer_manage", "row/join"),
+        action: "row/join",
+        rowId: "row_writer_manage",
+        username: "owner",
+        body: { username: "owner" },
+      }),
+    );
+
+    await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("row_writer_manage", "members/add"),
+        action: "members/add",
+        rowId: "row_writer_manage",
+        username: "owner",
+        body: {
+          username: "writer",
+          role: "writer",
+        },
+      }),
+    );
+
+    await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("row_writer_manage", "row/join"),
+        action: "row/join",
+        rowId: "row_writer_manage",
+        username: "writer",
+        body: { username: "writer" },
+      }),
+    );
+
+    const response = await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("row_writer_manage", "members/add"),
+        action: "members/add",
+        rowId: "row_writer_manage",
+        username: "writer",
+        body: {
+          username: "reader",
+          role: "reader",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect((await jsonBody(response)).members).toEqual(expect.arrayContaining(["owner", "writer", "reader"]));
+  });
+
+  it("blocks reader members from managing membership", async () => {
+    const worker = new RowWorker(
+      {
+        owner: "owner",
+        workerUrl: "https://worker.example",
+      },
+      { kv: new InMemoryKv() },
+    );
+
+    await createRow(worker, "row_reader_manage");
+
+    await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("row_reader_manage", "row/join"),
+        action: "row/join",
+        rowId: "row_reader_manage",
+        username: "owner",
+        body: { username: "owner" },
+      }),
+    );
+
+    await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("row_reader_manage", "members/add"),
+        action: "members/add",
+        rowId: "row_reader_manage",
+        username: "owner",
+        body: {
+          username: "reader",
+          role: "reader",
+        },
+      }),
+    );
+
+    await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("row_reader_manage", "row/join"),
+        action: "row/join",
+        rowId: "row_reader_manage",
+        username: "reader",
+        body: { username: "reader" },
+      }),
+    );
+
+    const response = await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("row_reader_manage", "members/add"),
+        action: "members/add",
+        rowId: "row_reader_manage",
+        username: "reader",
+        body: {
+          username: "guest",
+          role: "reader",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(401);
+    expect((await jsonBody(response)).code).toBe("UNAUTHORIZED");
+  });
+
+  it("rejects admin as a member role", async () => {
+    const worker = new RowWorker(
+      {
+        owner: "owner",
+        workerUrl: "https://worker.example",
+      },
+      { kv: new InMemoryKv() },
+    );
+
+    await createRow(worker, "row_invalid_role");
+
+    await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("row_invalid_role", "row/join"),
+        action: "row/join",
+        rowId: "row_invalid_role",
+        username: "owner",
+        body: { username: "owner" },
+      }),
+    );
+
+    const response = await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("row_invalid_role", "members/add"),
+        action: "members/add",
+        rowId: "row_invalid_role",
+        username: "owner",
+        body: {
+          username: "writer",
+          role: "admin",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect((await jsonBody(response)).code).toBe("BAD_REQUEST");
+  });
+
+  it("normalizes legacy admin member roles to writer access", async () => {
+    const kv = new InMemoryKv();
+    const worker = new RowWorker(
+      {
+        owner: "owner",
+        workerUrl: "https://worker.example",
+      },
+      { kv },
+    );
+
+    await createRow(worker, "row_legacy_role");
+
+    await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("row_legacy_role", "row/join"),
+        action: "row/join",
+        rowId: "row_legacy_role",
+        username: "owner",
+        body: { username: "owner" },
+      }),
+    );
+
+    await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("row_legacy_role", "members/add"),
+        action: "members/add",
+        rowId: "row_legacy_role",
+        username: "owner",
+        body: {
+          username: "guest",
+          role: "writer",
+        },
+      }),
+    );
+
+    await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("row_legacy_role", "row/join"),
+        action: "row/join",
+        rowId: "row_legacy_role",
+        username: "guest",
+        body: { username: "guest" },
+      }),
+    );
+
+    await kv.set(rowMemberRolesStorageKey("row_legacy_role"), { guest: "admin" });
+
+    const sendResponse = await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("row_legacy_role", "sync/send"),
+        action: "sync/send",
+        rowId: "row_legacy_role",
+        username: "guest",
+        body: {
+          id: "msg_legacy",
+          rowId: "row_legacy_role",
+          body: { userType: "user", content: "hello" },
+          createdAt: 100,
+        },
+      }),
+    );
+
+    expect(sendResponse.status).toBe(200);
+
+    const membersResponse = await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("row_legacy_role", "members/direct"),
+        action: "members/direct",
+        rowId: "row_legacy_role",
+        username: "owner",
+      }),
+    );
+
+    expect(membersResponse.status).toBe(200);
+    expect((await jsonBody(membersResponse)).members).toEqual(expect.arrayContaining([
+      expect.objectContaining({ username: "guest", role: "writer" }),
+    ]));
+    await expect(kv.get(rowMemberRolesStorageKey("row_legacy_role"))).resolves.toEqual({ guest: "writer" });
   });
 
   it("returns messages sorted by createdAt and id", async () => {

@@ -158,6 +158,30 @@ describe("PutBase rows", () => {
     expect(tasks[0].fields.title).toBe("Ship v2");
   });
 
+  it("reuses row handles for the life of a row and updates fields in place", async () => {
+    const network = new TestWorkerNetwork();
+    const db = buildDb({ username: "alice", network });
+
+    const project = await db.put("projects", { name: "Website" });
+    const task = await db.put("tasks", { title: "Ship v2" }, { in: project });
+
+    const firstGet = await db.getRow("tasks", task);
+    const secondGet = await db.getRow("tasks", task);
+    const firstOpen = await db.openTarget(task.target);
+    const secondOpen = await db.openTarget(task.target);
+
+    expect(secondGet).toBe(firstGet);
+    expect(firstOpen).toBe(firstGet);
+    expect(secondOpen).toBe(firstGet);
+
+    await db.update("tasks", task, { status: "done" });
+
+    const afterChange = await db.getRow("tasks", task);
+    expect(afterChange).toBe(firstGet);
+    expect(afterChange.fields.status).toBe("done");
+    expect(firstGet.fields.status).toBe("done");
+  });
+
   it("supports cross-owner linking and scoped queries", async () => {
     const network = new TestWorkerNetwork();
     const aliceDb = buildDb({ username: "alice", network });
@@ -232,7 +256,7 @@ describe("PutBase rows", () => {
 
     expect(aliceMember).toMatchObject({
       username: "alice",
-      role: "admin",
+      role: "writer",
       via: {
         id: aliceProject.id,
         collection: "projects",

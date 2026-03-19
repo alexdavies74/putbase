@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, type ReactElement } from "react";
+import { act, useEffect, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -112,6 +112,28 @@ class FakeDb {
   rememberedTargets = new Map<string, string>();
   failRememberedOpen = false;
   lastOpenedTarget: string | null = null;
+  dogHandle: ReturnType<typeof makeDogRow> | null = null;
+  inviteDogHandle: ReturnType<typeof makeDogRow> | null = null;
+
+  private getStableDogHandle(name: string): ReturnType<typeof makeDogRow> {
+    if (!this.dogHandle) {
+      this.dogHandle = makeDogRow(name);
+    } else {
+      this.dogHandle.fields = { name };
+    }
+
+    return this.dogHandle;
+  }
+
+  private getStableInviteDogHandle(name: string): ReturnType<typeof makeDogRow> {
+    if (!this.inviteDogHandle) {
+      this.inviteDogHandle = makeDogRow(name);
+    } else {
+      this.inviteDogHandle.fields = { name };
+    }
+
+    return this.inviteDogHandle;
+  }
 
   async getSession(): Promise<{ state: "signed-out" } | { state: "signed-in"; user: { username: string } }> {
     if (this.failSession) {
@@ -166,7 +188,7 @@ class FakeDb {
 
   async getRow(): Promise<ReturnType<typeof makeDogRow>> {
     this.getRowCalls += 1;
-    return makeDogRow(this.dogName);
+    return this.getStableDogHandle(this.dogName);
   }
 
   async openTarget(target?: string): Promise<ReturnType<typeof makeDogRow>> {
@@ -175,13 +197,13 @@ class FakeDb {
       throw new Error("remembered row failed");
     }
     this.lastOpenedTarget = target ?? null;
-    return makeDogRow(this.dogName);
+    return this.getStableDogHandle(this.dogName);
   }
 
   async openInvite(inviteInput: string): Promise<ReturnType<typeof makeDogRow>> {
     this.openInviteCalls += 1;
     this.lastInviteInput = inviteInput;
-    return makeDogRow(this.inviteDogName);
+    return this.getStableInviteDogHandle(this.inviteDogName);
   }
 
   async listParents(): Promise<DbRowRef[]> {
@@ -192,12 +214,12 @@ class FakeDb {
     return ["alex"];
   }
 
-  async listDirectMembers(): Promise<Array<{ username: string; role: "admin" }>> {
-    return [{ username: "alex", role: "admin" }];
+  async listDirectMembers(): Promise<Array<{ username: string; role: "writer" }>> {
+    return [{ username: "alex", role: "writer" }];
   }
 
   async listEffectiveMembers(): Promise<Array<DbMemberInfo<TestSchema>>> {
-    return [{ username: "alex", role: "admin", via: "direct" }];
+    return [{ username: "alex", role: "writer", via: "direct" }];
   }
 
   async getExistingInviteToken(): Promise<null> {
@@ -939,6 +961,117 @@ describe("@putbase/react", () => {
 
     expect(latest?.data?.fields.name).toBe("Max");
     await app.unmount();
+  });
+
+  it("shares the same row handle across identical useRowTarget subscriptions", async () => {
+    const db = new FakeDb();
+    let first: ReturnType<typeof makeDogRow> | undefined;
+    let second: ReturnType<typeof makeDogRow> | undefined;
+
+    function Probe() {
+      first = useRowTarget<TestSchema>(
+        db as unknown as PutBase<TestSchema>,
+        "https://worker.example/rows/dog_1",
+      ).data;
+      second = useRowTarget<TestSchema>(
+        db as unknown as PutBase<TestSchema>,
+        "https://worker.example/rows/dog_1",
+      ).data;
+      return null;
+    }
+
+    const app = await renderApp(<Probe />);
+
+    expect(first).toBeDefined();
+    expect(second).toBe(first);
+    await app.unmount();
+  });
+
+  it("keeps a row handle stable across polls, including field updates", async () => {
+    vi.useFakeTimers();
+    const db = new FakeDb();
+    let latest: ReturnType<typeof useRowTarget<TestSchema>> | null = null;
+
+    function Probe() {
+      latest = useRowTarget<TestSchema>(
+        db as unknown as PutBase<TestSchema>,
+        "https://worker.example/rows/dog_1",
+      );
+      return <div>{latest.data?.fields.name ?? latest.status}</div>;
+    }
+
+    const app = await renderApp(<Probe />);
+    const initialHandle = latest?.data;
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+      await flushMicrotasks();
+    });
+
+    expect(latest?.data).toBe(initialHandle);
+
+    db.dogName = "Max";
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+      await flushMicrotasks();
+    });
+
+    expect(latest?.data).toBe(initialHandle);
+    expect(latest?.data?.fields.name).toBe("Max");
+    await app.unmount();
+  });
+
+  it("does not rerun row-keyed effects when polls refresh the same logical row", async () => {
+    vi.useFakeTimers();
+    const db = new FakeDb();
+    let connectCount = 0;
+    let disconnectCount = 0;
+
+    function Probe() {
+      const row = useRowTarget<TestSchema>(
+        db as unknown as PutBase<TestSchema>,
+        "https://worker.example/rows/dog_1",
+      ).data;
+
+      useEffect(() => {
+        if (!row) {
+          return;
+        }
+
+        connectCount += 1;
+        return () => {
+          disconnectCount += 1;
+        };
+      }, [row]);
+
+      return <div>{row?.fields.name ?? "loading"}</div>;
+    }
+
+    const app = await renderApp(<Probe />);
+
+    expect(connectCount).toBe(1);
+    expect(disconnectCount).toBe(0);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+      await flushMicrotasks();
+    });
+
+    expect(connectCount).toBe(1);
+    expect(disconnectCount).toBe(0);
+
+    db.dogName = "Max";
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+      await flushMicrotasks();
+    });
+
+    expect(connectCount).toBe(1);
+    expect(disconnectCount).toBe(0);
+
+    await app.unmount();
+
+    expect(disconnectCount).toBe(1);
   });
 
   it("rerenders only for refresh-state transitions when a live query snapshot is unchanged", async () => {

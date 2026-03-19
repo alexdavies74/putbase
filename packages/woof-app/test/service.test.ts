@@ -67,7 +67,7 @@ class MockDb implements WoofDbPort {
   };
 
   private roleFor(username: string): MemberRole {
-    return username === "alex" ? "admin" : "reader";
+    return username === "alex" ? "writer" : "reader";
   }
 
   private readFields(id: string): Record<string, unknown> {

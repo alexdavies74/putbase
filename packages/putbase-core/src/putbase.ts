@@ -55,6 +55,27 @@ export interface PutBaseOptions<Schema extends DbSchema = DbSchema> {
   deployWorker?: (args: DeployWorkerArgs) => Promise<string | void>;
 }
 
+interface CachedRowHandle<Schema extends DbSchema> {
+  handle: AnyRowHandle<Schema>;
+  snapshot: string;
+}
+
+function stableJsonStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map(stableJsonStringify).join(",")}]`;
+  }
+
+  const record = value as Record<string, unknown>;
+  const entries = Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableJsonStringify(record[key])}`);
+  return `{${entries.join(",")}}`;
+}
+
 export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBackend<Schema> {
   private readonly auth: AuthManager;
   private readonly transport: Transport;
@@ -70,6 +91,7 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
   private ready = false;
   private readinessPromise: Promise<void> | null = null;
   private pendingReadinessError: unknown | null = null;
+  private readonly rowHandleCache = new Map<string, CachedRowHandle<Schema>>();
 
   constructor(private readonly options: PutBaseOptions<Schema>) {
     this.identity = new Identity(options);
@@ -90,7 +112,7 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
       this.transport,
       this.rowRuntime,
       options.schema,
-      this,
+      (collection, row, fields) => this.materializeRowHandle(collection, row, fields),
       (child, parent) => this.parentsModule.add(child, parent),
     );
     this.parentsModule = new Parents(
@@ -272,6 +294,7 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
     this.ready = false;
     this.readinessPromise = null;
     this.pendingReadinessError = null;
+    this.rowHandleCache.clear();
     this.identity.clear();
     this.provisioning.reset();
   }
@@ -396,12 +419,45 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
     locator: DbRowLocator,
     fields: Record<string, JsonValue>,
   ): AnyRowHandle<Schema> {
+    return this.materializeRowHandle(collection, locator, fields) as unknown as AnyRowHandle<Schema>;
+  }
+
+  private materializeRowHandle<TCollection extends CollectionName<Schema>>(
+    collection: TCollection,
+    locator: DbRowLocator,
+    fields: Record<string, JsonValue>,
+  ): RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema> {
+    const normalizedTarget = normalizeTarget(locator.target);
+    const cacheKey = `${collection}:${locator.owner}:${locator.id}:${normalizedTarget}`;
+    const snapshot = stableJsonStringify({
+      id: locator.id,
+      collection,
+      owner: locator.owner,
+      target: normalizedTarget,
+      fields,
+    });
+    const cached = this.rowHandleCache.get(cacheKey);
+    if (cached) {
+      const handle = cached.handle as unknown as RowHandle<
+        TCollection,
+        RowFields<Schema, TCollection>,
+        AllowedParentCollections<Schema, TCollection>,
+        Schema
+      >;
+      if (cached.snapshot !== snapshot) {
+        handle.fields = fields as RowFields<Schema, TCollection>;
+        cached.snapshot = snapshot;
+      }
+      return handle;
+    }
+
     const rowRef: DbRowRef<TCollection> = {
       ...locator,
+      target: normalizedTarget,
       collection,
     };
 
-    return new RowHandle<
+    const handle = new RowHandle<
       TCollection,
       RowFields<Schema, TCollection>,
       AllowedParentCollections<Schema, TCollection>,
@@ -410,6 +466,11 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
       this,
       rowRef,
       fields as RowFields<Schema, TCollection>,
-    ) as unknown as AnyRowHandle<Schema>;
+    );
+    this.rowHandleCache.set(cacheKey, {
+      handle: handle as unknown as AnyRowHandle<Schema>,
+      snapshot,
+    });
+    return handle;
   }
 }

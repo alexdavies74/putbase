@@ -420,8 +420,6 @@ function sameRowRef(left: DbRowRef, right: DbRowRef): boolean {
 
 function roleRank(role: MemberRole | null): number {
   switch (role) {
-    case "admin":
-      return 3;
     case "writer":
       return 2;
     case "reader":
@@ -433,6 +431,18 @@ function roleRank(role: MemberRole | null): number {
 
 function maxRole(left: MemberRole | null, right: MemberRole | null): MemberRole | null {
   return roleRank(right) > roleRank(left) ? right : left;
+}
+
+function normalizeStoredMemberRole(role: unknown): MemberRole | null {
+  if (role === "writer") {
+    return "writer";
+  }
+
+  if (role === "reader") {
+    return "reader";
+  }
+
+  return null;
 }
 
 function deepEqualJson(left: JsonValue, right: JsonValue): boolean {
@@ -918,7 +928,7 @@ export class RowWorker {
       action: "sync/send",
       rowId,
     });
-    await this.assertWriterOrAdmin(rowId, principal, ctx);
+    await this.assertWriter(rowId, principal, ctx);
 
     if (payload.rowId !== rowId) {
       error(400, "BAD_REQUEST", "Payload rowId does not match route rowId");
@@ -1000,7 +1010,7 @@ export class RowWorker {
       action: "fields/set",
       rowId,
     });
-    await this.assertWriterOrAdmin(rowId, principal, ctx);
+    await this.assertWriter(rowId, principal, ctx);
     const incomingFields = toFieldRecord(body.fields, "fields");
     const merge = body.merge ?? true;
 
@@ -1100,9 +1110,9 @@ export class RowWorker {
       error(400, "BAD_REQUEST", "childRowId, childOwner, and collection are required");
     }
 
-    const requesterIsAdmin = await this.hasRole(parentRowId, principal, ctx, ["admin"]);
-    if (!requesterIsAdmin && principal.username !== body.childOwner) {
-      error(401, "UNAUTHORIZED", "Only child owner or parent admin can unregister child");
+    const requesterCanManageParent = await this.hasRole(parentRowId, principal, ctx, ["writer"]);
+    if (!requesterCanManageParent && principal.username !== body.childOwner) {
+      error(401, "UNAUTHORIZED", "Only child owner or parent writer can unregister child");
     }
 
     const childKey = rowChildKey(parentRowId, body.collection, body.childOwner, body.childRowId);
@@ -1246,7 +1256,7 @@ export class RowWorker {
       action: "parents/link-parent",
       rowId,
     });
-    await this.assertWriterOrAdmin(rowId, principal, ctx);
+    await this.assertWriter(rowId, principal, ctx);
 
     const parentRef = normalizeRowRef(body.parentRef, "parentRef");
 
@@ -1270,7 +1280,7 @@ export class RowWorker {
       action: "parents/unlink-parent",
       rowId,
     });
-    await this.assertWriterOrAdmin(rowId, principal, ctx);
+    await this.assertWriter(rowId, principal, ctx);
 
     const parentRef = normalizeRowRef(body.parentRef, "parentRef");
 
@@ -1292,10 +1302,10 @@ export class RowWorker {
       action: "members/add",
       rowId,
     });
-    await this.assertAdmin(rowId, principal, ctx);
+    await this.assertWriter(rowId, principal, ctx);
     const username = body.username?.trim();
     const role = body.role;
-    if (!username || !role || (role !== "admin" && role !== "writer" && role !== "reader")) {
+    if (!username || !role || (role !== "writer" && role !== "reader")) {
       error(400, "BAD_REQUEST", "username and valid role are required");
     }
 
@@ -1324,7 +1334,7 @@ export class RowWorker {
       action: "members/remove",
       rowId,
     });
-    await this.assertAdmin(rowId, principal, ctx);
+    await this.assertWriter(rowId, principal, ctx);
     const username = body.username?.trim();
     if (!username) {
       error(400, "BAD_REQUEST", "username is required");
@@ -1362,7 +1372,7 @@ export class RowWorker {
     return jsonResponse(200, {
       members: members.map((username) => ({
         username,
-        role: username === this.config.owner ? "admin" : roles[username] ?? "reader",
+        role: username === this.config.owner ? "writer" : roles[username] ?? "reader",
       })),
     });
   }
@@ -1385,7 +1395,7 @@ export class RowWorker {
     const directRoles = await this.getMemberRoles(rowId);
 
     for (const username of direct) {
-      const role: MemberRole = username === this.config.owner ? "admin" : directRoles[username] ?? "reader";
+      const role: MemberRole = username === this.config.owner ? "writer" : directRoles[username] ?? "reader";
       const existing = members.get(username);
       if (!existing || roleRank(role) > roleRank(existing.role)) {
         members.set(username, { username, role, via: "direct" });
@@ -1450,7 +1460,7 @@ export class RowWorker {
     parentTarget: string;
     principal: VerifiedPrincipal;
   }): Promise<void> {
-    const isParentMember = await this.hasRole(args.parentRowId, args.principal, args.ctx, ["admin", "writer", "reader"]);
+    const isParentMember = await this.hasRole(args.parentRowId, args.principal, args.ctx, ["writer", "reader"]);
     const canWriteChild = await this.canWriteChildRow(args);
 
     if (isParentMember && canWriteChild) {
@@ -1483,7 +1493,7 @@ export class RowWorker {
     }
 
     const role = await this.resolveRemoteRowRole(args.childTarget, args.auth.principal, args.ctx, 1);
-    return role === "admin" || role === "writer";
+    return role === "writer";
   }
 
   private async resolveRemoteRowRole(
@@ -1521,8 +1531,9 @@ export class RowWorker {
         return null;
       }
 
-      if (payload?.role === "admin" || payload?.role === "writer" || payload?.role === "reader") {
-        return payload.role;
+      const role = normalizeStoredMemberRole(payload?.role);
+      if (role) {
+        return role;
       }
     } catch {
       return null;
@@ -1773,21 +1784,14 @@ export class RowWorker {
     return !!effectiveRole && roles.includes(effectiveRole);
   }
 
-  private async assertWriterOrAdmin(
+  private async assertWriter(
     rowId: string,
     principal: VerifiedPrincipal,
     ctx: WorkerRequestContext,
   ): Promise<void> {
     const role = await this.resolveMemberRole(rowId, principal, ctx);
-    if (role !== "admin" && role !== "writer") {
-      error(401, "UNAUTHORIZED", "Writers or admins only");
-    }
-  }
-
-  private async assertAdmin(rowId: string, principal: VerifiedPrincipal, ctx: WorkerRequestContext): Promise<void> {
-    const role = await this.resolveMemberRole(rowId, principal, ctx);
-    if (role !== "admin") {
-      error(401, "UNAUTHORIZED", "Admins only");
+    if (role !== "writer") {
+      error(401, "UNAUTHORIZED", "Writers only");
     }
   }
 
@@ -1836,12 +1840,9 @@ export class RowWorker {
             return null;
           }
 
-          if (
-            payload?.role === "admin"
-            || payload?.role === "writer"
-            || payload?.role === "reader"
-          ) {
-            return payload.role;
+          const role = normalizeStoredMemberRole(payload?.role);
+          if (role) {
+            return role;
           }
 
           return null;
@@ -1863,7 +1864,7 @@ export class RowWorker {
       if (this.config.ownerPublicKeyJwk && canonicalize(principal.publicKeyJwk) !== canonicalize(this.config.ownerPublicKeyJwk)) {
         return null;
       }
-      return "admin";
+      return "writer";
     }
 
     const members = await this.getMembers(rowId);
@@ -1888,8 +1889,23 @@ export class RowWorker {
   }
 
   private async getMemberRoles(rowId: string): Promise<Record<string, MemberRole>> {
-    const stored = await this.kv.get<Record<string, MemberRole>>(rowMemberRolesKey(rowId));
-    return stored ?? {};
+    const stored = await this.kv.get<Record<string, unknown>>(rowMemberRolesKey(rowId));
+    if (!stored || typeof stored !== "object") {
+      return {};
+    }
+
+    const normalized: Record<string, MemberRole> = {};
+
+    for (const [username, role] of Object.entries(stored)) {
+      const normalizedRole = normalizeStoredMemberRole(role);
+      if (!normalizedRole) {
+        continue;
+      }
+
+      normalized[username] = normalizedRole;
+    }
+
+    return normalized;
   }
 
   private async getRowFields(rowId: string): Promise<Record<string, JsonValue>> {

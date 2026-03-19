@@ -234,7 +234,7 @@ const members = await db.listMembers(board);
 
 // With roles
 const detailed = await db.listDirectMembers(board);
-// → [{ username: "alice", role: "owner" }, ...]
+// → [{ username: "alice", role: "writer" }, ...]
 
 // Add or remove manually
 await db.addMember(board, "bob", "writer");
@@ -249,7 +249,7 @@ Membership inherited through a parent row is visible via `listEffectiveMembers`.
 
 PutBase includes a CRDT message bridge. Connect any CRDT library to a row and all members receive each other's updates in real time.
 
-Sending CRDT updates requires `"writer"` or `"admin"` access, but all members can poll and receive them.
+Sending CRDT updates requires `"writer"` access, but all members can poll and receive them.
 
 Here is the full integration with [Yjs](https://yjs.dev):
 
@@ -317,9 +317,9 @@ pnpm --filter todo-app dev
 | `openRememberedPerUserRow(key)` | Re-open the remembered row for the signed-in user, or `null`. |
 | `clearRememberedPerUserRow(key)` | Remove the remembered row for the signed-in user. |
 | `listMembers(row)` | Returns `string[]` of all member usernames. |
-| `listDirectMembers(row)` | Returns `{ username, role }[]` for directly-granted members. |
+| `listDirectMembers(row)` | Returns `{ username, role }[]` for direct members. |
 | `listEffectiveMembers(row)` | Returns resolved membership including grants inherited from parents. |
-| `addMember(row, username, role)` | Grant a user access. Roles: `"owner"`, `"writer"`, `"reader"`. `"writer"` and `"admin"` can update fields and send CRDT messages; `"reader"` is read-only. |
+| `addMember(row, username, role)` | Grant a user access. Roles: `"writer"` and `"reader"`. `"writer"` can update fields, manage members, manage parents, and send CRDT messages; `"reader"` is read-only. |
 | `removeMember(row, username)` | Revoke a user's access. |
 | `addParent(child, parent)` | Link a row to an additional parent after creation. |
 | `removeParent(child, parent)` | Unlink a row from a parent. |

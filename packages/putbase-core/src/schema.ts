@@ -335,7 +335,7 @@ export interface DbQueryWatchHandle {
   refresh(): Promise<void>;
 }
 
-export type MemberRole = "admin" | "writer" | "reader";
+export type MemberRole = "writer" | "reader";
 
 export interface DbMemberInfo<Schema extends DbSchema = DbSchema> {
   username: string;

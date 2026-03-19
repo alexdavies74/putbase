@@ -87,6 +87,20 @@ function CardList({ board }: { board: BoardHandle }) {
 }
 ```
 
+## Row Handle Identity
+
+`useRow`, `useRowTarget`, and `useQuery` keep `RowHandle` identity stable for the life of a row within a `PutBase` client. When the row fields change, the same handle object is reused and `row.fields` is updated in place.
+
+That means using `[row]` as an effect dependency is safe for subscriptions keyed to the logical row. If your effect depends on row contents, depend on `row.fields` or specific field values instead.
+
+```tsx
+useEffect(() => {
+  if (!row) return;
+  const connection = row.connectCrdt(callbacks);
+  return () => connection.disconnect();
+}, [row]);
+```
+
 ## Invite links
 
 `useInviteLink` lazily generates (or reuses) an invite link for a row. `useInviteFromLocation` handles the recipient side: it detects PutBase invite URLs in the current location, waits for the session, calls `openInvite`, and clears the invite params.

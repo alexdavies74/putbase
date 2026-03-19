@@ -1,4 +1,4 @@
-import { RowHandle, type RowHandleBackend } from "./row-handle";
+import { RowHandle } from "./row-handle";
 import type { RowRuntime } from "./row-runtime";
 import type {
   AllowedParentCollections,
@@ -27,7 +27,13 @@ export class Rows<Schema extends DbSchema> {
     private readonly transport: Transport,
     private readonly rowRuntime: RowRuntime,
     private readonly schema: Schema,
-    private readonly backend: RowHandleBackend<Schema>,
+    private readonly createRowHandle: <
+      TCollection extends CollectionName<Schema>,
+    >(
+      collection: TCollection,
+      row: DbRowRef<TCollection>,
+      fields: RowFields<Schema, TCollection>,
+    ) => RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>,
     private readonly addParent: (child: DbRowRef, parent: DbRowRef) => Promise<void>,
   ) {}
 
@@ -65,13 +71,8 @@ export class Rows<Schema extends DbSchema> {
       await this.addParent(rowRef, parent);
     }
 
-    return new RowHandle<
-      TCollection,
-      RowFields<Schema, TCollection>,
-      AllowedParentCollections<Schema, TCollection>,
-      Schema
-    >(
-      this.backend,
+    return this.createRowHandle(
+      collection,
       rowRef,
       payload as RowFields<Schema, TCollection>,
     );
@@ -111,12 +112,7 @@ export class Rows<Schema extends DbSchema> {
       target: row.target,
     });
     const fields = await this.refreshFields(rowRef);
-    return new RowHandle<
-      TCollection,
-      RowFields<Schema, TCollection>,
-      AllowedParentCollections<Schema, TCollection>,
-      Schema
-    >(this.backend, rowRef, fields as RowFields<Schema, TCollection>);
+    return this.createRowHandle(collection, rowRef, fields as RowFields<Schema, TCollection>);
   }
 
   async refreshFields(row: DbRowLocator): Promise<Record<string, JsonValue>> {
