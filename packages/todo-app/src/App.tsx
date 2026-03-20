@@ -1,12 +1,52 @@
-import { useInviteFromLocation, useInviteLink, useMutation, useQuery, useSession } from "@putbase/react";
-import { useState } from "react";
+import { useInviteFromLocation, useInviteLink, useMutation, useQuery, useRowTarget, useSession } from "@putbase/react";
+import { useEffect, useState } from "react";
 import type { RowHandle, RowFields } from "@putbase/core";
 import { db } from "./db";
 import type { Schema } from "./schema";
 
 // Convenience type aliases
 export type BoardHandle = RowHandle<"boards", RowFields<Schema, "boards">, never, Schema>;
+export type RecentBoardHandle = RowHandle<"recentBoards", RowFields<Schema, "recentBoards">, "user", Schema>;
 export type CardHandle = RowHandle<"cards", RowFields<Schema, "cards">, "boards", Schema>;
+
+async function rememberRecentBoard(board: BoardHandle): Promise<void> {
+  const existingRecentBoards = await db.query("recentBoards", {
+    index: "byBoardTarget",
+    value: board.target,
+    limit: 1,
+  });
+  const existingRecentBoard = existingRecentBoards[0] ?? null;
+
+  if (existingRecentBoard) {
+    await db.update("recentBoards", existingRecentBoard, {
+      openedAt: Date.now(),
+    });
+    return;
+  }
+
+  await db.put("recentBoards", {
+    boardTarget: board.target,
+    openedAt: Date.now(),
+  });
+}
+
+async function loadRecentBoards(): Promise<RecentBoardHandle[]> {
+  return db.query("recentBoards", {
+    index: "byOpenedAt",
+    order: "desc",
+    limit: 10,
+  });
+}
+
+async function openRecentBoard(recentBoard: RecentBoardHandle): Promise<BoardHandle> {
+  const row = await db.openTarget(recentBoard.fields.boardTarget);
+  if (row.collection !== "boards") {
+    throw new Error(`Expected boards row, got ${row.collection}`);
+  }
+
+  await rememberRecentBoard(row);
+  return row;
+}
 
 // ─── Top-level app ───────────────────────────────────────────────────────────
 
@@ -19,7 +59,9 @@ export default function App() {
   const incomingInvite = useInviteFromLocation<Schema>(db, {
     enabled: board === null,
     onOpen: (handle) => {
-      setBoard(handle as BoardHandle);
+      const nextBoard = handle as BoardHandle;
+      void rememberRecentBoard(nextBoard).catch(console.error);
+      setBoard(nextBoard);
     },
   });
   const invitePending = incomingInvite.hasInvite;
@@ -69,11 +111,36 @@ export default function App() {
 
 function LandingView({ errorMessage, onBoard }: { errorMessage?: string; onBoard: (b: BoardHandle) => void }) {
   const [title, setTitle] = useState("");
+  const [recentBoards, setRecentBoards] = useState<RecentBoardHandle[]>([]);
+  const [recentBoardsError, setRecentBoardsError] = useState("");
 
   const createBoard = useMutation(async (t: string) => {
     const board = await db.put("boards", { title: t });
+    await rememberRecentBoard(board);
     return board;
   });
+  const openRecent = useMutation(async (recentBoard: RecentBoardHandle) => openRecentBoard(recentBoard));
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void loadRecentBoards()
+      .then((rows) => {
+        if (!cancelled) {
+          setRecentBoards(rows);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : "Could not load recent boards.";
+          setRecentBoardsError(message);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <main>
@@ -104,7 +171,58 @@ function LandingView({ errorMessage, onBoard }: { errorMessage?: string; onBoard
         )}
         {errorMessage ? <p className="error">{errorMessage}</p> : null}
       </section>
+
+      {recentBoards.length > 0 ? (
+        <section>
+          <h2>Recent boards</h2>
+          <ul>
+            {recentBoards.map((recentBoard) => (
+              <RecentBoardListItem
+                key={recentBoard.id}
+                onOpen={(boardRow) => openRecent.mutate(boardRow).then((board) => onBoard(board))}
+                recentBoard={recentBoard}
+              />
+            ))}
+          </ul>
+          {openRecent.error ? <p className="error">Failed to open recent board.</p> : null}
+        </section>
+      ) : null}
+
+      {recentBoardsError ? <p className="error">{recentBoardsError}</p> : null}
     </main>
+  );
+}
+
+function RecentBoardListItem(props: {
+  onOpen: (recentBoard: RecentBoardHandle) => Promise<void>;
+  recentBoard: RecentBoardHandle;
+}) {
+  const board = useRowTarget(db, props.recentBoard.fields.boardTarget);
+  const boardRow = board.status === "success" && board.data?.collection === "boards"
+    ? board.data
+    : null;
+
+  const label = boardRow
+    ? boardRow.fields.title
+    : board.status === "error"
+      ? "Unavailable board"
+      : "Loading board…";
+
+  return (
+    <li>
+      <button
+        className="secondary small"
+        type="button"
+        onClick={() => {
+          props.onOpen(props.recentBoard)
+            .catch(console.error);
+        }}
+      >
+        Open
+      </button>
+      {" "}
+      {label}
+    </li>
   );
 }
 

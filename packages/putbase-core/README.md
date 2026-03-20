@@ -32,7 +32,7 @@ const { data: inviteLink } = useInviteLink(db, board);
 
 Every piece of data in PutBase is a **row**. A row belongs to a **collection** defined in your schema, holds typed fields, and has its own identity and access control. You get a `RowHandle` when you create or fetch a row — that handle is your entry point for reading fields, sharing the row, and subscribing to real-time updates.
 
-Rows can be nested. A collection can declare that its rows live **inside** a parent collection: a `card` lives inside a `board`, a user-scoped `record` lives inside the built-in `user` collection. The parent relationship constrains who can see child rows — gaining access to a parent automatically makes the children visible too.
+Rows can be nested. A collection can declare that its rows live **inside** a parent collection: a `card` lives inside a `board`, and a `recentBoard` row lives inside the built-in `user` collection. The parent relationship constrains who can see child rows — gaining access to a parent automatically makes the children visible too.
 
 Access control is **explicit-grant only**. There are no complex rule expressions to misconfigure. To let another user into a row, you generate an invite link and send it to them. They accept it, they're in. That's the whole model.
 
@@ -61,8 +61,19 @@ export const schema = defineSchema({
       title: field.string(),
     },
   }),
+  recentBoards: collection({
+    in: ["user"],
+    fields: {
+      boardTarget: field.string(),
+      openedAt: field.number(),
+    },
+    indexes: {
+      byBoardTarget: index("boardTarget"),
+      byOpenedAt: index("openedAt"),
+    },
+  }),
   cards: collection({
-    in: ["boards"],           // cards live inside boards
+    in: ["boards"],
     fields: {
       text: field.string(),
       done: field.boolean(),
@@ -136,49 +147,18 @@ await db.update("cards", card, { done: true });
 
 ## Querying
 
-PutBase queries always run within a known scope. For most child collections that means passing an explicit parent row. For collections declared `in: ["user"]`, the current user is used automatically.
+PutBase queries always run within a known scope. For `cards`, that scope is a `board`. For `recentBoards`, the scope is the current signed-in user.
 
 ### Imperative
 
 ```ts
-const cards = await db.query("cards", {
-  in: board,
-  index: "byCreatedAt",
-  order: "asc",
-  limit: 50,
+// No `in` is required when 
+const recentBoards = await db.query("recentBoards", {
+  index: "byOpenedAt",
+  order: "desc",
+  limit: 10,
 });
 ```
-
-### User-scoped discovery rows
-
-For "all games I created or joined", model an app-defined join/index collection under the built-in `user` scope:
-
-```ts
-const schema = defineSchema({
-  games: collection({
-    fields: {
-      title: field.string(),
-    },
-  }),
-  gameRecords: collection({
-    in: ["user"],
-    fields: {
-      gameTarget: field.string(),
-      role: field.string(),
-    },
-    indexes: {
-      byGameTarget: index("gameTarget"),
-    },
-  }),
-});
-
-const game = await db.put("games", { title: "Friday night match" });
-await db.put("gameRecords", { gameTarget: game.target, role: "owner" });
-
-const myGames = await db.query("gameRecords", {});
-```
-
-`gameRecords` rows stay app-managed: create one when the user creates or joins a game.
 
 ### With React
 
@@ -319,7 +299,7 @@ connection.disconnect();
 
 ## Example apps
 
-`packages/todo-app` is the code from this README assembled into a working app — boards, cards, and invite links. Run it with:
+`packages/todo-app` is the code from this README assembled into a working app — boards, recent boards, cards, and invite links. Run it with:
 
 ```bash
 pnpm --filter todo-app dev
