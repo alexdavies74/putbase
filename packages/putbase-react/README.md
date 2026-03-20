@@ -189,3 +189,98 @@ All PutBase-backed hooks are client-first and accept an optional final `{ enable
 | `useMutation(fn)` | async function | `{ mutate, data, status, error, reset }` |
 
 All data-fetching hooks return `status: "idle" | "loading" | "success" | "error"`. `loading` means there is no usable data yet. Once a hook has usable data, it stays `success` during background reloads and exposes that work through `isRefreshing` / `refreshError`.
+
+## Commonly used types reference
+
+```ts
+interface UseHookOptions {
+  enabled?: boolean;
+}
+
+interface UseResourceResult<TData> {
+  data: TData | undefined;
+  error: unknown;
+  refreshError: unknown;
+  isRefreshing: boolean;
+  status: "idle" | "loading" | "success" | "error";
+  refresh(): Promise<void>;
+}
+
+interface UseQueryResult<TRow> extends UseResourceResult<TRow[]> {
+  rows: TRow[];
+}
+```
+
+### `useQuery`
+
+```ts
+function useQuery<
+  Schema extends DbSchema,
+  TCollection extends CollectionName<Schema>,
+>(
+  client: PutBase<Schema>,
+  collection: TCollection,
+  options: DbQueryOptions<Schema, TCollection> | null | undefined,
+  hookOptions?: UseHookOptions,
+): UseQueryResult<RowHandle<TCollection, RowFields<Schema, TCollection>, any, Schema>>
+```
+
+- `options: null | undefined` keeps the hook idle.
+- `rows` is always an array and mirrors `data ?? []`.
+- The row type is inferred from `collection`.
+
+### `useRowTarget`
+
+```ts
+function useRowTarget<Schema extends DbSchema>(
+  client: PutBase<Schema>,
+  target: string | null | undefined,
+  options?: UseHookOptions,
+): UseResourceResult<AnyRowHandle<Schema>>
+```
+
+- `target: null | undefined` keeps the hook idle.
+- The return type is `AnyRowHandle<Schema>` because the target string does not carry a collection literal.
+
+### `useInviteLink`
+
+```ts
+function useInviteLink<Schema extends DbSchema>(
+  client: PutBase<Schema>,
+  row: DbRowRef | null | undefined,
+  options?: UseHookOptions,
+): UseResourceResult<string>
+```
+
+- `row: null | undefined` keeps the hook idle.
+
+### `useInviteFromLocation`
+
+```ts
+interface UseInviteFromLocationOptions<
+  Schema extends DbSchema,
+  TResult = AnyRowHandle<Schema>,
+> extends UseHookOptions {
+  href?: string | null;
+  clearLocation?: boolean | ((url: URL) => string);
+  onOpen?: (result: TResult) => void;
+  open?: (inviteInput: string, client: PutBase<Schema>) => Promise<TResult>;
+}
+
+interface UseInviteFromLocationResult<TResult> extends UseResourceResult<TResult> {
+  hasInvite: boolean;
+  inviteInput: string | null;
+}
+
+function useInviteFromLocation<
+  Schema extends DbSchema,
+  TResult = AnyRowHandle<Schema>,
+>(
+  client: PutBase<Schema>,
+  options?: UseInviteFromLocationOptions<Schema, TResult>,
+): UseInviteFromLocationResult<TResult>
+```
+
+- `href` defaults to `window.location.href`.
+- `clearLocation` defaults to `true`.
+- Override `open` when invite acceptance should return something other than `db.openInvite(...)`.
