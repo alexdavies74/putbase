@@ -239,8 +239,6 @@ const board = await db.openInvite(link);
 
 In React apps, `useInviteFromLocation(db, ...)` wraps the common invite-landing flow: detect the current invite URL, wait for session resolution, call `openInvite`, and optionally clear the invite params from the address bar after success.
 
-If your app has a single "current row" per signed-in user, `db.rememberPerUserRow(key, row)` plus `usePerUserRow(db, { key })` gives you a lightweight restore path backed by Puter KV.
-
 Users who join through an invite token are added as direct `"writer"` members by default. `"reader"` members can view rows but cannot call `update()` or send CRDT messages.
 
 ---
