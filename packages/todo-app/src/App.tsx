@@ -55,7 +55,7 @@ export default function App() {
   const [loginError, setLoginError] = useState("");
   const [loginStatus, setLoginStatus] = useState<"idle" | "loading">("idle");
   const session = useSession(db);
-  const signedIn = session.status === "success" && session.data?.state === "signed-in";
+  const signedIn = session.status === "success" && session.data?.signedIn === true;
   const incomingInvite = useInviteFromLocation<Schema>(db, {
     enabled: board === null,
     onOpen: (handle) => {
@@ -249,7 +249,7 @@ function BoardView({ board, onLeave }: { board: BoardHandle; onLeave: () => void
     order: "asc",
   });
 
-  const { data: inviteLink } = useInviteLink(db, board);
+  const { inviteLink } = useInviteLink(db, board);
 
   const addCard = useMutation(async (cardText: string) => {
     await db.put("cards", { text: cardText, done: false, createdAt: Date.now() }, { in: board });

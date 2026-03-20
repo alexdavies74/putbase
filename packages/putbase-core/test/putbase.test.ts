@@ -180,7 +180,7 @@ describe("PutBase", () => {
       } as BackendClient,
     });
 
-    await expect(db.getSession()).resolves.toEqual({ state: "signed-out" });
+    await expect(db.getSession()).resolves.toEqual({ signedIn: false });
     await expect(db.whoAmI()).rejects.toMatchObject<Partial<PutBaseError>>({
       code: "SIGNED_OUT",
     });
@@ -209,7 +209,7 @@ describe("PutBase", () => {
 
     await expect(db.signIn()).resolves.toEqual({ username: "owner" });
     await expect(db.getSession()).resolves.toEqual({
-      state: "signed-in",
+      signedIn: true,
       user: { username: "owner" },
     });
     expect(signInCalls).toBe(1);

@@ -12,7 +12,7 @@ import { woofSchema } from "../src/schema";
 class FakeDb {
   async getSession() {
     return {
-      state: "signed-in" as const,
+      signedIn: true as const,
       user: { username: "alex" },
     };
   }

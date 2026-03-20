@@ -169,13 +169,13 @@ function RoomScreen(props: {
           id="copy-link"
           className="secondary"
           type="button"
-          disabled={!inviteLink.data}
+          disabled={!inviteLink.inviteLink}
           onClick={() => {
-            if (!inviteLink.data) {
+            if (!inviteLink.inviteLink) {
               return;
             }
 
-            void navigator.clipboard.writeText(inviteLink.data).then(() => {
+            void navigator.clipboard.writeText(inviteLink.inviteLink).then(() => {
               setCopyStatus("Invite link copied.");
             }).catch(() => {
               setCopyStatus("Could not copy invite link.");
@@ -196,7 +196,7 @@ function RoomScreen(props: {
         </button>
       </div>
       <p className="muted">
-        {inviteLink.data ? <a id="invite-link" href={inviteLink.data}>{inviteLink.data}</a> : "Could not create invite link yet."}
+        {inviteLink.inviteLink ? <a id="invite-link" href={inviteLink.inviteLink}>{inviteLink.inviteLink}</a> : "Could not create invite link yet."}
         {" "}
         <span id="invite-status">
           {copyStatus || (inviteLink.error ? getErrorMessage(inviteLink.error, "Could not create invite link yet.") : "")}
@@ -216,7 +216,7 @@ export function App() {
   const db = usePutBase<WoofSchema>();
   const session = useSession(db);
   const signedInUser =
-    session.status === "success" && session.data?.state === "signed-in"
+    session.status === "success" && session.data?.signedIn
       ? session.data.user
       : null;
   const [loginError, setLoginError] = useState("");
@@ -290,7 +290,7 @@ export function App() {
     );
   }
 
-  if (session.data?.state !== "signed-in") {
+  if (!session.data?.signedIn) {
     return (
       <SignInPanel
         busy={loginStatus === "loading"}

@@ -30,7 +30,7 @@ export class Identity {
   async getSession(): Promise<AuthSession> {
     if (this.cached) {
       return {
-        state: "signed-in",
+        signedIn: true,
         user: this.cached,
       };
     }
@@ -45,7 +45,7 @@ export class Identity {
 
     const promise = this.resolveSession()
       .then((session) => {
-        if (session.state === "signed-in") {
+        if (session.signedIn) {
           this.session = session;
           this.cached = session.user;
         }
@@ -62,7 +62,7 @@ export class Identity {
 
   async whoAmI(): Promise<PutBaseUser> {
     const session = await this.getSession();
-    if (session.state !== "signed-in") {
+    if (!session.signedIn) {
       const backend = this.options.identityProvider ? undefined : await resolveBackendAsync(this.backend);
       this.backend = backend;
       if (!this.options.identityProvider && !backend) {
@@ -82,7 +82,7 @@ export class Identity {
       const user = await this.options.identityProvider();
       this.cached = user;
       this.session = {
-        state: "signed-in",
+        signedIn: true,
         user,
       };
       return user;
@@ -103,7 +103,7 @@ export class Identity {
     if (this.options.identityProvider) {
       const user = await this.options.identityProvider();
       return {
-        state: "signed-in",
+        signedIn: true,
         user,
       };
     }
@@ -112,7 +112,7 @@ export class Identity {
 
     const auth = this.backend?.auth;
     if (auth?.isSignedIn && !auth.isSignedIn()) {
-      return { state: "signed-out" };
+      return { signedIn: false };
     }
 
     let candidate: { username?: string } | null = null;
@@ -131,11 +131,11 @@ export class Identity {
 
     const username = candidate?.username?.trim();
     if (!username) {
-      return { state: "signed-out" };
+      return { signedIn: false };
     }
 
     return {
-      state: "signed-in",
+      signedIn: true,
       user: { username },
     };
   }

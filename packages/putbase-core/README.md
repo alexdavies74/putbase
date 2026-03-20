@@ -114,7 +114,7 @@ Use `getSession()` to detect whether the current browser already has a Puter ses
 ```ts
 const session = await db.getSession();
 
-if (session.state === "signed-out") {
+if (!session.signedIn) {
   await db.signIn();        // call this from a button click
 }
 ```
@@ -207,7 +207,7 @@ function AppShell() {
     return <p>Checking session…</p>;
   }
 
-  if (session.session.state === "signed-out") {
+  if (!session.session?.signedIn) {
     return <button onClick={() => void session.signIn()}>Log in with Puter</button>;
   }
 

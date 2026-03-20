@@ -62,7 +62,7 @@ export type UseInviteLinkResult = Omit<UseResourceResult<string>, "data"> & {
 };
 
 export interface UseSessionResult extends UseResourceResult<AuthSession> {
-  session: { state: "loading" } | AuthSession;
+  session: AuthSession | undefined;
   signIn(): Promise<PutBaseUser>;
 }
 
@@ -196,7 +196,7 @@ function blockedResourceResult<TData>(
     }, session.refresh);
   }
 
-  if (session.status !== "success" || session.data?.state !== "signed-in") {
+  if (session.status !== "success" || !session.data?.signedIn) {
     return makeResourceResult<TData>({
       status: "idle",
     }, session.refresh);
@@ -310,9 +310,7 @@ export function useSession<Schema extends DbSchema>(
   const resource = useSessionResource(runtime, options.enabled ?? true);
   return {
     ...resource,
-    session: resource.status === "success" && resource.data
-      ? resource.data
-      : { state: "loading" },
+    session: resource.status === "success" ? resource.data : undefined,
     async signIn(): Promise<PutBaseUser> {
       const user = await runtime.client.signIn();
       await resource.refresh();
@@ -334,7 +332,7 @@ export function useCurrentUser<Schema extends DbSchema>(
     }, session.refresh);
   }
 
-  if (session.status !== "success" || session.data?.state !== "signed-in") {
+  if (session.status !== "success" || !session.data?.signedIn) {
     return makeResourceResult<PutBaseUser>({
       status: "idle",
     }, session.refresh);
@@ -572,7 +570,7 @@ export function useInviteFromLocation<
     (options.enabled ?? true)
       && !!inviteInput
       && session.status === "success"
-      && session.data?.state === "signed-in",
+      && !!session.data?.signedIn,
     resourceKey,
     runtime,
     () => runtime.getLoadOnce(
@@ -635,7 +633,7 @@ export function useInviteFromLocation<
     };
   }
 
-  if (session.data?.state !== "signed-in") {
+  if (!session.data?.signedIn) {
     return {
       hasInvite: true,
       inviteInput,
@@ -664,7 +662,7 @@ export function usePerUserRow<
   const inviteInput = options.href ?? getInviteHrefFromLocation();
   const clearLocationOption = options.clearLocation ?? true;
   const sessionUser =
-    session.status === "success" && session.data?.state === "signed-in"
+    session.status === "success" && session.data?.signedIn
       ? session.data.user
       : null;
   const scopeKey = sessionUser ? `${sessionUser.username}:${options.key}` : null;
@@ -678,7 +676,7 @@ export function usePerUserRow<
     (options.enabled ?? true)
       && !!resourceKey
       && session.status === "success"
-      && session.data?.state === "signed-in",
+      && !!session.data?.signedIn,
     resourceKey,
     runtime,
     () => runtime.getLoadOnce(
@@ -742,7 +740,7 @@ export function usePerUserRow<
       return;
     }
 
-    if (session.status !== "success" || session.data?.state !== "signed-in") {
+    if (session.status !== "success" || !session.data?.signedIn) {
       await session.refresh();
       return;
     }
@@ -810,7 +808,7 @@ export function usePerUserRow<
     };
   }
 
-  if (session.data?.state !== "signed-in") {
+  if (!session.data?.signedIn) {
     return {
       ...makeResourceResult<TResult | null>({
         status: "idle",

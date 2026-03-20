@@ -92,9 +92,9 @@ function makeTagRow(id: string, label: string) {
 
 class FakeDb {
   username = "alex";
-  sessionState: "signed-in" | "signed-out" = "signed-in";
+  signedIn = true;
   sessionPromise:
-    | Promise<{ state: "signed-out" } | { state: "signed-in"; user: { username: string } }>
+    | Promise<{ signedIn: false } | { signedIn: true; user: { username: string } }>
     | null = null;
   queryCalls = 0;
   getRowCalls = 0;
@@ -137,7 +137,7 @@ class FakeDb {
     return this.inviteDogHandle;
   }
 
-  async getSession(): Promise<{ state: "signed-out" } | { state: "signed-in"; user: { username: string } }> {
+  async getSession(): Promise<{ signedIn: false } | { signedIn: true; user: { username: string } }> {
     if (this.failSession) {
       throw new Error("session failed");
     }
@@ -146,19 +146,19 @@ class FakeDb {
       return this.sessionPromise;
     }
 
-    if (this.sessionState === "signed-out") {
-      return { state: "signed-out" };
+    if (!this.signedIn) {
+      return { signedIn: false };
     }
 
     return {
-      state: "signed-in",
+      signedIn: true,
       user: { username: this.username },
     };
   }
 
   async signIn(): Promise<{ username: string }> {
     this.signInCalls += 1;
-    this.sessionState = "signed-in";
+    this.signedIn = true;
     return { username: this.username };
   }
 
@@ -409,18 +409,18 @@ describe("@putbase/react", () => {
 
   it("exposes session state and sign-in explicitly", async () => {
     const db = new FakeDb();
-    db.sessionState = "signed-out";
+    db.signedIn = false;
     let latest: ReturnType<typeof useSession<TestSchema>> | null = null;
 
     function Probe() {
       latest = useSession<TestSchema>(db as unknown as PutBase<TestSchema>);
-      return <div>{latest.session.state}</div>;
+      return <div>{latest.session ? String(latest.session.signedIn) : latest.status}</div>;
     }
 
     const app = await renderApp(<Probe />);
 
     expect(latest?.status).toBe("success");
-    expect(latest?.session.state).toBe("signed-out");
+    expect(latest?.session).toEqual({ signedIn: false });
 
     await act(async () => {
       await latest?.signIn();
@@ -428,14 +428,40 @@ describe("@putbase/react", () => {
     });
 
     expect(db.signInCalls).toBe(1);
-    expect(latest?.session.state).toBe("signed-in");
-    expect(latest?.data).toEqual({ state: "signed-in", user: { username: "alex" } });
+    expect(latest?.session).toEqual({ signedIn: true, user: { username: "alex" } });
+    expect(latest?.data).toEqual({ signedIn: true, user: { username: "alex" } });
+    await app.unmount();
+  });
+
+  it("keeps the session convenience field undefined while loading", async () => {
+    const db = new FakeDb();
+    const session = deferred<{ signedIn: true; user: { username: string } }>();
+    db.sessionPromise = session.promise;
+    let latest: ReturnType<typeof useSession<TestSchema>> | null = null;
+
+    function Probe() {
+      latest = useSession<TestSchema>(db as unknown as PutBase<TestSchema>);
+      return <div>{latest.session ? "ready" : latest.status}</div>;
+    }
+
+    const app = await renderApp(<Probe />);
+
+    expect(latest?.status).toBe("loading");
+    expect(latest?.session).toBeUndefined();
+
+    await act(async () => {
+      session.resolve({ signedIn: true, user: { username: "alex" } });
+      await flushMicrotasks();
+    });
+
+    expect(latest?.status).toBe("success");
+    expect(latest?.session).toEqual({ signedIn: true, user: { username: "alex" } });
     await app.unmount();
   });
 
   it("keeps session-dependent hooks idle while signed out", async () => {
     const db = new FakeDb();
-    db.sessionState = "signed-out";
+    db.signedIn = false;
     const queryOptions = {
       in: {
         id: "dog_1",
@@ -495,7 +521,7 @@ describe("@putbase/react", () => {
     );
 
     const db = new FakeDb();
-    const session = deferred<{ state: "signed-in"; user: { username: string } }>();
+    const session = deferred<{ signedIn: true; user: { username: string } }>();
     db.sessionPromise = session.promise;
     let latest: ReturnType<typeof useInviteFromLocation<TestSchema, ReturnType<typeof makeDogRow>>> | null = null;
     let openedDogName = "";
@@ -516,7 +542,7 @@ describe("@putbase/react", () => {
     expect(db.openInviteCalls).toBe(0);
 
     await act(async () => {
-      session.resolve({ state: "signed-in", user: { username: "alex" } });
+      session.resolve({ signedIn: true, user: { username: "alex" } });
       await flushMicrotasks();
       await flushMicrotasks();
     });
@@ -608,7 +634,7 @@ describe("@putbase/react", () => {
 
   it("keeps per-user rows idle while signed out", async () => {
     const db = new FakeDb();
-    db.sessionState = "signed-out";
+    db.signedIn = false;
     let latest: ReturnType<typeof usePerUserRow<TestSchema>> | null = null;
 
     function Probe() {
@@ -629,7 +655,7 @@ describe("@putbase/react", () => {
   it("restores a remembered per-user row after session resolution", async () => {
     const db = new FakeDb();
     db.rememberedTargets.set("alex:myDog", "https://worker.example/rows/dog_1");
-    const session = deferred<{ state: "signed-in"; user: { username: string } }>();
+    const session = deferred<{ signedIn: true; user: { username: string } }>();
     db.sessionPromise = session.promise;
     let latest: ReturnType<typeof usePerUserRow<TestSchema>> | null = null;
 
@@ -646,7 +672,7 @@ describe("@putbase/react", () => {
     expect(db.openTargetCalls).toBe(0);
 
     await act(async () => {
-      session.resolve({ state: "signed-in", user: { username: "alex" } });
+      session.resolve({ signedIn: true, user: { username: "alex" } });
       await flushMicrotasks();
       await flushMicrotasks();
     });

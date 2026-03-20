@@ -330,7 +330,7 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
   private startPrewarmIfSignedIn(): void {
     void this.identity.getSession()
       .then((session) => {
-        if (session.state !== "signed-in") {
+        if (!session.signedIn) {
           return;
         }
 

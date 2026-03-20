@@ -54,7 +54,7 @@ function AppShell() {
 
   if (session.status === "loading") return <p>Checking session…</p>;
 
-  if (session.session.state === "signed-out") {
+  if (!session.session?.signedIn) {
     return <button onClick={() => void session.signIn()}>Log in with Puter</button>;
   }
 

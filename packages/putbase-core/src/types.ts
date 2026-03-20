@@ -29,8 +29,8 @@ export interface PutBaseUser {
 }
 
 export type AuthSession =
-  | { state: "signed-out" }
-  | { state: "signed-in"; user: PutBaseUser };
+  | { signedIn: false }
+  | { signedIn: true; user: PutBaseUser };
 
 export interface Row {
   id: string;
