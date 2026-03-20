@@ -1,5 +1,6 @@
 import type { PutBase } from "@putbase/core";
 import type {
+  AllowedParentCollections,
   AuthSession,
   AnyRowHandle,
   CollectionName,
@@ -151,9 +152,13 @@ function canonicalizeKeyPart(value: unknown, seen = new WeakSet<object>()): unkn
   return canonical;
 }
 
-function snapshotRowHandle<Schema extends DbSchema>(
-  row: AnyRowHandle<Schema>,
-): string {
+function snapshotRowHandle(row: {
+  id: string;
+  collection: string;
+  owner: string;
+  target: string;
+  fields: unknown;
+}): string {
   return stableJsonStringify({
     id: row.id,
     collection: row.collection,
@@ -196,7 +201,13 @@ function snapshotSession(value: AuthSession): string {
   return stableJsonStringify(value);
 }
 
-function snapshotQueryRows<Schema extends DbSchema>(value: Array<AnyRowHandle<Schema>>): string {
+function snapshotQueryRows(value: Array<{
+  id: string;
+  collection: string;
+  owner: string;
+  target: string;
+  fields: unknown;
+}>): string {
   return stableJsonStringify(
     value.map((row) => ({
       id: row.id,
@@ -526,4 +537,6 @@ export const snapshots = {
 export type QueryRows<
   Schema extends DbSchema,
   TCollection extends CollectionName<Schema>,
-> = Array<RowHandle<TCollection, RowFields<Schema, TCollection>, any, Schema>>;
+> = Array<
+  RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>
+>;

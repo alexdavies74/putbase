@@ -222,12 +222,32 @@ function useQuery<
   collection: TCollection,
   options: DbQueryOptions<Schema, TCollection> | null | undefined,
   hookOptions?: UseHookOptions,
-): UseQueryResult<RowHandle<TCollection, RowFields<Schema, TCollection>, any, Schema>>
+): UseQueryResult<
+  RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>
+>
 ```
 
 - `options: null | undefined` keeps the hook idle.
 - `rows` is always an array and mirrors `data ?? []`.
-- The row type is inferred from `collection`.
+- The row type matches `client.query(...)`, including parent collection constraints.
+
+### `useRow`
+
+```ts
+function useRow<
+  Schema extends DbSchema,
+  TCollection extends CollectionName<Schema>,
+>(
+  client: PutBase<Schema>,
+  row: DbRowRef<TCollection> | null | undefined,
+  hookOptions?: UseHookOptions,
+): UseResourceResult<
+  RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>
+>
+```
+
+- `row: null | undefined` keeps the hook idle.
+- The returned handle matches `client.getRow(...)`, including parent collection constraints.
 
 ### `useRowTarget`
 
