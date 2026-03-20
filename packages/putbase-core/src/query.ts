@@ -30,6 +30,44 @@ interface DbQueryResponse {
   rows: DbQueryRow[];
 }
 
+function compareFieldValue(left: JsonValue | undefined, right: JsonValue | undefined): number {
+  if (left === right) {
+    return 0;
+  }
+
+  if (typeof left === "number" && typeof right === "number") {
+    return left - right;
+  }
+
+  if (typeof left === "boolean" && typeof right === "boolean") {
+    return Number(left) - Number(right);
+  }
+
+  return String(left ?? "").localeCompare(String(right ?? ""));
+}
+
+function compareIndexedRows(
+  left: DbQueryRow,
+  right: DbQueryRow,
+  indexFields: readonly string[],
+  order: "asc" | "desc",
+): number {
+  for (const fieldName of indexFields) {
+    const comparison = compareFieldValue(left.fields[fieldName], right.fields[fieldName]);
+    if (comparison !== 0) {
+      return order === "desc" ? -comparison : comparison;
+    }
+  }
+
+  const ownerComparison = left.owner.localeCompare(right.owner);
+  if (ownerComparison !== 0) {
+    return order === "desc" ? -ownerComparison : ownerComparison;
+  }
+
+  const rowIdComparison = left.rowId.localeCompare(right.rowId);
+  return order === "desc" ? -rowIdComparison : rowIdComparison;
+}
+
 function stableJsonStringify(value: unknown): string {
   if (value === null || typeof value !== "object") {
     return JSON.stringify(value);
@@ -121,9 +159,20 @@ export class Query<Schema extends DbSchema> {
       }
     }
 
-    const queryRows = Array.from(deduped.values()).slice(0, limit);
+    const queryRows = Array.from(deduped.values());
+    if (selectedIndex) {
+      const indexFields = collectionSpec.indexes?.[selectedIndex.name]?.fields ?? [];
+      queryRows.sort((left, right) => compareIndexedRows(
+        left,
+        right,
+        indexFields,
+        resolvedOptions.order ?? "asc",
+      ));
+    }
+
+    const limitedRows = queryRows.slice(0, limit);
     const hydrated = await Promise.all(
-      queryRows.map(async (row) => {
+      limitedRows.map(async (row) => {
         const rowRef: DbRowRef<TCollection> = {
           id: row.rowId,
           collection,

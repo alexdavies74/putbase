@@ -18,6 +18,11 @@ export type {
   SyncMessage,
 } from "./types";
 export type {
+  AllowedParentCollections,
+  AllowedParentRef,
+  AnyRow,
+  AnyRowRef,
+  CollectionIndexes,
   CollectionName,
   DbFieldValue,
   DbMemberInfo,
@@ -28,7 +33,9 @@ export type {
   DbRowLocator,
   DbRowRef,
   DbSchema,
+  IndexValue,
   InsertFields,
+  QueryWhere,
   MemberRole,
   RowFields,
 } from "./schema";

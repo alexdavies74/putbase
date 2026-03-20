@@ -152,11 +152,21 @@ PutBase queries always run within a known scope. For `cards`, that scope is a `b
 ### Imperative
 
 ```ts
-// No `in` is required when 
+// No `in` is required for collections inside a `user`
 const recentBoards = await db.query("recentBoards", {
   index: "byOpenedAt",
   order: "desc",
   limit: 10,
+});
+```
+
+```ts
+// Multi-parent queries run in parallel, then merge and sort their results
+const shelf = await db.query("recentBoards", {
+  in: [personalHome, sharedHome],
+  index: "byOpenedAt",
+  order: "desc",
+  limit: 20,
 });
 ```
 

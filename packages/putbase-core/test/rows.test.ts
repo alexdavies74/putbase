@@ -475,6 +475,106 @@ describe("PutBase rows", () => {
     });
   });
 
+  it("globally sorts indexed multi-parent queries before applying the final limit", async () => {
+    const multiParentSchema = defineSchema({
+      shelves: collection({
+        fields: {
+          name: field.string(),
+        },
+      }),
+      cards: collection({
+        in: ["shelves"],
+        fields: {
+          title: field.string(),
+          rank: field.number(),
+        },
+        indexes: {
+          byRank: index("rank"),
+        },
+      }),
+    });
+
+    const parentResponses = new Map([
+      ["shelf_1", {
+        rows: [
+          {
+            rowId: "card_2",
+            owner: "alice",
+            target: "https://worker.example/rows/card_2",
+            collection: "cards",
+            fields: { rank: 2 },
+          },
+          {
+            rowId: "card_3",
+            owner: "alice",
+            target: "https://worker.example/rows/card_3",
+            collection: "cards",
+            fields: { rank: 3 },
+          },
+        ],
+      }],
+      ["shelf_2", {
+        rows: [
+          {
+            rowId: "card_1",
+            owner: "alice",
+            target: "https://worker.example/rows/card_1",
+            collection: "cards",
+            fields: { rank: 1 },
+          },
+          {
+            rowId: "card_2",
+            owner: "alice",
+            target: "https://worker.example/rows/card_2",
+            collection: "cards",
+            fields: { rank: 2 },
+          },
+        ],
+      }],
+    ]);
+
+    const transport = {
+      row: vi.fn((parent: { id: string }) => ({
+        request: vi.fn().mockResolvedValue(parentResponses.get(parent.id)),
+      })),
+    };
+    const getRow = vi.fn(async (_collection: string, row: { id: string; owner: string; target: string }) => ({
+      id: row.id,
+      collection: "cards",
+      owner: row.owner,
+      target: row.target,
+      fields: {},
+    }));
+    const query = new Query(
+      transport as never,
+      { getRow } as never,
+      multiParentSchema,
+    );
+
+    const rows = await query.query("cards", {
+      in: [
+        {
+          id: "shelf_1",
+          collection: "shelves",
+          owner: "alice",
+          target: "https://worker.example/rows/shelf_1",
+        },
+        {
+          id: "shelf_2",
+          collection: "shelves",
+          owner: "alice",
+          target: "https://worker.example/rows/shelf_2",
+        },
+      ],
+      index: "byRank",
+      order: "asc",
+      limit: 2,
+    });
+
+    expect(rows.map((row) => row.id)).toEqual(["card_1", "card_2"]);
+    expect(getRow.mock.calls.map(([, row]) => row.id)).toEqual(["card_1", "card_2"]);
+  });
+
   it("watchQuery emits rows end-to-end through PutBase", async () => {
     const network = new TestWorkerNetwork();
     const db = buildDb({ username: "alice", network });
