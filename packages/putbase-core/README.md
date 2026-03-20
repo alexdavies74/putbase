@@ -23,7 +23,7 @@ const { rows: cards } = useQuery<Schema, "cards">(db, "cards", {
 });
 
 // Share
-const { data: inviteLink } = useInviteLink(db, board);
+const { inviteLink } = useInviteLink(db, board);
 ```
 
 ---

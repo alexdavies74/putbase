@@ -57,6 +57,10 @@ export interface UseQueryResult<TRow> extends UseResourceResult<TRow[]> {
   rows: TRow[];
 }
 
+export type UseInviteLinkResult = Omit<UseResourceResult<string>, "data"> & {
+  inviteLink: string | undefined;
+};
+
 export interface UseSessionResult extends UseResourceResult<AuthSession> {
   session: { state: "loading" } | AuthSession;
   signIn(): Promise<PutBaseUser>;
@@ -514,7 +518,7 @@ export function useInviteLink<Schema extends DbSchema>(
   client: PutBase<Schema>,
   row: DbRowRef | null | undefined,
   options: UseHookOptions = {},
-): UseResourceResult<string> {
+): UseInviteLinkResult {
   const runtime = useRuntime(client);
   const session = useSessionResource(runtime, options.enabled ?? true);
   const resourceKey = row ? makeInviteLinkKey(row as DbRowRef) : null;
@@ -532,7 +536,16 @@ export function useInviteLink<Schema extends DbSchema>(
       },
     ),
   );
-  return blocked ?? resource;
+  const result = blocked ?? resource;
+
+  return {
+    inviteLink: result.data,
+    error: result.error,
+    refreshError: result.refreshError,
+    isRefreshing: result.isRefreshing,
+    status: result.status,
+    refresh: result.refresh,
+  };
 }
 
 export function useInviteFromLocation<

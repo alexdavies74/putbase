@@ -111,8 +111,8 @@ import { db } from "./db";
 
 // Sharer side
 function ShareButton({ board }: { board: BoardHandle }) {
-  const { data: link } = useInviteLink(db, board);
-  return <button onClick={() => navigator.clipboard.writeText(link ?? "")}>Copy invite link</button>;
+  const { inviteLink } = useInviteLink(db, board);
+  return <button onClick={() => navigator.clipboard.writeText(inviteLink ?? "")}>Copy invite link</button>;
 }
 
 // Recipient side — call once near the app root
@@ -183,7 +183,7 @@ All PutBase-backed hooks are client-first and accept an optional final `{ enable
 | `useMemberUsernames(client, row)` | client, row ref | `{ data: string[], status, isRefreshing, error, refreshError, refresh }` |
 | `useDirectMembers(client, row)` | client, row ref | `{ data: { username, role }[], status, isRefreshing, error, refreshError, refresh }` |
 | `useEffectiveMembers(client, row)` | client, row ref | `{ data: DbMemberInfo[], status, isRefreshing, error, refreshError, refresh }` |
-| `useInviteLink(client, row)` | client, row ref | `{ data: string, status, isRefreshing, error, refreshError, refresh }` |
+| `useInviteLink(client, row)` | client, row ref | `{ inviteLink: string, status, isRefreshing, error, refreshError, refresh }` |
 | `useInviteFromLocation(client, options?)` | client, `{ href?, clearLocation?, onOpen?, open? }` | `{ hasInvite, inviteInput, data, status, isRefreshing, error, refreshError, refresh }` |
 | `usePerUserRow(client, options)` | client, `{ key, href?, clearLocation?, loadRememberedRow?, openInvite?, getRow? }` | `{ hasInvite, inviteInput, data, status, isRefreshing, error, refreshError, refresh, remember, clear }` |
 | `useMutation(fn)` | async function | `{ mutate, data, status, error, reset }` |
@@ -249,10 +249,14 @@ function useInviteLink<Schema extends DbSchema>(
   client: PutBase<Schema>,
   row: DbRowRef | null | undefined,
   options?: UseHookOptions,
-): UseResourceResult<string>
+): {
+  inviteLink: string | undefined;
+  ...
+}
 ```
 
 - `row: null | undefined` keeps the hook idle.
+- `inviteLink` is the generated or reused invite URL for the row.
 
 ### `useInviteFromLocation`
 

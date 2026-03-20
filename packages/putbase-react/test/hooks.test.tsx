@@ -18,6 +18,7 @@ import {
 import {
   PutBaseProvider,
   useCurrentUser,
+  useInviteLink,
   useInviteFromLocation,
   usePerUserRow,
   usePutBase,
@@ -457,6 +458,32 @@ describe("@putbase/react", () => {
 
     expect(latest?.status).toBe("idle");
     expect(db.queryCalls).toBe(0);
+    await app.unmount();
+  });
+
+  it("returns a named inviteLink field for invite URLs", async () => {
+    const db = new FakeDb();
+    const rowRef: DbRowRef<"dogs"> = {
+      id: "dog_1",
+      collection: "dogs",
+      owner: "alex",
+      target: "https://worker.example/rows/dog_1",
+    };
+    let latest: ReturnType<typeof useInviteLink<TestSchema>> | null = null;
+
+    function Probe() {
+      latest = useInviteLink<TestSchema>(db as unknown as PutBase<TestSchema>, rowRef);
+      return <div>{latest.inviteLink ?? latest.status}</div>;
+    }
+
+    const app = await renderApp(<Probe />);
+
+    await waitFor(() => {
+      expect(latest?.status).toBe("success");
+      expect(latest?.inviteLink).toBe("https://worker.example/rows/dog_1?token=invite_1");
+    });
+
+    expect(latest && "data" in latest).toBe(false);
     await app.unmount();
   });
 
