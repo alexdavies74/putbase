@@ -40,15 +40,15 @@ export class Rows<Schema extends DbSchema> {
   async put<TCollection extends CollectionName<Schema>>(
     collection: TCollection,
     fields: InsertFields<Schema, TCollection>,
-    options: DbPutOptions<Schema, TCollection> = {},
+    options?: DbPutOptions<Schema, TCollection>,
   ): Promise<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>> {
     const collectionSpec = getCollectionSpec(this.schema, collection);
-    const parentRefs = normalizeParents(options.in);
+    const parentRefs = normalizeParents(options?.in);
     assertPutParents(collection, collectionSpec, parentRefs);
     assertValidFieldValues(collection, collectionSpec, fields as Record<string, unknown>);
 
     const row = await this.rowRuntime.createRow(
-      options.name ?? `${collection}-${crypto.randomUUID().slice(0, 8)}`,
+      options?.name ?? `${collection}-${crypto.randomUUID().slice(0, 8)}`,
     );
     const rowRef: DbRowRef<TCollection> = toRowRef({
       id: row.id,
@@ -132,15 +132,12 @@ export class Rows<Schema extends DbSchema> {
     const childSpec = this.schema[row.collection];
     await Promise.all(
       snapshot.parentRefs.map((parentRef) =>
-        this.transport.row(parentRef).request("parents/register-child", {
+        this.transport.row(parentRef).request("parents/update-index", {
           childRowId: row.id,
           childOwner: row.owner,
           childTarget: row.target,
           collection: row.collection,
           fields,
-          schema: {
-            indexes: childSpec?.indexes,
-          },
         }),
       ),
     );

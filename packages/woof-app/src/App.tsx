@@ -1,5 +1,5 @@
 import { puter } from "@heyputer/puter.js";
-import { useInviteLink, useMutation, usePerUserRow, usePutBase, useSession } from "@putbase/react";
+import { useInviteFromLocation, useInviteLink, useMutation, usePutBase, useQuery, useRowTarget, useSession } from "@putbase/react";
 import { useEffect, useRef, useState } from "react";
 
 import type { ChatEntry } from "./service";
@@ -8,8 +8,6 @@ import type { DogRowHandle, WoofSchema } from "./schema";
 import { TagsPanel } from "./tags-panel";
 import { getErrorMessage } from "./utils";
 import { service } from "./services";
-
-const DOG_ROOM_KEY = "myDog";
 
 function SetupPanel(props: {
   busyMessage?: string;
@@ -223,25 +221,59 @@ export function App() {
       : null;
   const [loginError, setLoginError] = useState("");
   const [loginStatus, setLoginStatus] = useState<"idle" | "loading">("idle");
-  const perUserRow = usePerUserRow<WoofSchema, DogRowHandle>(db, {
-    key: DOG_ROOM_KEY,
+  const [dismissedDogTarget, setDismissedDogTarget] = useState<string | null>(null);
+  const invite = useInviteFromLocation<WoofSchema, DogRowHandle>(db, {
     clearLocation: (url) => {
       url.pathname = url.pathname === "/join" ? "/" : url.pathname;
       url.search = "";
       url.hash = "";
       return url.toString();
     },
-    openInvite: async (inviteInput, client) => service.expectDogRow(await client.openInvite(inviteInput)),
-    loadRememberedRow: async (row) => service.expectDogRow(row),
+    open: async (inviteInput, client) => service.expectDogRow(await client.openInvite(inviteInput)),
+    onOpen: (nextRow) => {
+      setDismissedDogTarget(null);
+      void service.activateHistory(nextRow).catch((error) => {
+        console.error("[woof-app] failed to activate dog history after invite", {
+          error,
+          target: nextRow.target,
+        });
+      });
+    },
   });
-  const invitePending = perUserRow.hasInvite;
-  const row = perUserRow.data ?? null;
-  const bootError = perUserRow.status === "error"
-    ? getErrorMessage(
-      perUserRow.error,
-      invitePending ? "Failed to join invite link." : "Could not restore saved room.",
-    )
-    : "";
+  const invitePending = invite.hasInvite;
+  const inviteRow = invite.status === "success" ? invite.data ?? null : null;
+  const dogHistory = useQuery(
+    db,
+    "dogHistory",
+    signedInUser
+      ? {
+        where: { status: "active" },
+        limit: 1,
+      }
+      : null,
+  );
+  const activeHistoryRow = dogHistory.rows.find((historyRow) => historyRow.fields.dogTarget !== dismissedDogTarget) ?? null;
+  const activeRowTarget = inviteRow ? null : activeHistoryRow?.fields.dogTarget ?? null;
+  const openedActiveRow = useRowTarget(db, activeRowTarget, {
+    enabled: !!activeRowTarget,
+  });
+  const restoredRow = openedActiveRow.data && openedActiveRow.data.collection === "dogs"
+    ? openedActiveRow.data
+    : null;
+  const row = inviteRow ?? restoredRow;
+  const bootError = invite.status === "error"
+    ? getErrorMessage(invite.error, "Failed to join invite link.")
+    : dogHistory.status === "error"
+      ? getErrorMessage(dogHistory.error, "Could not restore saved room.")
+      : openedActiveRow.status === "error"
+        ? getErrorMessage(openedActiveRow.error, "Could not reopen saved room.")
+        : openedActiveRow.data && openedActiveRow.data.collection !== "dogs"
+          ? "Saved room did not point to a dog row."
+          : "";
+  const bootLoading =
+    invite.status === "loading"
+    || dogHistory.status === "loading"
+    || (!!activeRowTarget && openedActiveRow.status === "loading");
 
   if (session.status === "loading") {
     return <SignInPanel busy errorMessage="" hasInvite={invitePending} onSignIn={() => undefined} />;
@@ -279,14 +311,15 @@ export function App() {
     );
   }
 
-  if (perUserRow.status === "loading") {
+  if (bootLoading) {
     return (
       <SetupPanel
         busyMessage={invitePending ? "Opening shared dog room…" : "Initializing app…"}
         disabled
         initialError=""
         onEnter={async (nextRow) => {
-          await perUserRow.remember(nextRow);
+          setDismissedDogTarget(null);
+          void nextRow;
         }}
       />
     );
@@ -298,7 +331,8 @@ export function App() {
         disabled={false}
         initialError={bootError}
         onEnter={async (nextRow) => {
-          await perUserRow.remember(nextRow);
+          setDismissedDogTarget(null);
+          void nextRow;
         }}
       />
     );
@@ -309,7 +343,7 @@ export function App() {
       currentUsername={signedInUser?.username ?? null}
       row={row}
       onRelinquished={async () => {
-        await perUserRow.clear();
+        setDismissedDogTarget(row.target);
       }}
     />
   );

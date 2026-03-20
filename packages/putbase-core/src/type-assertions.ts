@@ -30,18 +30,38 @@ const typeTestSchema = defineSchema({
       byTitleStatus: index(["title", "status"]),
     },
   }),
+  gameRecords: collection({
+    in: ["user"],
+    fields: {
+      gameTarget: field.string(),
+      role: field.string(),
+    },
+    indexes: {
+      byGameTarget: index("gameTarget"),
+    },
+  }),
+  mixedRecords: collection({
+    in: ["user", "projects"],
+    fields: {
+      label: field.string(),
+    },
+  }),
 });
 
 declare const projectRef: DbRowRef<"projects">;
 declare const teamRef: DbRowRef<"teams">;
+declare const userRef: DbRowRef<"user">;
 
 const db = new PutBase({
   schema: typeTestSchema,
   identityProvider: async () => ({ username: "typecheck" }),
 });
 
+// @ts-expect-error tasks require an explicit project scope on insert
 void db.put("tasks", { title: "Ship v2" });
 void db.put("tasks", { title: "Ship v2", points: 3 }, { in: projectRef });
+void db.put("gameRecords", { gameTarget: "https://workers.example/rows/game_1", role: "owner" });
+void db.put("gameRecords", { gameTarget: "https://workers.example/rows/game_1", role: "owner" }, { in: userRef });
 
 // @ts-expect-error tasks.title is required on insert
 void db.put("tasks", {});
@@ -52,6 +72,8 @@ void db.put("tasks", { title: "Ship v2" }, { in: teamRef });
 void db.query("tasks", { in: projectRef, where: { status: "done" } });
 void db.query("tasks", { in: projectRef, index: "byStatus", value: "done" });
 void db.query("tasks", { in: projectRef, index: "byTitleStatus", value: ["Ship v2", "done"] });
+void db.query("gameRecords", { where: { role: "owner" } });
+void db.query("gameRecords", { index: "byGameTarget", value: "https://workers.example/rows/game_1" });
 
 // @ts-expect-error invalid where field
 void db.query("tasks", { in: projectRef, where: { missing: "nope" } });
@@ -64,6 +86,12 @@ void db.query("tasks", { in: projectRef, index: "byTitleStatus", value: "done" }
 
 // @ts-expect-error tasks can only be queried under projects
 void db.query("tasks", { in: teamRef });
+
+// @ts-expect-error mixed parent collections still require an explicit scope
+void db.query("mixedRecords", { where: { label: "x" } });
+
+// @ts-expect-error mixed parent collections still require an explicit scope on insert
+void db.put("mixedRecords", { label: "x" });
 
 void db.put("projects", { name: "Website" }).then((project) => {
   const name: string = project.fields.name;
@@ -91,7 +119,7 @@ void db.put("tasks", { title: "Ship v2" }, { in: projectRef }).then((task) => {
 });
 
 void db.openTarget("https://workers.example/rows/row_1").then((row) => {
-  const collection: "projects" | "teams" | "tasks" = row.collection;
+  const collection: "projects" | "teams" | "tasks" | "gameRecords" | "mixedRecords" = row.collection;
   void collection;
 
   if (row.collection === "projects" || row.collection === "teams") {
@@ -103,6 +131,25 @@ void db.openTarget("https://workers.example/rows/row_1").then((row) => {
     const title: string = row.fields.title;
     void title;
   }
+
+  if (row.collection === "gameRecords") {
+    const role: string = row.fields.role;
+    void role;
+  }
+
+  if (row.collection === "mixedRecords") {
+    const label: string = row.fields.label;
+    void label;
+  }
+});
+
+// @ts-expect-error "user" is a reserved built-in collection name
+defineSchema({
+  user: collection({
+    fields: {
+      name: field.string(),
+    },
+  }),
 });
 
 export {};

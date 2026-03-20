@@ -17,6 +17,7 @@ import type {
   AllowedParentCollections,
   CollectionName,
   DbMemberInfo,
+  DbPutArgs,
   DbRowLocator,
   DbPutOptions,
   DbQueryOptions,
@@ -30,7 +31,7 @@ import type {
 } from "./schema";
 import { resolveBackend } from "./backend";
 import { missingPuterProvisioningMessage } from "./errors";
-import { resolveCollectionName } from "./schema";
+import { BUILTIN_USER_SCOPE as USER_SCOPE_COLLECTION, getCollectionSpec, hasImplicitUserScope, resolveCollectionName } from "./schema";
 import { normalizeTarget } from "./transport";
 import { Transport } from "./transport";
 import type {
@@ -59,6 +60,9 @@ interface CachedRowHandle<Schema extends DbSchema> {
   handle: AnyRowHandle<Schema>;
   snapshot: string;
 }
+
+const INTERNAL_USER_SCOPE_ROW_KEY = "__putbase_user_scope_v1__";
+type LocalMutationListener = () => void;
 
 function stableJsonStringify(value: unknown): string {
   if (value === null || typeof value !== "object") {
@@ -92,6 +96,7 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
   private readinessPromise: Promise<void> | null = null;
   private pendingReadinessError: unknown | null = null;
   private readonly rowHandleCache = new Map<string, CachedRowHandle<Schema>>();
+  private readonly localMutationListeners = new Set<LocalMutationListener>();
 
   constructor(private readonly options: PutBaseOptions<Schema>) {
     this.identity = new Identity(options);
@@ -121,7 +126,12 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
       options.schema,
       (row) => this.rowsModule.refreshFields(row),
     );
-    this.queryModule = new Query(this.transport, this.rowsModule, options.schema);
+    this.queryModule = new Query(
+      this.transport,
+      this.rowsModule,
+      options.schema,
+      (collection, queryOptions) => this.resolveImplicitQueryOptions(collection, queryOptions),
+    );
     this.startPrewarmIfSignedIn();
   }
 
@@ -171,9 +181,12 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
   async put<TCollection extends CollectionName<Schema>>(
     collection: TCollection,
     fields: InsertFields<Schema, TCollection>,
-    options?: DbPutOptions<Schema, TCollection>,
+    ...args: DbPutArgs<Schema, TCollection>
   ): Promise<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>> {
-    return this.rowsModule.put(collection, fields, options);
+    const options = args[0];
+    const row = await this.rowsModule.put(collection, fields, await this.resolveImplicitPutOptions(collection, options));
+    this.notifyLocalMutation();
+    return row;
   }
 
   async update<TCollection extends CollectionName<Schema>>(
@@ -181,7 +194,9 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
     row: DbRowRef<TCollection>,
     fields: Partial<RowFields<Schema, TCollection>>,
   ): Promise<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>> {
-    return this.rowsModule.update(collection, row, fields);
+    const updated = await this.rowsModule.update(collection, row, fields);
+    this.notifyLocalMutation();
+    return updated;
   }
 
   async getRow<TCollection extends CollectionName<Schema>>(
@@ -239,7 +254,9 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
     await this.rowRuntime.joinRow(invite.target, {
       inviteToken: invite.inviteToken,
     });
-    return this.openTarget(invite.target);
+    const row = await this.openTarget(invite.target);
+    this.notifyLocalMutation();
+    return row;
   }
 
   async listMembers(row: DbRowLocator): Promise<string[]> {
@@ -247,11 +264,13 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
   }
 
   async addParent(child: DbRowRef, parent: DbRowRef): Promise<void> {
-    return this.parentsModule.add(child, parent);
+    await this.parentsModule.add(child, parent);
+    this.notifyLocalMutation();
   }
 
   async removeParent(child: DbRowRef, parent: DbRowRef): Promise<void> {
-    return this.parentsModule.remove(child, parent);
+    await this.parentsModule.remove(child, parent);
+    this.notifyLocalMutation();
   }
 
   async listParents<TParentCollection extends string>(child: DbRowRef): Promise<Array<DbRowRef<TParentCollection>>> {
@@ -259,11 +278,13 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
   }
 
   async addMember(row: DbRowLocator, username: string, role: MemberRole): Promise<void> {
-    return this.membersModule.add(row, username, role);
+    await this.membersModule.add(row, username, role);
+    this.notifyLocalMutation();
   }
 
   async removeMember(row: DbRowLocator, username: string): Promise<void> {
-    return this.membersModule.remove(row, username);
+    await this.membersModule.remove(row, username);
+    this.notifyLocalMutation();
   }
 
   async listDirectMembers(row: DbRowLocator): Promise<Array<{ username: string; role: MemberRole }>> {
@@ -280,6 +301,13 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
 
   connectCrdt(row: DbRowLocator, callbacks: CrdtConnectCallbacks): CrdtConnection {
     return this.syncModule.connectCrdt(row, callbacks);
+  }
+
+  subscribeToLocalMutations(listener: LocalMutationListener): () => void {
+    this.localMutationListeners.add(listener);
+    return () => {
+      this.localMutationListeners.delete(listener);
+    };
   }
 
   private syncRuntime(): void {
@@ -472,5 +500,106 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
       snapshot,
     });
     return handle;
+  }
+
+  private notifyLocalMutation(): void {
+    for (const listener of this.localMutationListeners) {
+      try {
+        listener();
+      } catch {
+        // Ignore subscriber failures so local writes still succeed.
+      }
+    }
+  }
+
+  private async resolveImplicitPutOptions<TCollection extends CollectionName<Schema>>(
+    collection: TCollection,
+    options: DbPutOptions<Schema, TCollection> | undefined,
+  ): Promise<DbPutOptions<Schema, TCollection> | undefined> {
+    if (options?.in !== undefined) {
+      return options;
+    }
+
+    const collectionSpec = getCollectionSpec(this.options.schema, collection);
+    if (!hasImplicitUserScope(collectionSpec)) {
+      return options;
+    }
+
+    return {
+      ...options,
+      in: await this.ensureCurrentUserScopeRow(),
+    } as DbPutOptions<Schema, TCollection>;
+  }
+
+  private async resolveImplicitQueryOptions<TCollection extends CollectionName<Schema>>(
+    collection: TCollection,
+    options: DbQueryOptions<Schema, TCollection>,
+  ): Promise<DbQueryOptions<Schema, TCollection>> {
+    if (options.in !== undefined) {
+      return options;
+    }
+
+    const collectionSpec = getCollectionSpec(this.options.schema, collection);
+    if (!hasImplicitUserScope(collectionSpec)) {
+      return options;
+    }
+
+    return {
+      ...options,
+      in: await this.ensureCurrentUserScopeRow(),
+    } as DbQueryOptions<Schema, TCollection>;
+  }
+
+  private async ensureCurrentUserScopeRow(): Promise<DbRowRef<typeof USER_SCOPE_COLLECTION>> {
+    const user = await this.identity.whoAmI();
+    const backend = resolveBackend(this.options.backend);
+    const rememberedRow = await loadRememberedPerUserRow(
+      backend,
+      user.username,
+      INTERNAL_USER_SCOPE_ROW_KEY,
+    );
+
+    if (rememberedRow) {
+      const remembered = await this.resolveUserScopeRowFromTarget(rememberedRow.target, user.username);
+      if (remembered) {
+        return remembered;
+      }
+    }
+
+    const created = await this.rowRuntime.createRow(`${USER_SCOPE_COLLECTION}-scope-${crypto.randomUUID().slice(0, 8)}`);
+    const rowRef: DbRowRef<typeof USER_SCOPE_COLLECTION> = {
+      id: created.id,
+      owner: created.owner,
+      target: normalizeTarget(created.target),
+      collection: USER_SCOPE_COLLECTION,
+    };
+
+    await this.transport.row(rowRef).request("fields/set", {
+      fields: {},
+      collection: USER_SCOPE_COLLECTION,
+    });
+    await rememberPerUserRow(backend, user.username, INTERNAL_USER_SCOPE_ROW_KEY, rowRef);
+    return rowRef;
+  }
+
+  private async resolveUserScopeRowFromTarget(
+    target: string,
+    username: string,
+  ): Promise<DbRowRef<typeof USER_SCOPE_COLLECTION> | null> {
+    try {
+      const snapshot = await this.rowRuntime.getRow(target);
+      if (snapshot.collection !== USER_SCOPE_COLLECTION || snapshot.owner !== username) {
+        return null;
+      }
+
+      return {
+        id: snapshot.id,
+        owner: snapshot.owner,
+        target: normalizeTarget(snapshot.target),
+        collection: USER_SCOPE_COLLECTION,
+      };
+    } catch {
+      return null;
+    }
   }
 }

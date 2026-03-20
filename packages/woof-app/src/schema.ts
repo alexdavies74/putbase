@@ -14,6 +14,17 @@ export const woofSchema = defineSchema({
       name: field.string(),
     },
   }),
+  dogHistory: collection({
+    in: ["user"],
+    fields: {
+      dogTarget: field.string(),
+      status: field.string(),
+    },
+    indexes: {
+      byDogTarget: index("dogTarget"),
+      byStatus: index("status"),
+    },
+  }),
   tags: collection({
     in: ["dogs"],
     fields: {
@@ -30,6 +41,8 @@ export const woofSchema = defineSchema({
 export type WoofSchema = typeof woofSchema;
 export type WoofDb = PutBase<WoofSchema>;
 export type DogFields = RowFields<WoofSchema, "dogs">;
+export type DogHistoryFields = RowFields<WoofSchema, "dogHistory">;
 export type TagFields = RowFields<WoofSchema, "tags">;
 export type DogRowHandle = RowHandle<"dogs", DogFields, never, WoofSchema>;
+export type DogHistoryRowHandle = RowHandle<"dogHistory", DogHistoryFields, "user", WoofSchema>;
 export type TagRowHandle = RowHandle<"tags", TagFields, "dogs", WoofSchema>;

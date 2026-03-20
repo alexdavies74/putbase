@@ -16,6 +16,8 @@ import type {
 import type { ChatMessage } from "@heyputer/puter.js";
 
 import type {
+  DogHistoryFields,
+  DogHistoryRowHandle,
   DogFields,
   DogRowHandle,
   TagFields,
@@ -36,6 +38,7 @@ class MockDb implements WoofDbPort {
   }> = [];
 
   private readonly rowFields = new Map<string, Record<string, unknown>>();
+  private readonly historyRows = new Map<string, DogHistoryRowHandle>();
 
   private readonly backend: RowHandleBackend<WoofSchema> = {
     addParent: async () => undefined,
@@ -105,26 +108,80 @@ class MockDb implements WoofDbPort {
     return new RowHandle(this.backend, rowRef, rowFields);
   }
 
+  private makeDogHistoryRow(id: string, fields: Record<string, unknown>): DogHistoryRowHandle {
+    const rowRef: ReturnType<DogHistoryRowHandle["toRef"]> = {
+      id,
+      collection: "dogHistory",
+      owner: "alex",
+      target: `https://workers.puter.site/alex/rows/${id}`,
+    };
+    const rowFields: DogHistoryFields = {
+      dogTarget: typeof fields.dogTarget === "string" ? fields.dogTarget : "",
+      status: typeof fields.status === "string" ? fields.status : "inactive",
+    };
+    const row = new RowHandle(this.backend, rowRef, rowFields);
+    this.rowFields.set(id, rowFields);
+    this.historyRows.set(id, row);
+    return row;
+  }
+
   async whoAmI(): Promise<{ username: string }> {
     return { username: "alex" };
   }
 
   async put(collection: "dogs", fields: DogRowHandle["fields"]): Promise<DogRowHandle>;
+  async put(collection: "dogHistory", fields: DogHistoryRowHandle["fields"]): Promise<DogHistoryRowHandle>;
   async put(
     collection: "tags",
     fields: TagRowHandle["fields"],
     options: { in: ReturnType<DogRowHandle["toRef"]> },
   ): Promise<TagRowHandle>;
   async put(
-    collection: "dogs" | "tags",
+    collection: "dogs" | "dogHistory" | "tags",
     fields: Record<string, unknown>,
     options?: { in?: ReturnType<DogRowHandle["toRef"]> },
-  ): Promise<DogRowHandle | TagRowHandle> {
+  ): Promise<DogRowHandle | DogHistoryRowHandle | TagRowHandle> {
     this.putCalls.push({ collection, fields, options });
-    const id = collection === "dogs" ? "row_created" : `tag_${this.putCalls.length}`;
-    return collection === "dogs"
-      ? this.makeDogRow(id, fields)
-      : this.makeTagRow(id, fields);
+    if (collection === "dogs") {
+      return this.makeDogRow("row_created", fields);
+    }
+
+    if (collection === "dogHistory") {
+      return this.makeDogHistoryRow(`history_${this.putCalls.length}`, fields);
+    }
+
+    return this.makeTagRow(`tag_${this.putCalls.length}`, fields);
+  }
+
+  async query(
+    collection: "dogHistory",
+    options: { where?: { status?: string }; index?: "byDogTarget"; value?: string; limit?: number },
+  ): Promise<DogHistoryRowHandle[]> {
+    const rows = Array.from(this.historyRows.values());
+    const filtered = options.index === "byDogTarget"
+      ? rows.filter((row) => row.fields.dogTarget === options.value)
+      : options.where?.status
+        ? rows.filter((row) => row.fields.status === options.where?.status)
+        : rows;
+    return filtered.slice(0, options.limit ?? filtered.length);
+  }
+
+  async update(
+    collection: "dogHistory",
+    row: DogHistoryRowHandle,
+    fields: Partial<DogHistoryFields>,
+  ): Promise<DogHistoryRowHandle> {
+    const existing = this.historyRows.get(row.id);
+    if (!existing || collection !== "dogHistory") {
+      throw new Error("history row missing");
+    }
+
+    existing.fields = {
+      ...existing.fields,
+      ...fields,
+    };
+    this.rowFields.set(row.id, existing.fields);
+    return existing;
   }
 
   async openTarget(target: string): Promise<DogRowHandle> {

@@ -1,7 +1,7 @@
 # putbase
 
 Monorepo containing:
-- `packages/putbase-core`: Core TypeScript SDK for Puter-backed rows, invites, membership, and CRDT sync.
+- `packages/putbase-core`: Core TypeScript SDK for Puter-backed rows, invites, member access, and CRDT sync.
 - `packages/putbase-react`: React bindings for `@putbase/core`.
 - `packages/woof-app`: Vite TypeScript SPA using the SDK.
 

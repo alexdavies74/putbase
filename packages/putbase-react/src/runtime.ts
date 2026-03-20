@@ -14,7 +14,34 @@ import type {
 } from "@putbase/core";
 import type { RowHandle } from "@putbase/core";
 
-import { createAdaptivePoller, type ActivitySubscriber, type AdaptivePoller } from "./polling";
+import { createAdaptivePoller, subscribeToBrowserActivity, type ActivitySubscriber, type AdaptivePoller } from "./polling";
+
+type MutationSubscribedClient<Schema extends DbSchema> = PutBase<Schema> & {
+  subscribeToLocalMutations?: (listener: () => void) => (() => void) | void;
+};
+
+const browserActivitySubscriber: ActivitySubscriber = (notify) => {
+  return subscribeToBrowserActivity(notify) ?? undefined;
+};
+
+function composeActivitySubscribers(...subscribers: Array<ActivitySubscriber | undefined>): ActivitySubscriber | undefined {
+  const activeSubscribers = subscribers.filter((subscriber): subscriber is ActivitySubscriber => !!subscriber);
+  if (activeSubscribers.length === 0) {
+    return undefined;
+  }
+
+  return (notify) => {
+    const unsubscribers = activeSubscribers
+      .map((subscriber) => subscriber(notify))
+      .filter((unsubscribe): unsubscribe is () => void => typeof unsubscribe === "function");
+
+    return () => {
+      for (const unsubscribe of unsubscribers) {
+        unsubscribe();
+      }
+    };
+  };
+}
 
 export type LoadStatus = "idle" | "loading" | "success" | "error";
 
@@ -189,6 +216,7 @@ class Resource<TData> implements ResourceController<TData> {
   private poller: AdaptivePoller | null = null;
 
   constructor(
+    readonly live: boolean,
     private readonly options: ResourceOptions<TData>,
     private readonly onEmpty: () => void,
     private readonly subscribeToActivity?: ActivitySubscriber,
@@ -357,12 +385,21 @@ class Resource<TData> implements ResourceController<TData> {
 }
 
 export class PutBaseReactRuntime<Schema extends DbSchema = DbSchema> {
-  readonly resources = new Map<string, ResourceController<unknown>>();
+  readonly resources = new Map<string, Resource<unknown>>();
+  readonly externalSubscribeToActivity?: ActivitySubscriber;
+  readonly subscribeToActivity?: ActivitySubscriber;
 
   constructor(
     readonly client: PutBase<Schema>,
-    readonly subscribeToActivity?: ActivitySubscriber,
-  ) {}
+    subscribeToActivity?: ActivitySubscriber,
+  ) {
+    this.externalSubscribeToActivity = subscribeToActivity;
+    this.subscribeToActivity = composeActivitySubscribers(
+      browserActivitySubscriber,
+      subscribeToActivity,
+      this.subscribeToCoreMutations(),
+    );
+  }
 
   getLoadOnce<TData>(
     key: string,
@@ -380,6 +417,13 @@ export class PutBaseReactRuntime<Schema extends DbSchema = DbSchema> {
     return this.getResource(key, { live: true, load, snapshotOf });
   }
 
+  async refreshLiveResources(): Promise<void> {
+    const refreshes = Array.from(this.resources.values())
+      .filter((resource) => resource.live)
+      .map((resource) => resource.refresh());
+    await Promise.all(refreshes);
+  }
+
   private getResource<TData>(key: string, options: ResourceOptions<TData>): ResourceController<TData> {
     const existing = this.resources.get(key);
     if (existing) {
@@ -387,14 +431,27 @@ export class PutBaseReactRuntime<Schema extends DbSchema = DbSchema> {
     }
 
     const resource = new Resource<TData>(
+      options.live,
       options,
       () => {
         this.resources.delete(key);
       },
       this.subscribeToActivity,
     );
-    this.resources.set(key, resource as ResourceController<unknown>);
+    this.resources.set(key, resource as Resource<unknown>);
     return resource;
+  }
+
+  private subscribeToCoreMutations(): ActivitySubscriber | undefined {
+    const client = this.client as MutationSubscribedClient<Schema>;
+    if (typeof client.subscribeToLocalMutations !== "function") {
+      return undefined;
+    }
+
+    return (notify) => client.subscribeToLocalMutations?.(() => {
+      notify();
+      void this.refreshLiveResources();
+    });
   }
 }
 

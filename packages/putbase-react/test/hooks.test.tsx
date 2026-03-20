@@ -109,6 +109,7 @@ class FakeDb {
   nextQueryError: Error | null = null;
   nextQueryPromise: Promise<typeof this.queryRows> | null = null;
   activitySubscriber: (() => void) | null = null;
+  localMutationListener: (() => void) | null = null;
   rememberedTargets = new Map<string, string>();
   failRememberedOpen = false;
   lastOpenedTarget: string | null = null;
@@ -254,6 +255,19 @@ class FakeDb {
 
   async clearRememberedPerUserRow(key: string): Promise<void> {
     this.rememberedTargets.delete(`${this.username}:${key}`);
+  }
+
+  subscribeToLocalMutations(listener: () => void): () => void {
+    this.localMutationListener = listener;
+    return () => {
+      if (this.localMutationListener === listener) {
+        this.localMutationListener = null;
+      }
+    };
+  }
+
+  emitLocalMutation(): void {
+    this.localMutationListener?.();
   }
 }
 
@@ -744,6 +758,41 @@ describe("@putbase/react", () => {
     db.queryRows = [makeTagRow("tag_1", "friendly"), makeTagRow("tag_2", "sleepy")];
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5_000);
+      await flushMicrotasks();
+    });
+
+    expect(db.queryCalls).toBe(2);
+    expect(app.container.textContent).toContain("friendly,sleepy");
+    await app.unmount();
+  });
+
+  it("refreshes live queries immediately after a local core mutation", async () => {
+    vi.useFakeTimers();
+    const db = new FakeDb();
+    const queryOptions = {
+      in: {
+        id: "dog_1",
+        collection: "dogs",
+        owner: "alex",
+        target: "https://worker.example/rows/dog_1",
+      },
+      index: "byCreatedAt" as const,
+      order: "asc" as const,
+      limit: 100,
+    };
+
+    function Probe() {
+      const result = useQuery(db as unknown as PutBase<TestSchema>, "tags", queryOptions);
+      return <div>{result.rows.map((row) => row.fields.label).join(",")}</div>;
+    }
+
+    const app = await renderApp(<Probe />);
+
+    expect(db.queryCalls).toBe(1);
+    db.queryRows = [makeTagRow("tag_1", "friendly"), makeTagRow("tag_2", "sleepy")];
+
+    await act(async () => {
+      db.emitLocalMutation();
       await flushMicrotasks();
     });
 

@@ -273,7 +273,7 @@ export function PutBaseProvider<Schema extends DbSchema>({
   if (
     runtimeRef.current === null ||
     runtimeRef.current.client !== client ||
-    runtimeRef.current.subscribeToActivity !== subscribeToActivity
+    runtimeRef.current.externalSubscribeToActivity !== subscribeToActivity
   ) {
     runtimeRef.current = new Runtime(client, subscribeToActivity);
   }

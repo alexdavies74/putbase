@@ -90,6 +90,14 @@ describe("PutBase", () => {
     delete runtimeGlobal.puter;
   });
 
+  it("rejects the reserved built-in user collection name in schemas", () => {
+    expect(() => defineSchema({
+      user: collection({
+        fields: {},
+      }),
+    })).toThrow('Collection name "user" is reserved');
+  });
+
   it("opens a row target", async () => {
     const db = new PutBase({
       schema: MINIMAL_SCHEMA,

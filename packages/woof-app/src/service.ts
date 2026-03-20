@@ -12,7 +12,7 @@ type PuterAI = Pick<AI, "chat">;
 
 export type WoofDbPort = Pick<
   WoofDb,
-  "whoAmI" | "put" | "listMembers"
+  "whoAmI" | "put" | "query" | "update" | "listMembers"
 >;
 
 export interface ChatEntry {
@@ -75,7 +75,9 @@ export class WoofService {
   }
 
   async enterChat(args: { dogName: string }): Promise<DogRowHandle> {
-    return await this.db.put("dogs", { name: args.dogName });
+    const row = await this.db.put("dogs", { name: args.dogName });
+    await this.activateHistory(row);
+    return row;
   }
 
   expectDogRow(row: AnyRowHandle<WoofSchema>): DogRowHandle {
@@ -174,7 +176,42 @@ export class WoofService {
   }
 
   async relinquish(): Promise<void> {
+    await this.clearActiveHistory();
     this.disconnectRow();
+  }
+
+  async activateHistory(row: DogRowHandle): Promise<void> {
+    await this.clearActiveHistory();
+    const existingHistoryRows = await this.db.query("dogHistory", {
+      index: "byDogTarget",
+      value: row.target,
+      limit: 1,
+    });
+    const existingHistoryRow = existingHistoryRows[0] ?? null;
+
+    if (existingHistoryRow) {
+      if (existingHistoryRow.fields.status !== "active") {
+        await this.db.update("dogHistory", existingHistoryRow, { status: "active" });
+      }
+      return;
+    }
+
+    await this.db.put("dogHistory", {
+      dogTarget: row.target,
+      status: "active",
+    });
+  }
+
+  private async clearActiveHistory(): Promise<void> {
+    const activeHistoryRows = await this.db.query("dogHistory", {
+      where: { status: "active" },
+      limit: 20,
+    });
+
+    await Promise.all(
+      activeHistoryRows.map((historyRow) =>
+        this.db.update("dogHistory", historyRow, { status: "inactive" })),
+    );
   }
 
   private async getDogReplies(args: {

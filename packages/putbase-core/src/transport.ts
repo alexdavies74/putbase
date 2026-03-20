@@ -18,6 +18,7 @@ type RowAction =
   | "members/remove"
   | "parents/link-parent"
   | "parents/register-child"
+  | "parents/update-index"
   | "sync/poll"
   | "sync/send"
   | "parents/unlink-parent"

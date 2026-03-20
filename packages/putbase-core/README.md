@@ -32,7 +32,7 @@ const { data: inviteLink } = useInviteLink(db, board);
 
 Every piece of data in PutBase is a **row**. A row belongs to a **collection** defined in your schema, holds typed fields, and has its own identity and access control. You get a `RowHandle` when you create or fetch a row — that handle is your entry point for reading fields, sharing the row, and subscribing to real-time updates.
 
-Rows can be nested. A collection can declare that its rows live **inside** a parent collection: a `card` lives inside a `board`, a `comment` lives inside a `post`. The parent relationship constrains who can see child rows — gaining access to a parent automatically makes the children visible too.
+Rows can be nested. A collection can declare that its rows live **inside** a parent collection: a `card` lives inside a `board`, a user-scoped `record` lives inside the built-in `user` collection. The parent relationship constrains who can see child rows — gaining access to a parent automatically makes the children visible too.
 
 Access control is **explicit-grant only**. There are no complex rule expressions to misconfigure. To let another user into a row, you generate an invite link and send it to them. They accept it, they're in. That's the whole model.
 
@@ -77,7 +77,7 @@ export const schema = defineSchema({
 export type Schema = typeof schema;
 ```
 
-- `collection({ in: [...] })` — `in` lists the allowed parent collections; omit it for top-level rows
+- `collection({ in: [...] })` — `in` lists the allowed parent collections.
 - `field.string()` / `.number()` / `.boolean()` / `.date()` — typed scalar fields; chain `.optional()` or `.default(value)` as needed
 - `index(fieldName)` — makes a field queryable with ordering and range filters
 
@@ -136,6 +136,8 @@ await db.update("cards", card, { done: true });
 
 ## Querying
 
+PutBase queries always run within a known scope. For most child collections that means passing an explicit parent row. For collections declared `in: ["user"]`, the current user is used automatically.
+
 ### Imperative
 
 ```ts
@@ -146,6 +148,37 @@ const cards = await db.query("cards", {
   limit: 50,
 });
 ```
+
+### User-scoped discovery rows
+
+For "all games I created or joined", model an app-defined join/index collection under the built-in `user` scope:
+
+```ts
+const schema = defineSchema({
+  games: collection({
+    fields: {
+      title: field.string(),
+    },
+  }),
+  gameRecords: collection({
+    in: ["user"],
+    fields: {
+      gameTarget: field.string(),
+      role: field.string(),
+    },
+    indexes: {
+      byGameTarget: index("gameTarget"),
+    },
+  }),
+});
+
+const game = await db.put("games", { title: "Friday night match" });
+await db.put("gameRecords", { gameTarget: game.target, role: "owner" });
+
+const myGames = await db.query("gameRecords", {});
+```
+
+`gameRecords` rows stay app-managed: create one when the user creates or joins a game.
 
 ### With React
 
@@ -292,7 +325,7 @@ connection.disconnect();
 pnpm --filter todo-app dev
 ```
 
-For a fuller picture of how the pieces fit together in a real app, read `packages/woof-app`. It uses CRDT-backed live chat, the `usePerUserRow` restore/invite flow, child rows with per-user metadata, and role-aware UI — the patterns you'll reach for once basic reads and writes are working.
+For a fuller picture of how the pieces fit together in a real app, read `packages/woof-app`. It uses CRDT-backed live chat, user-scoped history rows for room restore, child rows with per-user metadata, and role-aware UI — the patterns you'll reach for once basic reads and writes are working.
 
 ```bash
 pnpm --filter woof-app dev

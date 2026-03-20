@@ -57,7 +57,10 @@ function snapshotRows(rows: Array<RowHandle<string, DbRowFields>>): string {
   return stableJsonStringify(snapshot);
 }
 
-function normalizeParents(input: DbRowRef | DbRowRef[]): DbRowRef[] {
+function normalizeParents(input: DbRowRef | DbRowRef[] | undefined): DbRowRef[] {
+  if (!input) {
+    return [];
+  }
   return (Array.isArray(input) ? input : [input]).map((row) => toRowRef(row));
 }
 
@@ -66,20 +69,27 @@ export class Query<Schema extends DbSchema> {
     private readonly transport: Transport,
     private readonly rows: Rows<Schema>,
     private readonly schema: Schema,
+    private readonly resolveOptions?: <TCollection extends CollectionName<Schema>>(
+      collection: TCollection,
+      options: DbQueryOptions<Schema, TCollection>,
+    ) => Promise<DbQueryOptions<Schema, TCollection>>,
   ) {}
 
   async query<TCollection extends CollectionName<Schema>>(
     collection: TCollection,
     options: DbQueryOptions<Schema, TCollection>,
   ): Promise<Array<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>>> {
-    const parentRefs = normalizeParents(options.in);
+    const resolvedOptions = this.resolveOptions
+      ? await this.resolveOptions(collection, options)
+      : options;
+    const parentRefs = normalizeParents(resolvedOptions.in);
     if (parentRefs.length === 0) {
       throw new Error("query requires at least one parent in scope");
     }
 
     const collectionSpec = getCollectionSpec(this.schema, collection);
-    const selectedIndex = pickIndex(collectionSpec, options);
-    const limit = Math.max(1, Math.min(200, options.limit ?? 50));
+    const selectedIndex = pickIndex(collectionSpec, resolvedOptions);
+    const limit = Math.max(1, Math.min(200, resolvedOptions.limit ?? 50));
 
     const parentResults = await Promise.all(
       parentRefs.map(async (parent) => {
@@ -92,11 +102,11 @@ export class Query<Schema extends DbSchema> {
 
         return this.transport.row(parent).request<DbQueryResponse>("db/query", {
           collection,
-          order: options.order ?? "asc",
+          order: resolvedOptions.order ?? "asc",
           limit,
           index: indexName,
           value,
-          where: selectedIndex ? undefined : options.where,
+          where: selectedIndex ? undefined : resolvedOptions.where,
         });
       }),
     );

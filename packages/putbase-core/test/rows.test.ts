@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { loadRememberedPerUserRow, rememberPerUserRow } from "../src/per-user-rows";
 import { PutBase } from "../src/putbase";
 import { Query } from "../src/query";
 import { collection, defineSchema, field, index } from "../src/schema";
+import type { BackendClient } from "../src/types";
 import { InMemoryKv } from "../src/worker/in-memory-kv";
 import { RowWorker } from "../src/worker/core";
 
@@ -71,7 +73,19 @@ const schema = defineSchema({
       byStatus: index("status"),
     },
   }),
+  gameRecords: collection({
+    in: ["user"],
+    fields: {
+      gameTarget: field.string(),
+      role: field.string(),
+    },
+    indexes: {
+      byGameTarget: index("gameTarget"),
+    },
+  }),
 });
+
+const INTERNAL_USER_SCOPE_ROW_KEY = "__putbase_user_scope_v1__";
 
 async function flushMicrotasks(): Promise<void> {
   await Promise.resolve();
@@ -88,7 +102,11 @@ function buildWatchRow(id: string, title: string) {
   };
 }
 
-function buildDb(args: { username: string; network: TestWorkerNetwork }): PutBase<typeof schema> {
+function buildDb(args: {
+  username: string;
+  network: TestWorkerNetwork;
+  backend?: BackendClient;
+}): PutBase<typeof schema> {
   const workerBase = `https://${args.username}-federation.example`;
 
   args.network.register(
@@ -101,6 +119,7 @@ function buildDb(args: { username: string; network: TestWorkerNetwork }): PutBas
 
   return new PutBase({
     schema,
+    backend: args.backend,
     identityProvider: async () => ({ username: args.username }),
     fetchFn: args.network.fetch as typeof fetch,
     appBaseUrl: `https://app.${args.username}.example`,
@@ -141,6 +160,29 @@ describe("PutBase rows", () => {
     expect(done[0].fields.status).toBe("done");
   });
 
+  it("removes stale index entries when an indexed field changes", async () => {
+    const network = new TestWorkerNetwork();
+    const db = buildDb({ username: "alice", network });
+
+    const project = await db.put("projects", { name: "Website" });
+    const task = await db.put("tasks", { title: "Ship v2" }, { in: project.toRef() });
+
+    await db.update("tasks", task.toRef(), { status: "done" });
+
+    const todo = await db.query("tasks", {
+      in: project.toRef(),
+      where: { status: "todo" },
+    });
+    const done = await db.query("tasks", {
+      in: project.toRef(),
+      where: { status: "done" },
+    });
+
+    expect(todo).toHaveLength(0);
+    expect(done).toHaveLength(1);
+    expect(done[0].id).toBe(task.id);
+  });
+
   it("accepts a parent row handle for put and query inputs", async () => {
     const network = new TestWorkerNetwork();
     const db = buildDb({ username: "alice", network });
@@ -156,6 +198,66 @@ describe("PutBase rows", () => {
     expect(tasks).toHaveLength(1);
     expect(tasks[0].id).toBe(task.id);
     expect(tasks[0].fields.title).toBe("Ship v2");
+  });
+
+  it("puts and queries user-scoped rows without explicit parents", async () => {
+    const network = new TestWorkerNetwork();
+    const db = buildDb({ username: "alice", network });
+
+    const record = await db.put("gameRecords", {
+      gameTarget: "https://games.example/rows/game_1",
+      role: "owner",
+    });
+
+    const records = await db.query("gameRecords", {
+      index: "byGameTarget",
+      value: "https://games.example/rows/game_1",
+    });
+    const parents = await record.in.list();
+
+    expect(records).toHaveLength(1);
+    expect(records[0].id).toBe(record.id);
+    expect(parents).toEqual([
+      expect.objectContaining({
+        collection: "user",
+        owner: "alice",
+      }),
+    ]);
+  });
+
+  it("reuses and recreates remembered user scope rows as needed", async () => {
+    const network = new TestWorkerNetwork();
+    const backend = { workers: {}, kv: new InMemoryKv() } as BackendClient;
+    const db = buildDb({ username: "alice", network, backend });
+
+    await db.put("gameRecords", {
+      gameTarget: "https://games.example/rows/game_1",
+      role: "owner",
+    });
+
+    const rememberedBefore = await loadRememberedPerUserRow(backend, "alice", INTERNAL_USER_SCOPE_ROW_KEY);
+    expect(rememberedBefore).toBeTruthy();
+
+    await db.query("gameRecords", { where: { role: "owner" } });
+    const rememberedAfterReuse = await loadRememberedPerUserRow(backend, "alice", INTERNAL_USER_SCOPE_ROW_KEY);
+    expect(rememberedAfterReuse?.target).toBe(rememberedBefore?.target);
+
+    await rememberPerUserRow(backend, "alice", INTERNAL_USER_SCOPE_ROW_KEY, {
+      target: "https://alice-federation.example/rows/row_missing",
+    });
+
+    await db.put("gameRecords", {
+      gameTarget: "https://games.example/rows/game_2",
+      role: "reader",
+    });
+
+    const recreated = await db.query("gameRecords", { where: { role: "reader" } });
+    const rememberedAfterRecreate = await loadRememberedPerUserRow(backend, "alice", INTERNAL_USER_SCOPE_ROW_KEY);
+
+    expect(recreated).toHaveLength(1);
+    expect(rememberedAfterRecreate).toBeTruthy();
+    expect(rememberedAfterRecreate?.target).not.toBe("https://alice-federation.example/rows/row_missing");
+    expect(rememberedAfterRecreate?.target).not.toBe(rememberedBefore?.target);
   });
 
   it("reuses row handles for the life of a row and updates fields in place", async () => {
