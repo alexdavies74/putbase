@@ -76,6 +76,10 @@ async function flushMicrotasks(): Promise<void> {
   await Promise.resolve();
 }
 
+async function settle<T>(receipt: { settled: Promise<T> }): Promise<T> {
+  return receipt.settled;
+}
+
 const MINIMAL_SCHEMA = defineSchema({
   rows: collection({
     fields: {
@@ -805,8 +809,7 @@ describe("PutBase", () => {
     });
 
     await db.ensureReady();
-    const row = db.put("rows", { name: "Rex" });
-    await row.settled;
+    const row = await settle(db.put("rows", { name: "Rex" }));
 
     expect(row.ref.baseUrl).toBe(deployedWorkerBase);
     expect(requestedUrls).toContain(`${deployedWorkerBase}/rows`);
@@ -907,8 +910,7 @@ describe("PutBase", () => {
 
     releaseCreate.resolve({ url: deployedWorkerBase });
     await readyPromise;
-    const row = db.put("rows", { name: "Rex" });
-    await row.settled;
+    const row = await settle(db.put("rows", { name: "Rex" }));
 
     expect(deployCalls).toBe(1);
     expect(row.ref.baseUrl).toBe(deployedWorkerBase);
@@ -958,12 +960,9 @@ describe("PutBase", () => {
       fetchFn: fetchFn as typeof fetch,
     });
 
-    await firstDb.ensureReady();
-    await secondDb.ensureReady();
-    const firstRow = firstDb.put("rows", { name: "Rex" });
-    const secondRow = secondDb.put("rows", { name: "Spot" });
-    await firstRow.settled;
-    await secondRow.settled;
+    await Promise.all([firstDb.ensureReady(), secondDb.ensureReady()]);
+    const firstRow = await settle(firstDb.put("rows", { name: "Rex" }));
+    const secondRow = await settle(secondDb.put("rows", { name: "Spot" }));
 
     expect(deployCalls).toBe(1);
     expect(firstRow.id).not.toBe(secondRow.id);
@@ -1013,8 +1012,7 @@ describe("PutBase", () => {
     });
 
     await db.ensureReady();
-    const row = db.put("rows", { name: "Rex" });
-    await row.settled;
+    const row = await settle(db.put("rows", { name: "Rex" }));
 
     expect(getCalls).toBeGreaterThan(0);
     expect(deployCalls).toBe(0);

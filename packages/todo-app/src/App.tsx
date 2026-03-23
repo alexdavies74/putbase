@@ -20,16 +20,18 @@ async function rememberRecentBoard(board: BoardHandle): Promise<void> {
   const existingRecentBoard = existingRecentBoards[0] ?? null;
 
   if (existingRecentBoard) {
-    await db.update("recentBoards", existingRecentBoard.ref, {
+    const updatedRecentBoardWrite = db.update("recentBoards", existingRecentBoard.ref, {
       openedAt: Date.now(),
     });
+    await updatedRecentBoardWrite.settled;
     return;
   }
 
-  await db.put("recentBoards", {
+  const recentBoardWrite = db.put("recentBoards", {
     boardRef: board.ref,
     openedAt: Date.now(),
   });
+  await recentBoardWrite.settled;
 }
 
 async function loadRecentBoards(): Promise<RecentBoardHandle[]> {
@@ -114,7 +116,9 @@ function LandingView({ errorMessage, onBoard }: { errorMessage?: string; onBoard
   const [recentBoardsError, setRecentBoardsError] = useState("");
 
   const createBoard = useMutation(async (t: string) => {
-    const board = await db.put("boards", { title: t });
+    const boardWrite = db.put("boards", { title: t });
+    const board = boardWrite.value;
+    await boardWrite.settled;
     await rememberRecentBoard(board);
     return board;
   });
@@ -249,11 +253,13 @@ function BoardView({ board, onLeave }: { board: BoardHandle; onLeave: () => void
   const { inviteLink } = useInviteLink(db, board.ref);
 
   const addCard = useMutation(async (cardText: string) => {
-    await db.put("cards", { text: cardText, done: false, createdAt: Date.now() }, { in: board.ref });
+    const cardWrite = db.put("cards", { text: cardText, done: false, createdAt: Date.now() }, { in: board.ref });
+    await cardWrite.settled;
   });
 
   const toggleDone = useMutation(async (card: CardHandle) => {
-    await db.update("cards", card.ref, { done: !card.fields.done });
+    const updatedCardWrite = db.update("cards", card.ref, { done: !card.fields.done });
+    await updatedCardWrite.settled;
   });
 
   return (

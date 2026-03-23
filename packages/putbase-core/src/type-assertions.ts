@@ -93,17 +93,21 @@ void db.query("mixedRecords", { where: { label: "x" } });
 // @ts-expect-error mixed parent collections still require an explicit scope on insert
 void db.put("mixedRecords", { label: "x" });
 
-const project = db.put("projects", { name: "Website" });
+const projectWrite = db.put("projects", { name: "Website" });
+const project = projectWrite.value;
 const projectName: string = project.fields.name;
 void projectName;
+void projectWrite.settled;
 
-const task = db.put("tasks", { title: "Ship v2" }, { in: projectRef });
+const taskWrite = db.put("tasks", { title: "Ship v2" }, { in: projectRef });
+const task = taskWrite.value;
 const title: string = task.fields.title;
 const status: string = task.fields.status;
 const maybePoints: number | undefined = task.fields.points;
 void title;
 void status;
 void maybePoints;
+void taskWrite.settled;
 void task.in.add(projectRef);
 void task.in.list().then((parents) => {
   const firstParent = parents[0];

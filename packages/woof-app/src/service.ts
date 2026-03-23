@@ -49,7 +49,7 @@ export class WoofService {
   }
 
   enterChat(args: { dogName: string }): DogRowHandle {
-    const row = this.db.put("dogs", { name: args.dogName });
+    const row = this.db.put("dogs", { name: args.dogName }).value;
     this.activateHistory(row);
     return row;
   }
@@ -118,7 +118,7 @@ export class WoofService {
     }
 
     const actor = await this.db.whoAmI();
-    await this.db.put(
+    const tagWrite = this.db.put(
       "tags",
       {
         label: trimmed,
@@ -129,6 +129,7 @@ export class WoofService {
         in: row.ref,
       },
     );
+    await tagWrite.settled;
   }
 
   async relinquish(): Promise<void> {
@@ -139,7 +140,7 @@ export class WoofService {
     const historyRow = this.db.put("dogHistory", {
       dogRef: row.ref,
       status: "active",
-    });
+    }).value;
     void this.clearActiveHistory(historyRow.id).catch((error) => {
       console.error("[woof-app] failed to clear prior active dog history rows", {
         error,
@@ -159,7 +160,7 @@ export class WoofService {
         historyRow.id === keepHistoryRowId
           ? Promise.resolve(historyRow)
           :
-        this.db.update("dogHistory", historyRow.ref, { status: "inactive" })),
+        this.db.update("dogHistory", historyRow.ref, { status: "inactive" }).settled),
     );
   }
 
