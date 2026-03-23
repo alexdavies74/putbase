@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { createYjsBinding } from "@putbase/yjs";
 
 import {
   RowHandle,
@@ -25,7 +26,7 @@ import type {
   TagRowHandle,
   WoofSchema,
 } from "../src/schema";
-import { WoofService, type WoofDbPort } from "../src/service";
+import { WoofService, type ChatEntry, type WoofDbPort } from "../src/service";
 
 function settledReceipt<TValue>(value: TValue): MutationReceipt<TValue> {
   return {
@@ -271,6 +272,21 @@ class MockDb implements WoofDbPort {
   }
 }
 
+function chatEntries(doc: Y.Doc): ChatEntry[] {
+  return doc.getArray<ChatEntry>("messages").toArray();
+}
+
+function connectDoc(row: DogRowHandle) {
+  const binding = createYjsBinding(Y);
+  const connection = row.connectCrdt(binding.callbacks);
+  return {
+    binding,
+    connection,
+    doc: binding.getValue(),
+    flush: async () => connection.flush(),
+  };
+}
+
 describe("WoofService", () => {
   it("creates row on first-run adopt flow", async () => {
     const db = new MockDb();
@@ -313,21 +329,25 @@ describe("WoofService", () => {
 
   it("sends user and dog messages in one turn", async () => {
     const db = new MockDb();
-    const doc = new Y.Doc();
-    const service = new WoofService(db, doc);
+    const service = new WoofService(db);
     let chatInput: ChatMessage[] | undefined;
 
     const row = await service.enterChat({ dogName: "Rex" });
-    service.connectToRow(row);
+    const connected = connectDoc(row);
 
-    await service.sendTurn(row, "hello", {
-      async chat(input: ChatMessage[]) {
-        chatInput = input;
-        return { message: { content: "woof!" } };
+    await service.sendTurn(row, {
+      content: "hello",
+      doc: connected.doc,
+      flush: connected.flush,
+      puterAI: {
+        async chat(input: ChatMessage[]) {
+          chatInput = input;
+          return { message: { content: "woof!" } };
+        },
       },
     });
 
-    const entries = service.chatArray.toArray();
+    const entries = chatEntries(connected.doc);
     expect(entries).toHaveLength(2);
     expect(entries[0]).toMatchObject({ userType: "user", content: "hello", signedBy: "alex" });
     expect(entries[1]).toMatchObject({ userType: "dog", content: "woof!", threadUser: "alex" });
@@ -344,6 +364,8 @@ describe("WoofService", () => {
       role: "user",
       content: "[alex → Rex] hello",
     });
+
+    connected.connection.disconnect();
   });
 
   it("uses row field name for dog persona", async () => {
@@ -354,12 +376,17 @@ describe("WoofService", () => {
     const row = await db.openInvite(
       "https://woof.example/?worker=https%3A%2F%2Fworkers.puter.site%2Falex%2Frows%2Frow_joined&token=invite_1",
     );
-    service.connectToRow(row);
+    const connected = connectDoc(row);
 
-    await service.sendTurn(row, "hello", {
-      async chat(input: ChatMessage[]) {
-        chatInput = input;
-        return { message: { content: "woof!" } };
+    await service.sendTurn(row, {
+      content: "hello",
+      doc: connected.doc,
+      flush: connected.flush,
+      puterAI: {
+        async chat(input: ChatMessage[]) {
+          chatInput = input;
+          return { message: { content: "woof!" } };
+        },
       },
     });
 
@@ -368,25 +395,37 @@ describe("WoofService", () => {
       content:
         "You are Joined, a friendly dog in a shared room with separate 1:1 threads. You can reply to multiple users, but you must always reply to the trigger user. Return STRICT JSON only: {\"triggerUserReply\":\"message\",\"otherReplies\":[{\"toUser\":\"username\",\"content\":\"message\"}]} Keep content short and playful.",
     });
+
+    connected.connection.disconnect();
   });
 
   it("formats history as chronological user and assistant messages", async () => {
     const db = new MockDb();
     const service = new WoofService(db);
     const row = await service.enterChat({ dogName: "Rex" });
-    service.connectToRow(row);
+    const connected = connectDoc(row);
     let secondTurnChatInput: ChatMessage[] | undefined;
 
-    await service.sendTurn(row, "first", {
-      async chat() {
-        return { message: { content: JSON.stringify({ triggerUserReply: "first bark" }) } };
+    await service.sendTurn(row, {
+      content: "first",
+      doc: connected.doc,
+      flush: connected.flush,
+      puterAI: {
+        async chat() {
+          return { message: { content: JSON.stringify({ triggerUserReply: "first bark" }) } };
+        },
       },
     });
 
-    await service.sendTurn(row, "second", {
-      async chat(input: ChatMessage[]) {
-        secondTurnChatInput = input;
-        return { message: { content: "second bark" } };
+    await service.sendTurn(row, {
+      content: "second",
+      doc: connected.doc,
+      flush: connected.flush,
+      puterAI: {
+        async chat(input: ChatMessage[]) {
+          secondTurnChatInput = input;
+          return { message: { content: "second bark" } };
+        },
       },
     });
 
@@ -395,6 +434,8 @@ describe("WoofService", () => {
       { role: "assistant", content: "[Rex → alex] first bark" },
       { role: "user", content: "[alex → Rex] second" },
     ]);
+
+    connected.connection.disconnect();
   });
 
   it("falls back to canned dog reply when AI call fails", async () => {
@@ -402,128 +443,172 @@ describe("WoofService", () => {
     const service = new WoofService(db);
 
     const row = await service.enterChat({ dogName: "Rex" });
-    service.connectToRow(row);
+    const connected = connectDoc(row);
 
-    await service.sendTurn(row, "hello", {
-      async chat() { throw { message: "messages required" }; },
+    await service.sendTurn(row, {
+      content: "hello",
+      doc: connected.doc,
+      flush: connected.flush,
+      puterAI: {
+        async chat() { throw { message: "messages required" }; },
+      },
     });
 
-    const entries = service.chatArray.toArray();
+    const entries = chatEntries(connected.doc);
     expect(entries).toHaveLength(2);
     expect(entries[0]).toMatchObject({ userType: "user", content: "hello" });
     expect(entries[1]).toMatchObject({ userType: "dog", content: "Rex barks happily.", threadUser: "alex" });
+
+    connected.connection.disconnect();
   });
 
   it("can send additional dog replies to other users", async () => {
     const db = new MockDb();
     const service = new WoofService(db);
     const row = await service.enterChat({ dogName: "Rex" });
-    service.connectToRow(row);
+    const connected = connectDoc(row);
 
-    await service.sendTurn(row, "hello", {
-      async chat() {
-        return {
-          message: {
-            content: JSON.stringify({
-              triggerUserReply: "[Rex → alex] woof for alex",
-              otherReplies: [{ toUser: "friend", content: "[Rex → friend] woof for friend" }],
-            }),
-          },
-        };
+    await service.sendTurn(row, {
+      content: "hello",
+      doc: connected.doc,
+      flush: connected.flush,
+      puterAI: {
+        async chat() {
+          return {
+            message: {
+              content: JSON.stringify({
+                triggerUserReply: "[Rex → alex] woof for alex",
+                otherReplies: [{ toUser: "friend", content: "[Rex → friend] woof for friend" }],
+              }),
+            },
+          };
+        },
       },
     });
 
-    const entries = service.chatArray.toArray();
+    const entries = chatEntries(connected.doc);
     expect(entries).toHaveLength(3);
     expect(entries[1]).toMatchObject({ userType: "dog", content: "woof for alex", threadUser: "alex" });
     expect(entries[2]).toMatchObject({ userType: "dog", content: "woof for friend", threadUser: "friend" });
+
+    connected.connection.disconnect();
   });
 
   it("strips address prefix from plain-text AI replies", async () => {
     const db = new MockDb();
     const service = new WoofService(db);
     const row = await service.enterChat({ dogName: "Rex" });
-    service.connectToRow(row);
+    const connected = connectDoc(row);
 
-    await service.sendTurn(row, "hello", {
-      async chat() {
-        return { message: { content: "[Rex → alex] plain woof" } };
+    await service.sendTurn(row, {
+      content: "hello",
+      doc: connected.doc,
+      flush: connected.flush,
+      puterAI: {
+        async chat() {
+          return { message: { content: "[Rex → alex] plain woof" } };
+        },
       },
     });
 
-    const entries = service.chatArray.toArray();
+    const entries = chatEntries(connected.doc);
     expect(entries).toHaveLength(2);
     expect(entries[1]).toMatchObject({ userType: "dog", content: "plain woof", threadUser: "alex" });
+
+    connected.connection.disconnect();
   });
 
   it("forces a reply to actor when AI omits it", async () => {
     const db = new MockDb();
     const service = new WoofService(db);
     const row = await service.enterChat({ dogName: "Rex" });
-    service.connectToRow(row);
+    const connected = connectDoc(row);
 
-    await service.sendTurn(row, "hello", {
-      async chat() {
-        return {
-          message: {
-            content: JSON.stringify({ otherReplies: [{ toUser: "friend", content: "hello friend" }] }),
-          },
-        };
+    await service.sendTurn(row, {
+      content: "hello",
+      doc: connected.doc,
+      flush: connected.flush,
+      puterAI: {
+        async chat() {
+          return {
+            message: {
+              content: JSON.stringify({ otherReplies: [{ toUser: "friend", content: "hello friend" }] }),
+            },
+          };
+        },
       },
     });
 
-    const entries = service.chatArray.toArray();
+    const entries = chatEntries(connected.doc);
     expect(entries).toHaveLength(3);
     expect(entries[1]).toMatchObject({ userType: "dog", content: "Rex barks in reply.", threadUser: "alex" });
     expect(entries[2]).toMatchObject({ userType: "dog", content: "hello friend", threadUser: "friend" });
+
+    connected.connection.disconnect();
   });
 
-  it("relinquish disconnects CRDT state", async () => {
+  it("relinquish only clears active history rows", async () => {
     const db = new MockDb();
     const service = new WoofService(db);
     const row = await service.enterChat({ dogName: "Rex" });
-    service.connectToRow(row);
+    const connected = connectDoc(row);
+    await service.sendTurn(row, {
+      content: "hello",
+      doc: connected.doc,
+      flush: connected.flush,
+    });
 
     await service.relinquish();
 
-    expect(service.chatArray.toArray()).toEqual([]);
+    expect(chatEntries(connected.doc)).toHaveLength(2);
+
+    connected.connection.disconnect();
   });
 
   it("clears local CRDT state when switching to a different dog row", async () => {
     const db = new MockDb();
-    const service = new WoofService(db, new Y.Doc());
+    const service = new WoofService(db);
 
     const firstRow = service.enterChat({ dogName: "Rex" });
-    service.connectToRow(firstRow);
-    await service.sendTurn(firstRow, "hello");
-    expect(service.chatArray.toArray()).toHaveLength(2);
-
-    await service.relinquish();
+    const firstConnected = connectDoc(firstRow);
+    await service.sendTurn(firstRow, {
+      content: "hello",
+      doc: firstConnected.doc,
+      flush: firstConnected.flush,
+    });
+    expect(chatEntries(firstConnected.doc)).toHaveLength(2);
 
     const secondRow = service.enterChat({ dogName: "Fido" });
-    service.connectToRow(secondRow);
+    firstConnected.connection.disconnect();
+    firstConnected.binding.reset();
+    const secondConnected = connectDoc(secondRow);
 
     expect(secondRow.id).not.toBe(firstRow.id);
-    expect(service.chatArray.toArray()).toEqual([]);
+    expect(chatEntries(firstConnected.binding.getValue())).toEqual([]);
 
-    await service.sendTurn(secondRow, "fresh start");
-    expect(service.chatArray.toArray()).toHaveLength(2);
+    await service.sendTurn(secondRow, {
+      content: "fresh start",
+      doc: secondConnected.doc,
+      flush: secondConnected.flush,
+    });
+    expect(chatEntries(secondConnected.doc)).toHaveLength(2);
 
-    const restored = new WoofService(db, new Y.Doc());
-    restored.connectToRow(secondRow);
+    const restored = connectDoc(secondRow);
 
-    expect(restored.chatArray.toArray()).toHaveLength(2);
-    expect(restored.chatArray.toArray().every((entry) => entry.content !== "hello")).toBe(true);
-    expect(restored.chatArray.toArray()[0]).toMatchObject({ content: "fresh start" });
+    expect(chatEntries(restored.doc)).toHaveLength(2);
+    expect(chatEntries(restored.doc).every((entry) => entry.content !== "hello")).toBe(true);
+    expect(chatEntries(restored.doc)[0]).toMatchObject({ content: "fresh start" });
+
+    secondConnected.connection.disconnect();
+    restored.connection.disconnect();
   });
 
   it("applies remote CRDT updates via applyRemoteUpdate callback", async () => {
     const db = new MockDb();
-    const doc = new Y.Doc();
-    const service = new WoofService(db, doc);
+    const service = new WoofService(db);
 
     const row = await service.enterChat({ dogName: "Rex" });
-    service.connectToRow(row);
+    const connected = connectDoc(row);
 
     const remoteDoc = new Y.Doc();
     const remoteArray = remoteDoc.getArray<{
@@ -554,8 +639,10 @@ describe("WoofService", () => {
       sequence: 1,
     });
 
-    const entries = service.chatArray.toArray();
+    const entries = chatEntries(connected.doc);
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({ content: "hello from remote", signedBy: "friend" });
+
+    connected.connection.disconnect();
   });
 });

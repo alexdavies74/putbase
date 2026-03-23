@@ -15,6 +15,9 @@ import type {
   AuthSession,
   AnyRowHandle,
   CollectionName,
+  CrdtBinding,
+  CrdtConnectCallbacks,
+  CrdtConnection,
   DbMemberInfo,
   DbQueryOptions,
   DbRowLocator,
@@ -67,6 +70,13 @@ export interface UseSessionResult extends UseResourceResult<AuthSession> {
   signIn(): Promise<PutBaseUser>;
 }
 
+export interface UseCrdtResult<TValue> {
+  value: TValue;
+  version: number;
+  status: "idle" | "connected";
+  flush(): Promise<void>;
+}
+
 export interface UseHookOptions {
   enabled?: boolean;
 }
@@ -115,6 +125,12 @@ const RuntimeContext = createContext<PutBaseReactRuntime<any> | null>(null);
 
 const noopSubscribe = () => () => undefined;
 const noopRefresh = async () => undefined;
+const noopFlush = async () => undefined;
+
+interface CrdtRowLike {
+  target: string;
+  connectCrdt(callbacks: CrdtConnectCallbacks): CrdtConnection;
+}
 
 function makeResourceResult<TData>(
   snapshot: Partial<ResourceSnapshot<TData>> & Pick<ResourceSnapshot<TData>, "status">,
@@ -288,6 +304,73 @@ export function PutBaseProvider<Schema extends DbSchema>({
 
 export function usePutBase<Schema extends DbSchema>(): PutBase<Schema> {
   return useRuntime<Schema>().client;
+}
+
+export function useCrdt<TValue>(
+  row: CrdtRowLike | null | undefined,
+  binding: CrdtBinding<TValue>,
+): UseCrdtResult<TValue> {
+  const connectionRef = useRef<CrdtConnection | null>(null);
+  const rowTargetRef = useRef<string | null>(null);
+  const snapshotRef = useRef<{ value: TValue; version: number } | null>(null);
+  const getSnapshot = () => {
+    const nextValue = binding.getValue();
+    const nextVersion = binding.getVersion();
+    const cached = snapshotRef.current;
+    if (cached && cached.version === nextVersion && cached.value === nextValue) {
+      return cached;
+    }
+
+    const nextSnapshot = {
+      value: nextValue,
+      version: nextVersion,
+    };
+    snapshotRef.current = nextSnapshot;
+    return nextSnapshot;
+  };
+  const snapshot = useSyncExternalStore(
+    binding.subscribe,
+    getSnapshot,
+    getSnapshot,
+  );
+
+  useEffect(() => {
+    if (!row) {
+      if (rowTargetRef.current !== null) {
+        binding.reset();
+        rowTargetRef.current = null;
+      }
+      connectionRef.current = null;
+      return;
+    }
+
+    if (rowTargetRef.current !== null && rowTargetRef.current !== row.target) {
+      binding.reset();
+    }
+
+    const connection = row.connectCrdt(binding.callbacks);
+    connectionRef.current = connection;
+    rowTargetRef.current = row.target;
+
+    return () => {
+      connection.disconnect();
+      if (connectionRef.current === connection) {
+        connectionRef.current = null;
+      }
+    };
+  }, [binding, row]);
+
+  return {
+    ...snapshot,
+    status: row ? "connected" : "idle",
+    async flush(): Promise<void> {
+      if (!connectionRef.current) {
+        await noopFlush();
+        return;
+      }
+      await connectionRef.current.flush();
+    },
+  };
 }
 
 export function usePutBaseReady<Schema extends DbSchema>(

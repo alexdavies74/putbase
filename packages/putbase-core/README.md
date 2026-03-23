@@ -92,7 +92,7 @@ export type Schema = typeof schema;
 - `field.string()` / `.number()` / `.boolean()` / `.date()` — typed scalar fields; chain `.optional()` or `.default(value)` as needed
 - `index(fieldName)` — makes a field queryable with ordering and range filters
 
-Fields are for scalar metadata that you want to query or index. For richer collaborative document state, use PutBase's CRDT sync instead of storing nested JSON in row fields.
+Fields are for scalar metadata that you want to query or index. The canonical CRDT pattern is: row fields hold metadata and lookup keys, while the CRDT document holds the collaborative value state for that row target.
 
 ---
 
@@ -270,36 +270,21 @@ PutBase includes a CRDT message bridge. Connect any CRDT library to a row and al
 
 Sending CRDT updates requires `"writer"` access, but all members can poll and receive them.
 
-Here is the full integration with [Yjs](https://yjs.dev):
+Here is the recommended [Yjs](https://yjs.dev) integration:
 
 ```ts
 import * as Y from "yjs";
+import { createYjsBinding } from "@putbase/yjs";
+import { useCrdt } from "@putbase/react";
 
-const doc = new Y.Doc();
-let pending: Uint8Array | null = null;
+const binding = createYjsBinding(Y);
+const { value: doc, flush } = useCrdt(board, binding);
 
-doc.on("update", (update: Uint8Array) => {
-  pending = pending ? Y.mergeUpdates([pending, update]) : update;
-});
-
-const connection = board.connectCrdt({
-  applyRemoteUpdate: (body) => {
-    const update = decodeUpdate(body);   // your decode helper
-    if (update) Y.applyUpdate(doc, update);
-  },
-  produceLocalUpdate: () => {
-    const next = pending;
-    pending = null;
-    return next ? encodeUpdate(next) : null;  // your encode helper
-  },
-});
-
-// Push local changes immediately
-await connection.flush();
-
-// Clean up when done
-connection.disconnect();
+// Write to doc normally, then push immediately when needed
+await flush();
 ```
+
+`@putbase/yjs` uses your app's `yjs` instance instead of bundling its own runtime, which avoids the multi-runtime Yjs failure mode.
 
 ---
 

@@ -99,6 +99,14 @@ export interface CrdtConnectCallbacks {
   produceLocalUpdate: () => JsonValue | null;
 }
 
+export interface CrdtBinding<TValue> {
+  callbacks: CrdtConnectCallbacks;
+  getValue(): TValue;
+  getVersion(): number;
+  subscribe(listener: () => void): () => void;
+  reset(): void;
+}
+
 export interface CrdtConnection {
   disconnect(): void;
   flush(): Promise<void>;

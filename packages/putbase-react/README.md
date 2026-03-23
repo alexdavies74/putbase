@@ -101,6 +101,27 @@ useEffect(() => {
 }, [row]);
 ```
 
+## CRDT bindings
+
+Use row fields for queryable metadata and the CRDT document for collaborative value state.
+
+`useCrdt` wires any `CrdtBinding` to a row. For Yjs, inject the app's own `Y` instance so `@putbase/yjs` never loads a second runtime:
+
+```tsx
+import * as Y from "yjs";
+import { useRef } from "react";
+import { useCrdt } from "@putbase/react";
+import { createYjsBinding } from "@putbase/yjs";
+
+function Room({ row }: { row: BoardHandle | null }) {
+  const bindingRef = useRef(createYjsBinding(Y));
+  const { value: doc, version } = useCrdt(row, bindingRef.current);
+
+  const entries = doc.getArray<string>("messages").toArray();
+  return <pre data-version={version}>{JSON.stringify(entries)}</pre>;
+}
+```
+
 ## Invite links
 
 `useInviteLink` lazily generates (or reuses) an invite link for a row. `useInviteFromLocation` handles the recipient side: it detects PutBase invite URLs in the current location, waits for the session, calls `openInvite`, and clears the invite params.

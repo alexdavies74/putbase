@@ -1,9 +1,11 @@
 import { puter } from "@heyputer/puter.js";
-import { useInviteFromLocation, useInviteLink, useMutation, usePutBase, useQuery, useRowTarget, useSession } from "@putbase/react";
+import type { CrdtBinding } from "@putbase/core";
+import { useCrdt, useInviteFromLocation, useInviteLink, useMutation, usePutBase, useQuery, useRowTarget, useSession } from "@putbase/react";
+import { createYjsBinding } from "@putbase/yjs";
 import { useEffect, useRef, useState } from "react";
+import * as Y from "yjs";
 
 import type { ChatEntry } from "./service";
-import { useChatEntries, useRowConnection } from "./app-hooks";
 import type { DogRowHandle, WoofSchema } from "./schema";
 import { TagsPanel } from "./tags-panel";
 import { getErrorMessage } from "./utils";
@@ -90,13 +92,20 @@ function SignInPanel(props: {
 
 function ChatPanel(props: {
   currentUsername: string | null;
+  flush(): Promise<void>;
+  doc: Y.Doc;
   entries: ChatEntry[];
   row: DogRowHandle;
 }) {
   const [message, setMessage] = useState("");
   const containerRef = useRef<HTMLDivElement | null>(null);
   const sendTurn = useMutation(async (content: string) => {
-    await service.sendTurn(props.row, content, puter.ai);
+    await service.sendTurn(props.row, {
+      content,
+      doc: props.doc,
+      flush: props.flush,
+      puterAI: puter.ai,
+    });
   });
 
   useEffect(() => {
@@ -153,13 +162,17 @@ function RoomScreen(props: {
 }) {
   const db = usePutBase<WoofSchema>();
   const [copyStatus, setCopyStatus] = useState("");
+  const bindingRef = useRef<CrdtBinding<Y.Doc> | null>(null);
+  if (bindingRef.current === null) {
+    bindingRef.current = createYjsBinding(Y);
+  }
   const inviteLink = useInviteLink(db, props.row);
+  const crdt = useCrdt(props.row, bindingRef.current);
   const relinquish = useMutation(async () => {
     await service.relinquish();
     await props.onRelinquished();
   });
-  useRowConnection(service, props.row);
-  const entries = useChatEntries(service, props.row, props.currentUsername);
+  const entries = service.getChatEntries(crdt.value, props.currentUsername);
 
   return (
     <section className="panel">
@@ -206,7 +219,7 @@ function RoomScreen(props: {
         row={props.row}
         onCreateTag={(label) => service.createTag(props.row, label)}
       />
-      <ChatPanel currentUsername={props.currentUsername} entries={entries} row={props.row} />
+      <ChatPanel currentUsername={props.currentUsername} doc={crdt.value} entries={entries} flush={crdt.flush} row={props.row} />
       <p className="muted">{relinquish.error ? getErrorMessage(relinquish.error, "Failed to relinquish dog.") : ""}</p>
     </section>
   );

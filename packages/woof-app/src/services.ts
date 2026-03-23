@@ -1,4 +1,3 @@
-import * as Y from "yjs";
 import { PutBase } from "@putbase/core";
 
 import { woofSchema, type WoofDb } from "./schema";
@@ -9,6 +8,4 @@ export const db: WoofDb = new PutBase({
   schema: woofSchema,
 });
 
-const doc = new Y.Doc();
-
-export const service = new WoofService(db, doc);
+export const service = new WoofService(db);

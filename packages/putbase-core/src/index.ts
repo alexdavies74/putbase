@@ -9,6 +9,7 @@ export type { MutationReceipt, MutationStatus } from "./mutation-receipt";
 export type {
   AuthSession,
   BackendClient,
+  CrdtBinding,
   CrdtConnectCallbacks,
   CrdtConnection,
   DeployWorkerArgs,

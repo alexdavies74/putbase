@@ -10,6 +10,9 @@ import {
   defineSchema,
   field,
   index,
+  type CrdtBinding,
+  type CrdtConnectCallbacks,
+  type CrdtConnection,
   type DbMemberInfo,
   type DbRowRef,
   type PutBase,
@@ -17,6 +20,7 @@ import {
 
 import {
   PutBaseProvider,
+  useCrdt,
   useCurrentUser,
   useInviteLink,
   useInviteFromLocation,
@@ -228,12 +232,18 @@ class FakeDb {
     return null;
   }
 
-  async createInviteToken() {
-    return {
+  createInviteToken() {
+    const value = {
       token: "invite_1",
       rowId: "dog_1",
       invitedBy: "alex",
       createdAt: 1,
+    };
+    return {
+      value,
+      settled: Promise.resolve(value),
+      status: "settled" as const,
+      error: undefined,
     };
   }
 
@@ -270,6 +280,44 @@ class FakeDb {
   emitLocalMutation(): void {
     this.localMutationListener?.();
   }
+}
+
+function makeBinding<TValue>(initialValue: TValue) {
+  let value = initialValue;
+  let version = 0;
+  const listeners = new Set<() => void>();
+
+  const notify = () => {
+    for (const listener of listeners) {
+      listener();
+    }
+  };
+
+  return {
+    binding: {
+      callbacks: {
+        applyRemoteUpdate: () => undefined,
+        produceLocalUpdate: () => null,
+      },
+      getValue: () => value,
+      getVersion: () => version,
+      subscribe(listener: () => void) {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+      reset() {
+        version += 1;
+        notify();
+      },
+    } satisfies CrdtBinding<TValue>,
+    setValue(nextValue: TValue) {
+      value = nextValue;
+      version += 1;
+      notify();
+    },
+  };
 }
 
 async function flushMicrotasks(): Promise<void> {
@@ -310,13 +358,18 @@ async function renderApp(element: ReactElement) {
   document.body.appendChild(container);
   const root = createRoot(container);
 
-  await act(async () => {
-    root.render(element);
-    await flushMicrotasks();
-  });
+  const render = async (nextElement: ReactElement) => {
+    await act(async () => {
+      root.render(nextElement);
+      await flushMicrotasks();
+    });
+  };
+
+  await render(element);
 
   return {
     container,
+    render,
     async unmount() {
       await act(async () => {
         root.unmount();
@@ -335,8 +388,8 @@ afterEach(() => {
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe("@putbase/react", () => {
-  it("initializes the ambient Puter client on import", () => {
-    expect((globalThis as { puter?: unknown }).puter).toBeTruthy();
+  it("exports hooks without requiring ambient Puter setup", () => {
+    expect(typeof usePutBase).toBe("function");
   });
 });
 
@@ -357,6 +410,96 @@ describe("@putbase/react", () => {
     );
 
     expect(seen).toBe(db);
+    await app.unmount();
+  });
+
+  it("connects CRDT bindings to rows and delegates flush", async () => {
+    const flushSpy = vi.fn(async () => undefined);
+    const connectSpy = vi.fn((_callbacks: CrdtConnectCallbacks): CrdtConnection => ({
+      disconnect: () => undefined,
+      flush: flushSpy,
+    }));
+    const row = {
+      target: "https://worker.example/rows/dog_1",
+      connectCrdt: connectSpy,
+    };
+    const { binding, setValue } = makeBinding("idle");
+    let latest: ReturnType<typeof useCrdt<string>> | null = null;
+
+    function Probe() {
+      latest = useCrdt(row, binding);
+      return <div>{latest.value}</div>;
+    }
+
+    const app = await renderApp(<Probe />);
+
+    expect(connectSpy).toHaveBeenCalledTimes(1);
+    expect(latest?.status).toBe("connected");
+    expect(latest?.value).toBe("idle");
+
+    await act(async () => {
+      setValue("updated");
+      await flushMicrotasks();
+    });
+
+    expect(latest?.value).toBe("updated");
+    expect(latest?.version).toBeGreaterThan(0);
+
+    await act(async () => {
+      await latest?.flush();
+      await flushMicrotasks();
+    });
+
+    expect(flushSpy).toHaveBeenCalledTimes(1);
+    await app.unmount();
+  });
+
+  it("resets CRDT bindings when rows change or become null", async () => {
+    const disconnectSpy = vi.fn();
+    const firstConnectSpy = vi.fn((_callbacks: CrdtConnectCallbacks): CrdtConnection => ({
+      disconnect: disconnectSpy,
+      flush: async () => undefined,
+    }));
+    const secondConnectSpy = vi.fn((_callbacks: CrdtConnectCallbacks): CrdtConnection => ({
+      disconnect: disconnectSpy,
+      flush: async () => undefined,
+    }));
+    const firstRow = {
+      target: "https://worker.example/rows/dog_1",
+      connectCrdt: firstConnectSpy,
+    };
+    const secondRow = {
+      target: "https://worker.example/rows/dog_2",
+      connectCrdt: secondConnectSpy,
+    };
+    const { binding } = makeBinding("value");
+    const resetSpy = vi.spyOn(binding, "reset");
+    let latest: ReturnType<typeof useCrdt<string>> | null = null;
+
+    function Probe(props: { activeRow: typeof firstRow | null }) {
+      latest = useCrdt(props.activeRow, binding);
+      return <div>{latest.status}</div>;
+    }
+
+    const app = await renderApp(<Probe activeRow={firstRow} />);
+
+    expect(latest?.status).toBe("connected");
+    expect(firstConnectSpy).toHaveBeenCalledTimes(1);
+
+    await app.render(<Probe activeRow={secondRow} />);
+    expect(secondConnectSpy).toHaveBeenCalledTimes(1);
+    expect(resetSpy).toHaveBeenCalledTimes(1);
+    expect(disconnectSpy).toHaveBeenCalledTimes(1);
+
+    await app.render(<Probe activeRow={null} />);
+    expect(latest?.status).toBe("idle");
+    expect(resetSpy).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await latest?.flush();
+      await flushMicrotasks();
+    });
+
     await app.unmount();
   });
 

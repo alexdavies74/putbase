@@ -1,7 +1,6 @@
 import * as Y from "yjs";
 import type {
   AnyRowHandle,
-  CrdtConnection,
   PutBaseUser,
 } from "@putbase/core";
 import type { AI, ChatMessage, ChatResponse } from "@heyputer/puter.js";
@@ -9,7 +8,6 @@ import type { AI, ChatMessage, ChatResponse } from "@heyputer/puter.js";
 import type { DogRowHandle, TagRowHandle, WoofDb, WoofSchema } from "./schema";
 
 type PuterAI = Pick<AI, "chat">;
-const REMOTE_UPDATE_ORIGIN = "putbase-remote-sync";
 
 export type WoofDbPort = Pick<
   WoofDb,
@@ -25,29 +23,6 @@ export interface ChatEntry {
   signedBy: string;
 }
 
-function encodeUpdate(update: Uint8Array): { type: string; data: string } {
-  return {
-    type: "yjs-update",
-    data: btoa(Array.from(update, (b) => String.fromCharCode(b)).join("")),
-  };
-}
-
-function decodeUpdate(body: unknown): Uint8Array | null {
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    return null;
-  }
-  const record = body as Record<string, unknown>;
-  if (record.type !== "yjs-update" || typeof record.data !== "string") {
-    return null;
-  }
-  try {
-    const binary = atob(record.data);
-    return Uint8Array.from(binary, (c) => c.charCodeAt(0));
-  } catch {
-    return null;
-  }
-}
-
 function expectDogRow(row: AnyRowHandle<WoofSchema>): DogRowHandle {
   if (row.collection !== "dogs") {
     throw new Error(`Expected dogs row, got ${row.collection}`);
@@ -56,20 +31,21 @@ function expectDogRow(row: AnyRowHandle<WoofSchema>): DogRowHandle {
   return row as DogRowHandle;
 }
 
-export class WoofService {
-  private connection: CrdtConnection | null = null;
-  private pendingUpdate: Uint8Array | null = null;
-  private loadedRowTarget: string | null = null;
+function getChatArray(doc: Y.Doc): Y.Array<ChatEntry> {
+  return doc.getArray<ChatEntry>("messages");
+}
 
+export class WoofService {
   constructor(
     private readonly db: WoofDbPort,
-    private doc: Y.Doc = new Y.Doc(),
-  ) {
-    this.doc.on("update", this.handleDocUpdate);
-  }
+  ) {}
 
-  get chatArray(): Y.Array<ChatEntry> {
-    return this.doc.getArray<ChatEntry>("messages");
+  getChatEntries(doc: Y.Doc, username: string | null): ChatEntry[] {
+    if (!username) {
+      return [];
+    }
+
+    return getChatArray(doc).toArray().filter((entry) => entry.threadUser === username);
   }
 
   enterChat(args: { dogName: string }): DogRowHandle {
@@ -82,63 +58,40 @@ export class WoofService {
     return expectDogRow(row);
   }
 
-  connectToRow(row: DogRowHandle): void {
-    if (this.loadedRowTarget && this.loadedRowTarget !== row.target) {
-      this.resetDoc();
-    }
-
-    this.loadedRowTarget = row.target;
-    this.connection?.disconnect();
-    this.connection = row.connectCrdt({
-      applyRemoteUpdate: (body) => {
-        const update = decodeUpdate(body);
-        if (update) {
-          Y.applyUpdate(this.doc, update, REMOTE_UPDATE_ORIGIN);
-        }
-      },
-      produceLocalUpdate: () => {
-        const update = this.pendingUpdate;
-        this.pendingUpdate = null;
-        return update ? encodeUpdate(update) : null;
-      },
-    });
-  }
-
-  disconnectRow(): void {
-    this.connection?.disconnect();
-    this.connection = null;
-  }
-
-  async sendTurn(row: DogRowHandle, content: string, puterAI?: PuterAI): Promise<void> {
+  async sendTurn(
+    row: DogRowHandle,
+    args: { content: string; doc: Y.Doc; flush?: () => Promise<void>; puterAI?: PuterAI },
+  ): Promise<void> {
     const actor = await this.db.whoAmI();
     const members = await this.db.listMembers(row);
     const dogName = String(row.fields.name ?? "");
+    const chatArray = getChatArray(args.doc);
 
     const userEntry: ChatEntry = {
       id: crypto.randomUUID(),
-      content,
+      content: args.content,
       userType: "user",
       threadUser: actor.username,
       createdAt: Date.now(),
       signedBy: actor.username,
     };
 
-    this.doc.transact(() => {
-      this.chatArray.push([userEntry]);
+    args.doc.transact(() => {
+      chatArray.push([userEntry]);
     });
 
     const replies = await this.getDogReplies({
       actor,
       dogName,
-      entries: this.chatArray.toArray(),
+      entries: chatArray.toArray(),
       members,
-      puterAI,
+      puterAI: args.puterAI,
     });
 
     if (replies.length > 0) {
-      this.doc.transact(() => {
+      args.doc.transact(() => {
         const now = Date.now();
-        this.chatArray.push(
+        chatArray.push(
           replies.map((reply, i) => ({
             id: crypto.randomUUID(),
             content: reply.content,
@@ -151,7 +104,7 @@ export class WoofService {
       });
     }
 
-    await this.connection?.flush();
+    await args.flush?.();
   }
 
   async createTag(row: DogRowHandle, label: string): Promise<void> {
@@ -180,9 +133,6 @@ export class WoofService {
 
   async relinquish(): Promise<void> {
     await this.clearActiveHistory();
-    this.disconnectRow();
-    this.resetDoc();
-    this.loadedRowTarget = null;
   }
 
   activateHistory(row: DogRowHandle): void {
@@ -276,23 +226,6 @@ export class WoofService {
       });
       return fallbackToActor();
     }
-  }
-
-  private readonly handleDocUpdate = (update: Uint8Array, origin: unknown): void => {
-    if (origin === REMOTE_UPDATE_ORIGIN) {
-      return;
-    }
-
-    this.pendingUpdate = this.pendingUpdate
-      ? Y.mergeUpdates([this.pendingUpdate, update])
-      : update;
-  };
-
-  private resetDoc(): void {
-    this.doc.off("update", this.handleDocUpdate);
-    this.pendingUpdate = null;
-    this.doc = new Y.Doc();
-    this.doc.on("update", this.handleDocUpdate);
   }
 
 }
