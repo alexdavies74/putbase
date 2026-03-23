@@ -10,6 +10,8 @@ export type RecentBoardHandle = RowHandle<"recentBoards", RowFields<Schema, "rec
 export type CardHandle = RowHandle<"cards", RowFields<Schema, "cards">, "boards", Schema>;
 
 async function rememberRecentBoard(board: BoardHandle): Promise<void> {
+  // `recentBoards` is declared as `in: ["user"]`, so omitting `in` uses the
+  // current signed-in user's built-in user row.
   const existingRecentBoards = await db.query("recentBoards", {
     index: "byBoardTarget",
     value: board.target,
@@ -31,6 +33,7 @@ async function rememberRecentBoard(board: BoardHandle): Promise<void> {
 }
 
 async function loadRecentBoards(): Promise<RecentBoardHandle[]> {
+  // This query also runs inside the current signed-in user's implicit `user` scope.
   return db.query("recentBoards", {
     index: "byOpenedAt",
     order: "desc",

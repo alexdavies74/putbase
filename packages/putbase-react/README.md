@@ -87,6 +87,26 @@ function CardList({ board }: { board: BoardHandle }) {
 }
 ```
 
+Collections declared as `in: ["user"]` keep the same ergonomics in React: if you omit `in`, PutBase queries inside the current signed-in user's built-in `user` row.
+
+```tsx
+function RecentBoards() {
+  const { rows: recentBoards } = useQuery<Schema, "recentBoards">(db, "recentBoards", {
+    index: "byOpenedAt",
+    order: "desc",
+    limit: 10,
+  });
+
+  return (
+    <ul>
+      {recentBoards.map((recentBoard) => (
+        <li key={recentBoard.id}>{recentBoard.fields.boardTarget}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
 ## Row Handle Identity
 
 `useRow`, `useRowTarget`, and `useQuery` keep `RowHandle` identity stable for the life of a row within a `PutBase` client. When the row fields change, the same handle object is reused and `row.fields` is updated in place.
@@ -144,26 +164,6 @@ function InviteHandler() {
     },
   });
   return null;
-}
-```
-
-For a single "current row" per signed-in user, `usePerUserRow` combines invite precedence, remembered target restore, and explicit `remember()` / `clear()` helpers:
-
-```tsx
-import { usePerUserRow } from "@putbase/react";
-
-function AppShell() {
-  const currentBoard = usePerUserRow(db, {
-    key: "current-board",
-  });
-
-  if (currentBoard.status === "loading") return <p>Opening board…</p>;
-  if (currentBoard.data == null) return <button onClick={async () => {
-    const board = await db.put("boards", { title: "Launch checklist" });
-    await currentBoard.remember(board);
-  }}>Create board</button>;
-
-  return <BoardScreen board={currentBoard.data} />;
 }
 ```
 

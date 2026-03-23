@@ -145,12 +145,12 @@ await db.update("cards", card, { done: true });
 
 ## Querying
 
-PutBase queries always run within a known scope. For `cards`, that scope is a `board`. For `recentBoards`, the scope is the current signed-in user.
+PutBase queries always run within a known scope. For `cards`, that scope is a `board`, so you pass `in: board`. For collections declared as `in: ["user"]`, omitting `in` means "use the current signed-in user's built-in `user` row."
 
 ### Imperative
 
 ```ts
-// No `in` is required for collections inside a `user`
+// `recentBoards` is declared as `in: ["user"]`, so the current user scope is implicit.
 const recentBoards = await db.query("recentBoards", {
   index: "byOpenedAt",
   order: "desc",
@@ -192,7 +192,7 @@ function CardList({ board }: { board: BoardHandle }) {
 }
 ```
 
-`rows` is always a typed array — never `undefined`. Other hooks in `@putbase/react`: `useRow`, `useCurrentUser`, `useInviteLink`, `useInviteFromLocation`, `usePerUserRow`, `useMemberUsernames`, `useDirectMembers`, `useMutation`.
+`rows` is always a typed array — never `undefined`. Other hooks in `@putbase/react`: `useRow`, `useCurrentUser`, `useInviteLink`, `useInviteFromLocation`, `useMemberUsernames`, `useDirectMembers`, and `useMutation`.
 
 
 For app boot, prefer `useSession(db)`:
@@ -313,11 +313,11 @@ pnpm --filter woof-app dev
 | `new PutBase({ schema, appBaseUrl? })` | Create a client. Pass `appBaseUrl` so invite links point back to your app. |
 | `ensureReady()` | Explicitly await authentication and provisioning. Optional — all operations wait for readiness automatically. |
 | `whoAmI()` | Returns `{ username }` for the signed-in Puter user. |
-| `put(collection, fields, options?)` | Create a row. Pass `{ in: parentHandle }` for child rows. Returns a `RowHandle`. |
+| `put(collection, fields, options?)` | Create a row. Pass `{ in: parentHandle }` for child rows; for collections declared as `in: ["user"]`, omitting `in` uses the current signed-in user's built-in `user` row. Returns a `RowHandle`. |
 | `update(collection, row, fields)` | Merge field updates onto a row. Returns a refreshed `RowHandle`. |
 | `getRow(collection, row)` | Fetch a row by typed reference. |
-| `query(collection, options)` | Load rows under a parent, with optional index, order, and limit. |
-| `watchQuery(collection, options, callbacks)` | Subscribe to repeated query refreshes via `callbacks.onChange`. Returns a handle with `.disconnect()`. |
+| `query(collection, options)` | Load rows under a parent, with optional index, order, and limit. For collections declared as `in: ["user"]`, omitting `in` uses the current signed-in user's built-in `user` row. |
+| `watchQuery(collection, options, callbacks)` | Subscribe to repeated query refreshes via `callbacks.onChange`. For collections declared as `in: ["user"]`, omitting `in` uses the current signed-in user's built-in `user` row. Returns a handle with `.disconnect()`. |
 | `createInviteToken(row)` | Generate a new invite token for a row. |
 | `getExistingInviteToken(row)` | Return the existing token if one exists, or `null`. |
 | `createInviteLink(row, token)` | Build a shareable URL containing the row target and token. |
