@@ -13,7 +13,7 @@ export class Parents {
     private readonly refreshFields: (row: DbRowRef) => Promise<Record<string, JsonValue>>,
   ) {}
 
-  async add(child: DbRowRef, parent: DbRowRef): Promise<void> {
+  async addRemote(child: DbRowRef, parent: DbRowRef): Promise<void> {
     const childRef = toRowRef(child);
     const parentRef = toRowRef(parent);
     assertParentAllowed(this.schema, childRef.collection, parentRef.collection);
@@ -37,7 +37,7 @@ export class Parents {
     });
   }
 
-  async remove(child: DbRowRef, parent: DbRowRef): Promise<void> {
+  async removeRemote(child: DbRowRef, parent: DbRowRef): Promise<void> {
     const childRef = toRowRef(child);
     const parentRef = toRowRef(parent);
 

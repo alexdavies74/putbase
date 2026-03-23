@@ -540,7 +540,7 @@ export function useInviteLink<Schema extends DbSchema>(
       resourceKey as string,
       async () => {
         const existing = await runtime.client.getExistingInviteToken(row as DbRowRef);
-        const invite = existing ?? await runtime.client.createInviteToken(row as DbRowRef);
+        const invite = existing ?? runtime.client.createInviteToken(row as DbRowRef).value;
         return runtime.client.createInviteLink(row as DbRowRef, invite.token);
       },
     ),

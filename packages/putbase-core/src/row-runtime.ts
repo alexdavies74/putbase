@@ -2,13 +2,24 @@ import type { Identity } from "./identity";
 import type { Provisioning } from "./provisioning";
 import type { Transport } from "./transport";
 import { buildRowTarget } from "./transport";
-import type { JoinOptions, Row, RowSnapshot } from "./types";
+import type { JoinOptions, PutBaseUser, Row, RowSnapshot } from "./types";
 
 interface PostMessageResponse {
   message: { sequence: number };
 }
 
+export interface PlannedRowState {
+  user: PutBaseUser;
+  federationWorkerUrl: string;
+}
+
+export interface PlannedRow {
+  row: Row;
+}
+
 export class RowRuntime {
+  private plannedState: PlannedRowState | null = null;
+
   constructor(
     private readonly transport: Transport,
     private readonly identity: Identity,
@@ -16,27 +27,53 @@ export class RowRuntime {
     private readonly ensureReady: () => Promise<void>,
   ) {}
 
-  async createRow(name: string): Promise<Row> {
-    await this.ensureReady();
+  setPlannedState(state: PlannedRowState): void {
+    this.plannedState = state;
+  }
 
-    const user = await this.identity.whoAmI();
-    const federationWorkerUrl = await this.provisioning.getFederationWorkerUrl(user.username);
+  clearPlannedState(): void {
+    this.plannedState = null;
+  }
+
+  assertPlannedState(): PlannedRowState {
+    if (!this.plannedState) {
+      throw new Error("PutBase client is not ready. Call ensureReady() before mutating.");
+    }
+
+    return this.plannedState;
+  }
+
+  planRow(name: string): PlannedRow {
+    const state = this.assertPlannedState();
     const rowId = this.transport.createId("row");
-    const rowTarget = buildRowTarget(federationWorkerUrl, rowId);
+    const rowTarget = buildRowTarget(state.federationWorkerUrl, rowId);
 
+    return {
+      row: {
+        id: rowId,
+        name,
+        owner: state.user.username,
+        target: rowTarget,
+        createdAt: Date.now(),
+      },
+    };
+  }
+
+  async commitPlannedRow(plan: PlannedRow): Promise<Row> {
+    const state = this.assertPlannedState();
     await this.transport.request({
-      url: `${federationWorkerUrl}/rows`,
+      url: `${state.federationWorkerUrl}/rows`,
       action: "rows/create",
-      rowId,
+      rowId: plan.row.id,
       payload: {
-        rowId,
-        rowName: name,
+        rowId: plan.row.id,
+        rowName: plan.row.name,
       },
     });
 
-    await this.joinRow(rowTarget, {});
+    await this.joinRow(plan.row.target, {});
 
-    const row = await this.getRow(rowTarget);
+    const row = await this.getRow(plan.row.target);
     return {
       id: row.id,
       name: row.name,
@@ -44,6 +81,14 @@ export class RowRuntime {
       target: row.target,
       createdAt: row.createdAt,
     };
+  }
+
+  async createRow(name: string): Promise<Row> {
+    await this.ensureReady();
+    const user = await this.identity.whoAmI();
+    const federationWorkerUrl = await this.provisioning.getFederationWorkerUrl(user.username);
+    this.setPlannedState({ user, federationWorkerUrl });
+    return this.commitPlannedRow(this.planRow(name));
   }
 
   async joinRow(target: string, options: JoinOptions = {}): Promise<Row> {

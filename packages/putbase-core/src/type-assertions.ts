@@ -93,30 +93,28 @@ void db.query("mixedRecords", { where: { label: "x" } });
 // @ts-expect-error mixed parent collections still require an explicit scope on insert
 void db.put("mixedRecords", { label: "x" });
 
-void db.put("projects", { name: "Website" }).then((project) => {
-  const name: string = project.fields.name;
-  void name;
+const project = db.put("projects", { name: "Website" });
+const projectName: string = project.fields.name;
+void projectName;
+
+const task = db.put("tasks", { title: "Ship v2" }, { in: projectRef });
+const title: string = task.fields.title;
+const status: string = task.fields.status;
+const maybePoints: number | undefined = task.fields.points;
+void title;
+void status;
+void maybePoints;
+void task.in.add(projectRef);
+void task.in.list().then((parents) => {
+  const firstParent = parents[0];
+  if (firstParent) {
+    const name: "projects" = firstParent.collection;
+    void name;
+  }
 });
 
-void db.put("tasks", { title: "Ship v2" }, { in: projectRef }).then((task) => {
-  const title: string = task.fields.title;
-  const status: string = task.fields.status;
-  const maybePoints: number | undefined = task.fields.points;
-  void title;
-  void status;
-  void maybePoints;
-  void task.in.add(projectRef);
-  void task.in.list().then((parents) => {
-    const firstParent = parents[0];
-    if (firstParent) {
-      const name: "projects" = firstParent.collection;
-      void name;
-    }
-  });
-
-  // @ts-expect-error tasks can only link to projects
-  void task.in.add(teamRef);
-});
+// @ts-expect-error tasks can only link to projects
+void task.in.add(teamRef);
 
 void db.openTarget("https://workers.example/rows/row_1").then((row) => {
   const collection: "projects" | "teams" | "tasks" | "gameRecords" | "mixedRecords" = row.collection;

@@ -221,6 +221,8 @@ export function App() {
       : null;
   const [loginError, setLoginError] = useState("");
   const [loginStatus, setLoginStatus] = useState<"idle" | "loading">("idle");
+  const [readyStatus, setReadyStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [readyError, setReadyError] = useState("");
   const [dismissedDogTarget, setDismissedDogTarget] = useState<string | null>(null);
   const invite = useInviteFromLocation<WoofSchema, DogRowHandle>(db, {
     clearLocation: (url) => {
@@ -232,12 +234,7 @@ export function App() {
     open: async (inviteInput, client) => service.expectDogRow(await client.openInvite(inviteInput)),
     onOpen: (nextRow) => {
       setDismissedDogTarget(null);
-      void service.activateHistory(nextRow).catch((error) => {
-        console.error("[woof-app] failed to activate dog history after invite", {
-          error,
-          target: nextRow.target,
-        });
-      });
+      service.activateHistory(nextRow);
     },
   });
   const invitePending = invite.hasInvite;
@@ -269,11 +266,44 @@ export function App() {
         ? getErrorMessage(openedActiveRow.error, "Could not reopen saved room.")
         : openedActiveRow.data && openedActiveRow.data.collection !== "dogs"
           ? "Saved room did not point to a dog row."
-          : "";
+          : readyStatus === "error"
+            ? readyError
+            : "";
   const bootLoading =
     invite.status === "loading"
     || dogHistory.status === "loading"
-    || (!!activeRowTarget && openedActiveRow.status === "loading");
+    || (!!activeRowTarget && openedActiveRow.status === "loading")
+    || (session.status === "success" && session.data?.signedIn && readyStatus !== "ready" && readyStatus !== "error");
+
+  useEffect(() => {
+    if (session.status !== "success" || !session.data?.signedIn) {
+      setReadyStatus("idle");
+      setReadyError("");
+      return;
+    }
+
+    let cancelled = false;
+    setReadyStatus("loading");
+    setReadyError("");
+    void db.ensureReady()
+      .then(() => {
+        if (cancelled) {
+          return;
+        }
+        setReadyStatus("ready");
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+        setReadyStatus("error");
+        setReadyError(getErrorMessage(error, "Could not initialize write access."));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [db, session.data, session.status]);
 
   if (session.status === "loading") {
     return <SignInPanel busy errorMessage="" hasInvite={invitePending} onSignIn={() => undefined} />;

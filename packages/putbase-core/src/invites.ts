@@ -40,16 +40,7 @@ export class Invites {
     return response.inviteToken;
   }
 
-  async createInviteToken(row: DbRowLocator): Promise<InviteToken> {
-    const user = await this.identity.whoAmI();
-
-    const payload: InviteToken = {
-      token: this.transport.createId("invite"),
-      rowId: row.id,
-      invitedBy: user.username,
-      createdAt: Date.now(),
-    };
-
+  async createInviteTokenRemote(row: DbRowLocator, payload: InviteToken): Promise<InviteToken> {
     const response = await this.transport.row(row).request<PostInviteResponse>("invite-token/create", payload);
 
     return response.inviteToken;

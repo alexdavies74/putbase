@@ -74,9 +74,9 @@ export class WoofService {
     return this.doc.getArray<ChatEntry>("messages");
   }
 
-  async enterChat(args: { dogName: string }): Promise<DogRowHandle> {
-    const row = await this.db.put("dogs", { name: args.dogName });
-    await this.activateHistory(row);
+  enterChat(args: { dogName: string }): DogRowHandle {
+    const row = this.db.put("dogs", { name: args.dogName });
+    this.activateHistory(row);
     return row;
   }
 
@@ -180,29 +180,20 @@ export class WoofService {
     this.disconnectRow();
   }
 
-  async activateHistory(row: DogRowHandle): Promise<void> {
-    await this.clearActiveHistory();
-    const existingHistoryRows = await this.db.query("dogHistory", {
-      index: "byDogTarget",
-      value: row.target,
-      limit: 1,
-    });
-    const existingHistoryRow = existingHistoryRows[0] ?? null;
-
-    if (existingHistoryRow) {
-      if (existingHistoryRow.fields.status !== "active") {
-        await this.db.update("dogHistory", existingHistoryRow, { status: "active" });
-      }
-      return;
-    }
-
-    await this.db.put("dogHistory", {
+  activateHistory(row: DogRowHandle): void {
+    const historyRow = this.db.put("dogHistory", {
       dogTarget: row.target,
       status: "active",
     });
+    void this.clearActiveHistory(historyRow.id).catch((error) => {
+      console.error("[woof-app] failed to clear prior active dog history rows", {
+        error,
+        target: row.target,
+      });
+    });
   }
 
-  private async clearActiveHistory(): Promise<void> {
+  private async clearActiveHistory(keepHistoryRowId?: string): Promise<void> {
     const activeHistoryRows = await this.db.query("dogHistory", {
       where: { status: "active" },
       limit: 20,
@@ -210,6 +201,9 @@ export class WoofService {
 
     await Promise.all(
       activeHistoryRows.map((historyRow) =>
+        historyRow.id === keepHistoryRowId
+          ? Promise.resolve(historyRow)
+          :
         this.db.update("dogHistory", historyRow, { status: "inactive" })),
     );
   }

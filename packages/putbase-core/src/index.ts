@@ -5,6 +5,7 @@ export { PutBaseError } from "./errors";
 export { PUTBASE_INVITE_TARGET_PARAM } from "./invites";
 export { collection, defineSchema, field, index } from "./schema";
 export type { PutBaseOptions } from "./putbase";
+export type { MutationReceipt, MutationStatus } from "./mutation-receipt";
 export type {
   AuthSession,
   BackendClient,

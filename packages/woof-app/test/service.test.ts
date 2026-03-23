@@ -11,6 +11,7 @@ import type {
   DbRowLocator,
   DbRowRef,
   MemberRole,
+  MutationReceipt,
   RowHandleBackend,
 } from "@putbase/core";
 import type { ChatMessage } from "@heyputer/puter.js";
@@ -25,6 +26,15 @@ import type {
   WoofSchema,
 } from "../src/schema";
 import { WoofService, type WoofDbPort } from "../src/service";
+
+function settledReceipt<TValue>(value: TValue): MutationReceipt<TValue> {
+  return {
+    value,
+    settled: Promise.resolve(value),
+    status: "settled",
+    error: undefined,
+  };
+}
 
 class MockDb implements WoofDbPort {
   public failOpenTarget = false;
@@ -41,11 +51,11 @@ class MockDb implements WoofDbPort {
   private readonly historyRows = new Map<string, DogHistoryRowHandle>();
 
   private readonly backend: RowHandleBackend<WoofSchema> = {
-    addParent: async () => undefined,
-    removeParent: async () => undefined,
+    addParent: () => settledReceipt(undefined),
+    removeParent: () => settledReceipt(undefined),
     listParents: async <TParentCollection extends string>() => [] as Array<DbRowRef<TParentCollection>>,
-    addMember: async () => undefined,
-    removeMember: async () => undefined,
+    addMember: () => settledReceipt(undefined),
+    removeMember: () => settledReceipt(undefined),
     listDirectMembers: async () => this.memberList.map((username) => ({
       username,
       role: this.roleFor(username),
@@ -129,18 +139,18 @@ class MockDb implements WoofDbPort {
     return { username: "alex" };
   }
 
-  async put(collection: "dogs", fields: DogRowHandle["fields"]): Promise<DogRowHandle>;
-  async put(collection: "dogHistory", fields: DogHistoryRowHandle["fields"]): Promise<DogHistoryRowHandle>;
-  async put(
+  put(collection: "dogs", fields: DogRowHandle["fields"]): DogRowHandle;
+  put(collection: "dogHistory", fields: DogHistoryRowHandle["fields"]): DogHistoryRowHandle;
+  put(
     collection: "tags",
     fields: TagRowHandle["fields"],
     options: { in: ReturnType<DogRowHandle["toRef"]> },
-  ): Promise<TagRowHandle>;
-  async put(
+  ): TagRowHandle;
+  put(
     collection: "dogs" | "dogHistory" | "tags",
     fields: Record<string, unknown>,
     options?: { in?: ReturnType<DogRowHandle["toRef"]> },
-  ): Promise<DogRowHandle | DogHistoryRowHandle | TagRowHandle> {
+  ): DogRowHandle | DogHistoryRowHandle | TagRowHandle {
     this.putCalls.push({ collection, fields, options });
     if (collection === "dogs") {
       return this.makeDogRow("row_created", fields);
@@ -166,11 +176,11 @@ class MockDb implements WoofDbPort {
     return filtered.slice(0, options.limit ?? filtered.length);
   }
 
-  async update(
+  update(
     collection: "dogHistory",
     row: DogHistoryRowHandle,
     fields: Partial<DogHistoryFields>,
-  ): Promise<DogHistoryRowHandle> {
+  ): DogHistoryRowHandle {
     const existing = this.historyRows.get(row.id);
     if (!existing || collection !== "dogHistory") {
       throw new Error("history row missing");
@@ -208,7 +218,7 @@ describe("WoofService", () => {
     const db = new MockDb();
     const service = new WoofService(db);
 
-    const row = await service.enterChat({ dogName: "Rex" });
+    const row = service.enterChat({ dogName: "Rex" });
 
     expect(row.id).toBe("row_created");
     expect(row.target).toBe("https://workers.puter.site/alex/rows/row_created");
@@ -228,7 +238,7 @@ describe("WoofService", () => {
   it("creates tags as DB child rows under the dog row", async () => {
     const db = new MockDb();
     const service = new WoofService(db);
-    const row = await service.enterChat({ dogName: "Rex" });
+    const row = service.enterChat({ dogName: "Rex" });
 
     await service.createTag(row, "friendly");
 

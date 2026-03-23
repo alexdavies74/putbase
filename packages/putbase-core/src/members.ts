@@ -12,14 +12,14 @@ interface EffectiveMembersResponse {
 export class Members<Schema extends DbSchema> {
   constructor(private readonly transport: Transport) {}
 
-  async add(row: DbRowLocator, username: string, role: MemberRole): Promise<void> {
+  async addRemote(row: DbRowLocator, username: string, role: MemberRole): Promise<void> {
     await this.transport.row(row).request("members/add", {
       username,
       role,
     });
   }
 
-  async remove(row: DbRowLocator, username: string): Promise<void> {
+  async removeRemote(row: DbRowLocator, username: string): Promise<void> {
     await this.transport.row(row).request("members/remove", {
       username,
     });
