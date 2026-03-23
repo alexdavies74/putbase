@@ -254,8 +254,9 @@ export function App() {
       return url.toString();
     },
     open: async (inviteInput, client) => service.expectDogRow(await client.openInvite(inviteInput)),
-    onOpen: (nextRow) => {
+    onOpen: async (nextRow) => {
       setDismissedDogRef(null);
+      await db.ensureReady();
       service.activateHistory(nextRow);
     },
   });
