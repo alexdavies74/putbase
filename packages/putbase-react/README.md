@@ -271,7 +271,7 @@ function useQuery<
   options: DbQueryOptions<Schema, TCollection> | null | undefined,
   hookOptions?: UseHookOptions,
 ): UseQueryResult<
-  RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>
+  RowHandle<Schema, TCollection>
 >
 ```
 
@@ -290,7 +290,7 @@ function useRow<
   row: RowTarget<TCollection> | null | undefined,
   hookOptions?: UseHookOptions,
 ): UseResourceResult<
-  RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>
+  RowHandle<Schema, TCollection>
 >
 ```
 

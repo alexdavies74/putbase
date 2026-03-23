@@ -26,19 +26,14 @@ export interface RowHandleBackend<Schema extends DbSchema = DbSchema> {
 }
 
 export type AnyRowHandle<Schema extends DbSchema> = {
-  [TCollection in CollectionName<Schema>]: RowHandle<
-    TCollection,
-    RowFields<Schema, TCollection>,
-    AllowedParentCollections<Schema, TCollection>,
-    Schema
-  >;
+  [TCollection in CollectionName<Schema>]: RowHandle<Schema, TCollection>;
 }[CollectionName<Schema>];
 
 export class RowHandle<
-  TCollection extends string = string,
-  TFields extends DbRowFields = DbRowFields,
-  TAllowedParentCollections extends string = string,
   TSchema extends DbSchema = DbSchema,
+  TCollection extends CollectionName<TSchema> = CollectionName<TSchema>,
+  TFields extends DbRowFields = RowFields<TSchema, TCollection>,
+  TAllowedParentCollections extends string = AllowedParentCollections<TSchema, TCollection>,
 > {
   readonly id: string;
 

@@ -11,7 +11,6 @@ import {
 } from "react";
 import type { PutBase } from "@putbase/core";
 import type {
-  AllowedParentCollections,
   AuthSession,
   AnyRowHandle,
   CollectionName,
@@ -25,7 +24,6 @@ import type {
   PutBaseUser,
   RowRef,
   RowTarget,
-  RowFields,
 } from "@putbase/core";
 import type { RowHandle } from "@putbase/core";
 
@@ -445,14 +443,12 @@ export function useQuery<
   options: DbQueryOptions<Schema, TCollection> | null | undefined,
   hookOptions: UseHookOptions = {},
 ): UseQueryResult<
-  RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>
+  RowHandle<Schema, TCollection>
 > {
   const runtime = useRuntime(client);
   const session = useSessionResource(runtime, hookOptions.enabled ?? true);
   const resourceKey = options ? makeQueryKey(collection, options) : null;
-  const blocked = blockedResourceResult<Array<
-    RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>
-  >>(session);
+  const blocked = blockedResourceResult<Array<RowHandle<Schema, TCollection>>>(session);
   const resource = useOptionalResource(
     (hookOptions.enabled ?? true) && !!options && !blocked,
     resourceKey,
@@ -478,15 +474,13 @@ export function useRow<
   row: RowTarget<TCollection> | null | undefined,
   options: UseHookOptions = {},
 ): UseResourceResult<
-  RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>
+  RowHandle<Schema, TCollection>
 > {
   const runtime = useRuntime(client);
   const session = useSessionResource(runtime, options.enabled ?? true);
   const rowRef = row ? resolveRowTarget(row) : null;
   const resourceKey = rowRef ? makeRowKey(rowRef.collection, rowRef) : null;
-  const blocked = blockedResourceResult<
-    RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>
-  >(session);
+  const blocked = blockedResourceResult<RowHandle<Schema, TCollection>>(session);
   const resource = useOptionalResource(
     (options.enabled ?? true) && !!rowRef && !blocked,
     resourceKey,
@@ -495,9 +489,7 @@ export function useRow<
       resourceKey as string,
       () => runtime.client.getRow(
         rowRef as RowRef<TCollection>,
-      ) as Promise<
-        RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>
-      >,
+      ) as Promise<RowHandle<Schema, TCollection>>,
       snapshots.row,
     ),
   );

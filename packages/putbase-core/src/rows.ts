@@ -4,7 +4,6 @@ import { OptimisticStore } from "./optimistic-store";
 import type { RowRuntime } from "./row-runtime";
 import type { WriteSettler } from "./write-settler";
 import type {
-  AllowedParentCollections,
   CollectionName,
   DbPutOptions,
   DbRowFields,
@@ -38,7 +37,7 @@ export class Rows<Schema extends DbSchema> {
       row: RowRef<TCollection>,
       owner: string,
       fields: RowFields<Schema, TCollection>,
-    ) => RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>,
+    ) => RowHandle<Schema, TCollection>,
     private readonly addParentRemote: (child: RowTarget, parent: RowTarget) => Promise<void>,
     private readonly notifyLocalMutation: () => void,
   ) {}
@@ -47,7 +46,7 @@ export class Rows<Schema extends DbSchema> {
     collection: TCollection,
     fields: InsertFields<Schema, TCollection>,
     options?: DbPutOptions<Schema, TCollection>,
-  ): MutationReceipt<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>> {
+  ): MutationReceipt<RowHandle<Schema, TCollection>> {
     const collectionSpec = getCollectionSpec(this.schema, collection);
     const parentRefs = normalizeParentRefs(options?.in);
     assertPutParents(collection, collectionSpec, parentRefs);
@@ -123,7 +122,7 @@ export class Rows<Schema extends DbSchema> {
     collection: TCollection,
     row: RowTarget<TCollection>,
     fields: Partial<RowFields<Schema, TCollection>>,
-  ): MutationReceipt<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>> {
+  ): MutationReceipt<RowHandle<Schema, TCollection>> {
     const rowRef = normalizeRowRef(row);
     const collectionSpec = getCollectionSpec(this.schema, collection);
     assertValidFieldValues(collection, collectionSpec, fields as Record<string, unknown>);
@@ -176,7 +175,7 @@ export class Rows<Schema extends DbSchema> {
 
   async getRow<TCollection extends CollectionName<Schema>>(
     row: RowTarget<TCollection>,
-  ): Promise<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>> {
+  ): Promise<RowHandle<Schema, TCollection>> {
     const rowRef = normalizeRowRef(row);
     const fields = await this.refreshFields(rowRef);
     const owner = this.optimisticStore.getOwner(rowRef) ?? (await this.rowRuntime.getRow(rowRef)).owner;

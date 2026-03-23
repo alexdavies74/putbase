@@ -1,6 +1,5 @@
 import type { PutBase } from "@putbase/core";
 import type {
-  AllowedParentCollections,
   AuthSession,
   AnyRowHandle,
   CollectionName,
@@ -11,7 +10,6 @@ import type {
   PutBaseUser,
   RowRef,
   RowTarget,
-  RowFields,
 } from "@putbase/core";
 import type { RowHandle } from "@putbase/core";
 
@@ -543,6 +541,4 @@ export const snapshots = {
 export type QueryRows<
   Schema extends DbSchema,
   TCollection extends CollectionName<Schema>,
-> = Array<
-  RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>
->;
+> = Array<RowHandle<Schema, TCollection>>;

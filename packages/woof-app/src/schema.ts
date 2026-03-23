@@ -5,7 +5,6 @@ import {
   defineSchema,
   field,
   index,
-  type RowFields,
 } from "@putbase/core";
 
 export const woofSchema = defineSchema({
@@ -40,9 +39,6 @@ export const woofSchema = defineSchema({
 
 export type WoofSchema = typeof woofSchema;
 export type WoofDb = PutBase<WoofSchema>;
-export type DogFields = RowFields<WoofSchema, "dogs">;
-export type DogHistoryFields = RowFields<WoofSchema, "dogHistory">;
-export type TagFields = RowFields<WoofSchema, "tags">;
-export type DogRowHandle = RowHandle<"dogs", DogFields, never, WoofSchema>;
-export type DogHistoryRowHandle = RowHandle<"dogHistory", DogHistoryFields, "user", WoofSchema>;
-export type TagRowHandle = RowHandle<"tags", TagFields, "dogs", WoofSchema>;
+export type DogRowHandle = RowHandle<WoofSchema, "dogs">;
+export type DogHistoryRowHandle = RowHandle<WoofSchema, "dogHistory">;
+export type TagRowHandle = RowHandle<WoofSchema, "tags">;
