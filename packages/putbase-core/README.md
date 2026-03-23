@@ -12,8 +12,8 @@ This makes PutBase particularly well-suited for:
 
 ```ts
 // Write
-const board = await db.put("boards", { title: "Launch checklist" });
-await db.put("cards", { text: "Ship it", done: false, createdAt: Date.now() }, { in: board });
+const board = db.put("boards", { title: "Launch checklist" }).value;
+db.put("cards", { text: "Ship it", done: false, createdAt: Date.now() }, { in: board });
 
 // Read (React)
 const { rows: cards } = useQuery<Schema, "cards">(db, "cards", {
@@ -117,6 +117,8 @@ const session = await db.getSession();
 if (!session.signedIn) {
   await db.signIn();        // call this from a button click
 }
+
+await db.ensureReady();
 ```
 
 
@@ -126,19 +128,19 @@ if (!session.signedIn) {
 
 ```ts
 // Create a top-level row
-const board = await db.put("boards", { title: "Launch checklist" });
+const board = db.put("boards", { title: "Launch checklist" }).value;
 
 // Create a child row — pass the parent handle directly
-await db.put("cards", { text: "Write README", done: false, createdAt: Date.now() }, { in: board });
-await db.put("cards", { text: "Publish to npm", done: false, createdAt: Date.now() }, { in: board });
+db.put("cards", { text: "Write README", done: false, createdAt: Date.now() }, { in: board });
+db.put("cards", { text: "Publish to npm", done: false, createdAt: Date.now() }, { in: board });
 ```
 
-`put` returns a `RowHandle` with typed `.fields`, and is usable immediately as a parent for child rows.
+`put` and `update` are synchronous optimistic writes. Use `.value` on the returned receipt when you want the row handle immediately.
 
 To update fields on an existing row:
 
 ```ts
-await db.update("cards", card, { done: true });
+db.update("cards", card, { done: true });
 ```
 
 ---
@@ -227,7 +229,7 @@ Sharing is a three-step flow:
 
 ```ts
 // 1. Generate a token for the row you want to share
-const token = await db.createInviteToken(board);
+const token = db.createInviteToken(board).value;
 
 // 2. Build a link the recipient can open in their browser
 const link = db.createInviteLink(board, token.token);
@@ -258,8 +260,8 @@ const detailed = await db.listDirectMembers(board);
 // → [{ username: "alice", role: "writer" }, ...]
 
 // Add or remove manually
-await db.addMember(board, "bob", "writer");
-await db.removeMember(board, "eve");
+db.addMember(board, "bob", "writer");
+db.removeMember(board, "eve");
 ```
 
 Membership inherited through a parent row is visible via `listEffectiveMembers`.
@@ -313,14 +315,14 @@ pnpm --filter woof-app dev
 | Method | Description |
 |--------|-------------|
 | `new PutBase({ schema, appBaseUrl? })` | Create a client. Pass `appBaseUrl` so invite links point back to your app. |
-| `ensureReady()` | Explicitly await authentication and provisioning. Optional — all operations wait for readiness automatically. |
+| `ensureReady()` | Explicitly await authentication and provisioning before issuing optimistic mutations like `put()` or `update()`. |
 | `whoAmI()` | Returns `{ username }` for the signed-in Puter user. |
-| `put(collection, fields, options?)` | Create a row. Pass `{ in: parentHandle }` for child rows; for collections declared as `in: ["user"]`, omitting `in` uses the current signed-in user's built-in `user` row. Returns a `RowHandle`. |
-| `update(collection, row, fields)` | Merge field updates onto a row. Returns a refreshed `RowHandle`. |
+| `put(collection, fields, options?)` | Create a row optimistically and return a `MutationReceipt<RowHandle>` immediately. Pass `{ in: parentHandle }` for child rows; for collections declared as `in: ["user"]`, omitting `in` uses the current signed-in user's built-in `user` row. Most apps just use `.value`; await `.settled` only when you need remote confirmation. |
+| `update(collection, row, fields)` | Merge field updates onto a row optimistically and return a `MutationReceipt<RowHandle>` immediately. Most apps just use `.value`; await `.settled` only when you need remote confirmation. |
 | `getRow(collection, row)` | Fetch a row by typed reference. |
 | `query(collection, options)` | Load rows under a parent, with optional index, order, and limit. For collections declared as `in: ["user"]`, omitting `in` uses the current signed-in user's built-in `user` row. |
 | `watchQuery(collection, options, callbacks)` | Subscribe to repeated query refreshes via `callbacks.onChange`. For collections declared as `in: ["user"]`, omitting `in` uses the current signed-in user's built-in `user` row. Returns a handle with `.disconnect()`. |
-| `createInviteToken(row)` | Generate a new invite token for a row. |
+| `createInviteToken(row)` | Generate a new invite token for a row and return a `MutationReceipt<InviteToken>`. Most apps can use `.value` immediately. |
 | `getExistingInviteToken(row)` | Return the existing token if one exists, or `null`. |
 | `createInviteLink(row, token)` | Build a shareable URL containing the row target and token. |
 | `parseInvite(input)` | Parse an invite URL or worker URL into `{ target, inviteToken? }`. |
@@ -331,10 +333,10 @@ pnpm --filter woof-app dev
 | `listMembers(row)` | Returns `string[]` of all member usernames. |
 | `listDirectMembers(row)` | Returns `{ username, role }[]` for direct members. |
 | `listEffectiveMembers(row)` | Returns resolved membership including grants inherited from parents. |
-| `addMember(row, username, role)` | Grant a user access. Roles: `"writer"` and `"reader"`. `"writer"` can update fields, manage members, manage parents, and send CRDT messages; `"reader"` is read-only. |
-| `removeMember(row, username)` | Revoke a user's access. |
-| `addParent(child, parent)` | Link a row to an additional parent after creation. |
-| `removeParent(child, parent)` | Unlink a row from a parent. |
+| `addMember(row, username, role)` | Grant a user access and return a `MutationReceipt<void>`. Roles: `"writer"` and `"reader"`. `"writer"` can update fields, manage members, manage parents, and send CRDT messages; `"reader"` is read-only. |
+| `removeMember(row, username)` | Revoke a user's access and return a `MutationReceipt<void>`. |
+| `addParent(child, parent)` | Link a row to an additional parent after creation and return a `MutationReceipt<void>`. |
+| `removeParent(child, parent)` | Unlink a row from a parent and return a `MutationReceipt<void>`. |
 | `listParents(child)` | Returns all parent references for a row. |
 | `connectCrdt(row, callbacks)` | Bridge a CRDT onto the row's message stream. Returns a `CrdtConnection`. |
 
@@ -351,3 +353,12 @@ pnpm --filter woof-app dev
 | `.connectCrdt(callbacks)` | Shorthand for `db.connectCrdt(row, callbacks)`. |
 | `.in.add(parent)` / `.in.remove(parent)` / `.in.list()` | Manage parent links. |
 | `.members.add(username, { role })` / `.members.remove(username)` / `.members.list()` | Manage membership. |
+
+### `MutationReceipt<T>`
+
+| Member | Description |
+|--------|-------------|
+| `.value` | The optimistic value available immediately. For `put` and `update`, this is the `RowHandle`. |
+| `.settled` | Promise that resolves to the final value once the write is confirmed remotely. Rejects if the write fails. |
+| `.status` | Current write status: `"pending"`, `"settled"`, or `"failed"`. |
+| `.error` | The rejection reason after a failed write. Otherwise `undefined`. |

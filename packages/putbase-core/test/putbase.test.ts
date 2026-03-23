@@ -76,6 +76,10 @@ async function flushMicrotasks(): Promise<void> {
   await Promise.resolve();
 }
 
+async function settle<T>(receipt: { settled: Promise<T> }): Promise<T> {
+  return receipt.settled;
+}
+
 const MINIMAL_SCHEMA = defineSchema({
   rows: collection({
     fields: {
@@ -822,7 +826,8 @@ describe("PutBase", () => {
       fetchFn: fetchFn as typeof fetch,
     });
 
-    const row = await db.put("rows", { name: "Rex" });
+    await db.ensureReady();
+    const row = await settle(db.put("rows", { name: "Rex" }));
 
     expect(row.target.startsWith(`${deployedWorkerBase}/rows/`)).toBe(true);
     expect(requestedUrls).toContain(`${deployedWorkerBase}/rows`);
@@ -917,12 +922,15 @@ describe("PutBase", () => {
       fetchFn: fetchFn as typeof fetch,
     });
 
-    const rowPromise = db.put("rows", { name: "Rex" });
     await createStarted.promise;
     expect(deployCalls).toBe(1);
 
     releaseCreate.resolve({ url: deployedWorkerBase });
-    const row = await rowPromise;
+    await db.ensureReady();
+
+    const rowWrite = db.put("rows", { name: "Rex" });
+    const row = rowWrite.value;
+    await rowWrite.settled;
 
     expect(deployCalls).toBe(1);
     expect(row.target.startsWith(`${deployedWorkerBase}/rows/`)).toBe(true);
@@ -972,8 +980,9 @@ describe("PutBase", () => {
       fetchFn: fetchFn as typeof fetch,
     });
 
-    const firstRow = await firstDb.put("rows", { name: "Rex" });
-    const secondRow = await secondDb.put("rows", { name: "Spot" });
+    await Promise.all([firstDb.ensureReady(), secondDb.ensureReady()]);
+    const firstRow = await settle(firstDb.put("rows", { name: "Rex" }));
+    const secondRow = await settle(secondDb.put("rows", { name: "Spot" }));
 
     expect(deployCalls).toBe(1);
     expect(firstRow.target).not.toBe(secondRow.target);
@@ -1022,7 +1031,8 @@ describe("PutBase", () => {
       fetchFn: fetchFn as typeof fetch,
     });
 
-    const row = await db.put("rows", { name: "Rex" });
+    await db.ensureReady();
+    const row = await settle(db.put("rows", { name: "Rex" }));
 
     expect(getCalls).toBeGreaterThan(0);
     expect(deployCalls).toBe(0);
@@ -1145,7 +1155,7 @@ describe("PutBase", () => {
       fetchFn: (() => Promise.reject(new Error("fetch should not be used"))) as typeof fetch,
     });
 
-    await expect(db.put("rows", { name: "Rex" })).rejects.toThrow("Federation worker name collision");
+    await expect(db.ensureReady()).rejects.toThrow("Federation worker name collision");
   });
 
   it("surfaces prewarm failures through ensureReady and retries on a later call", async () => {

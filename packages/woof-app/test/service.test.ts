@@ -196,30 +196,30 @@ class MockDb implements WoofDbPort {
     return { username: "alex" };
   }
 
-  put(collection: "dogs", fields: DogRowHandle["fields"]): DogRowHandle;
-  put(collection: "dogHistory", fields: DogHistoryRowHandle["fields"]): DogHistoryRowHandle;
+  put(collection: "dogs", fields: DogRowHandle["fields"]): MutationReceipt<DogRowHandle>;
+  put(collection: "dogHistory", fields: DogHistoryRowHandle["fields"]): MutationReceipt<DogHistoryRowHandle>;
   put(
     collection: "tags",
     fields: TagRowHandle["fields"],
     options: { in: ReturnType<DogRowHandle["toRef"]> },
-  ): TagRowHandle;
+  ): MutationReceipt<TagRowHandle>;
   put(
     collection: "dogs" | "dogHistory" | "tags",
     fields: Record<string, unknown>,
     options?: { in?: ReturnType<DogRowHandle["toRef"]> },
-  ): DogRowHandle | DogHistoryRowHandle | TagRowHandle {
+  ): MutationReceipt<DogRowHandle> | MutationReceipt<DogHistoryRowHandle> | MutationReceipt<TagRowHandle> {
     this.putCalls.push({ collection, fields, options });
     if (collection === "dogs") {
       this.createdDogCount += 1;
       const id = this.createdDogCount === 1 ? "row_created" : `row_created_${this.createdDogCount}`;
-      return this.makeDogRow(id, fields);
+      return settledReceipt(this.makeDogRow(id, fields));
     }
 
     if (collection === "dogHistory") {
-      return this.makeDogHistoryRow(`history_${this.putCalls.length}`, fields);
+      return settledReceipt(this.makeDogHistoryRow(`history_${this.putCalls.length}`, fields));
     }
 
-    return this.makeTagRow(`tag_${this.putCalls.length}`, fields);
+    return settledReceipt(this.makeTagRow(`tag_${this.putCalls.length}`, fields));
   }
 
   async query(
@@ -239,7 +239,7 @@ class MockDb implements WoofDbPort {
     collection: "dogHistory",
     row: DogHistoryRowHandle,
     fields: Partial<DogHistoryFields>,
-  ): DogHistoryRowHandle {
+  ): MutationReceipt<DogHistoryRowHandle> {
     const existing = this.historyRows.get(row.id);
     if (!existing || collection !== "dogHistory") {
       throw new Error("history row missing");
@@ -250,7 +250,7 @@ class MockDb implements WoofDbPort {
       ...fields,
     };
     this.rowFields.set(row.id, existing.fields);
-    return existing;
+    return settledReceipt(existing);
   }
 
   async openTarget(target: string): Promise<DogRowHandle> {

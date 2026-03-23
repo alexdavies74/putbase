@@ -49,7 +49,6 @@ export class RowHandle<
   readonly target: string;
 
   fields: TFields;
-  settled: Promise<this>;
 
   readonly in: {
     add: (parent: DbRowRef<TAllowedParentCollections>) => MutationReceipt<void>;
@@ -75,7 +74,6 @@ export class RowHandle<
     this.owner = row.owner;
     this.target = row.target;
     this.fields = fields;
-    this.settled = Promise.resolve(this);
 
     this.in = {
       add: (parent: DbRowRef<TAllowedParentCollections>) => this.backend.addParent(this.toRef(), parent),
@@ -99,11 +97,6 @@ export class RowHandle<
   async refresh(): Promise<TFields> {
     this.fields = await this.backend.refreshFields(this.toRef()) as TFields;
     return this.fields;
-  }
-
-  attachSettlement(receipt: Pick<MutationReceipt<unknown>, "settled">): this {
-    this.settled = receipt.settled.then(() => this);
-    return this;
   }
 
   toRef(): DbRowRef<TCollection> {

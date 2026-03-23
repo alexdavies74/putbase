@@ -94,6 +94,10 @@ async function flushMicrotasks(): Promise<void> {
   await Promise.resolve();
 }
 
+async function settle<T>(receipt: { settled: Promise<T> }): Promise<T> {
+  return receipt.settled;
+}
+
 function buildWatchRow(id: string, title: string) {
   return {
     id,
@@ -158,10 +162,10 @@ describe("PutBase rows", () => {
     const network = new TestWorkerNetwork();
     const db = await buildReadyDb({ username: "alice", network });
 
-    const project = await db.put("projects", { name: "Website" });
-    const task = await db.put("tasks", { title: "Ship v2" }, { in: project.toRef() });
+    const project = await settle(db.put("projects", { name: "Website" }));
+    const task = await settle(db.put("tasks", { title: "Ship v2" }, { in: project.toRef() }));
 
-    await db.update("tasks", task.toRef(), { status: "done" });
+    await settle(db.update("tasks", task.toRef(), { status: "done" }));
 
     const done = await db.query("tasks", {
       in: project.toRef(),
@@ -178,10 +182,10 @@ describe("PutBase rows", () => {
     const network = new TestWorkerNetwork();
     const db = await buildReadyDb({ username: "alice", network });
 
-    const project = await db.put("projects", { name: "Website" });
-    const task = await db.put("tasks", { title: "Ship v2" }, { in: project.toRef() });
+    const project = await settle(db.put("projects", { name: "Website" }));
+    const task = await settle(db.put("tasks", { title: "Ship v2" }, { in: project.toRef() }));
 
-    await db.update("tasks", task.toRef(), { status: "done" });
+    await settle(db.update("tasks", task.toRef(), { status: "done" }));
 
     const todo = await db.query("tasks", {
       in: project.toRef(),
@@ -201,8 +205,8 @@ describe("PutBase rows", () => {
     const network = new TestWorkerNetwork();
     const db = await buildReadyDb({ username: "alice", network });
 
-    const project = await db.put("projects", { name: "Website" });
-    const task = await db.put("tasks", { title: "Ship v2" }, { in: project });
+    const project = await settle(db.put("projects", { name: "Website" }));
+    const task = await settle(db.put("tasks", { title: "Ship v2" }, { in: project }));
 
     const tasks = await db.query("tasks", {
       in: project,
@@ -218,10 +222,10 @@ describe("PutBase rows", () => {
     const network = new TestWorkerNetwork();
     const db = await buildReadyDb({ username: "alice", network });
 
-    const record = await db.put("gameRecords", {
+    const record = await settle(db.put("gameRecords", {
       gameTarget: "https://games.example/rows/game_1",
       role: "owner",
-    });
+    }));
 
     const records = await db.query("gameRecords", {
       index: "byGameTarget",
@@ -244,10 +248,10 @@ describe("PutBase rows", () => {
     const backend = { workers: {}, kv: new InMemoryKv() } as BackendClient;
     const db = await buildReadyDb({ username: "alice", network, backend });
 
-    await db.put("gameRecords", {
+    await settle(db.put("gameRecords", {
       gameTarget: "https://games.example/rows/game_1",
       role: "owner",
-    });
+    }));
 
     const rememberedBefore = await loadRememberedPerUserRow(backend, "alice", INTERNAL_USER_SCOPE_ROW_KEY);
     expect(rememberedBefore).toBeTruthy();
@@ -260,10 +264,10 @@ describe("PutBase rows", () => {
       target: "https://alice-federation.example/rows/row_missing",
     });
 
-    await db.put("gameRecords", {
+    await settle(db.put("gameRecords", {
       gameTarget: "https://games.example/rows/game_2",
       role: "reader",
-    });
+    }));
 
     const recreated = await db.query("gameRecords", { where: { role: "reader" } });
     const rememberedAfterRecreate = await loadRememberedPerUserRow(backend, "alice", INTERNAL_USER_SCOPE_ROW_KEY);
@@ -277,8 +281,8 @@ describe("PutBase rows", () => {
     const network = new TestWorkerNetwork();
     const db = await buildReadyDb({ username: "alice", network });
 
-    const project = await db.put("projects", { name: "Website" });
-    const task = await db.put("tasks", { title: "Ship v2" }, { in: project });
+    const project = await settle(db.put("projects", { name: "Website" }));
+    const task = await settle(db.put("tasks", { title: "Ship v2" }, { in: project }));
 
     const firstGet = await db.getRow("tasks", task);
     const secondGet = await db.getRow("tasks", task);
@@ -289,7 +293,7 @@ describe("PutBase rows", () => {
     expect(firstOpen).toBe(firstGet);
     expect(secondOpen).toBe(firstGet);
 
-    await db.update("tasks", task, { status: "done" });
+    await settle(db.update("tasks", task, { status: "done" }));
 
     const afterChange = await db.getRow("tasks", task);
     expect(afterChange).toBe(firstGet);
@@ -302,11 +306,11 @@ describe("PutBase rows", () => {
     const aliceDb = await buildReadyDb({ username: "alice", network });
     const bobDb = await buildReadyDb({ username: "bob", network });
 
-    const aliceProject = await aliceDb.put("projects", { name: "Roadmap" });
+    const aliceProject = await settle(aliceDb.put("projects", { name: "Roadmap" }));
     await aliceProject.members.add("bob", { role: "reader" }).settled;
 
-    const bobProject = await bobDb.put("projects", { name: "Bob scope" });
-    const bobTask = await bobDb.put("tasks", { title: "Review" }, { in: bobProject.toRef() });
+    const bobProject = await settle(bobDb.put("projects", { name: "Bob scope" }));
+    const bobTask = await settle(bobDb.put("tasks", { title: "Review" }, { in: bobProject.toRef() }));
     await bobTask.in.add(aliceProject.toRef()).settled;
 
     const tasks = await aliceDb.query("tasks", { in: aliceProject.toRef() });
@@ -319,11 +323,11 @@ describe("PutBase rows", () => {
     const aliceDb = await buildReadyDb({ username: "alice", network });
     const bobDb = await buildReadyDb({ username: "bob", network });
 
-    const aliceProject = await aliceDb.put("projects", { name: "Roadmap" });
+    const aliceProject = await settle(aliceDb.put("projects", { name: "Roadmap" }));
     await aliceProject.members.add("bob", { role: "reader" }).settled;
 
-    const bobProject = await bobDb.put("projects", { name: "Bob scope" });
-    const bobTask = await bobDb.put("tasks", { title: "Review" }, { in: bobProject.toRef() });
+    const bobProject = await settle(bobDb.put("projects", { name: "Bob scope" }));
+    const bobTask = await settle(bobDb.put("tasks", { title: "Review" }, { in: bobProject.toRef() }));
     await bobTask.in.add(aliceProject.toRef()).settled;
 
     const parents = await bobTask.in.list();
@@ -353,11 +357,11 @@ describe("PutBase rows", () => {
     const aliceDb = await buildReadyDb({ username: "alice", network });
     const bobDb = await buildReadyDb({ username: "bob", network });
 
-    const aliceProject = await aliceDb.put("projects", { name: "Roadmap" });
+    const aliceProject = await settle(aliceDb.put("projects", { name: "Roadmap" }));
     await aliceProject.members.add("bob", { role: "reader" }).settled;
 
-    const bobProject = await bobDb.put("projects", { name: "Bob scope" });
-    const bobTask = await bobDb.put("tasks", { title: "Review" }, { in: bobProject.toRef() });
+    const bobProject = await settle(bobDb.put("projects", { name: "Bob scope" }));
+    const bobTask = await settle(bobDb.put("tasks", { title: "Review" }, { in: bobProject.toRef() }));
     await bobTask.in.add(aliceProject.toRef()).settled;
 
     const aliceTask = await aliceDb.openTarget(bobTask.target);
@@ -386,8 +390,8 @@ describe("PutBase rows", () => {
     const aliceDb = await buildReadyDb({ username: "alice", network });
     const bobDb = await buildReadyDb({ username: "bob", network });
 
-    const project = await aliceDb.put("projects", { name: "Roadmap" });
-    const task = await aliceDb.put("tasks", { title: "Review" }, { in: project.toRef() });
+    const project = await settle(aliceDb.put("projects", { name: "Roadmap" }));
+    const task = await settle(aliceDb.put("tasks", { title: "Review" }, { in: project.toRef() }));
     const invite = aliceDb.createInviteToken(task);
     await invite.settled;
     const inviteLink = aliceDb.createInviteLink(task, invite.value.token);
@@ -428,8 +432,8 @@ describe("PutBase rows", () => {
       () => db.put("projects", { name: { label: "Website" } } as never),
     ).toThrow("Field projects.name must be a string");
 
-    const project = await db.put("projects", { name: "Website" });
-    const task = await db.put("tasks", { title: "Ship v2" }, { in: project.toRef() });
+    const project = await settle(db.put("projects", { name: "Website" }));
+    const task = await settle(db.put("tasks", { title: "Ship v2" }, { in: project.toRef() }));
 
     expect(
       () => db.update("tasks", task.toRef(), { status: ["done"] } as never),
@@ -440,8 +444,8 @@ describe("PutBase rows", () => {
     const network = new TestWorkerNetwork();
     const db = await buildReadyDb({ username: "alice", network });
 
-    const project = await db.put("projects", { name: "Website" });
-    await db.put("tasks", { title: "Ship v2", status: "todo" }, { in: project.toRef() });
+    const project = await settle(db.put("projects", { name: "Website" }));
+    await settle(db.put("tasks", { title: "Ship v2", status: "todo" }, { in: project.toRef() }));
 
     const directTarget = `https://alice-row-${project.id}.example`;
     await expect(
@@ -632,8 +636,8 @@ describe("PutBase rows", () => {
   it("watchQuery emits rows end-to-end through PutBase", async () => {
     const network = new TestWorkerNetwork();
     const db = await buildReadyDb({ username: "alice", network });
-    const project = await db.put("projects", { name: "Website" });
-    const task = await db.put("tasks", { title: "Ship v2" }, { in: project.toRef() });
+    const project = await settle(db.put("projects", { name: "Website" }));
+    const task = await settle(db.put("tasks", { title: "Ship v2" }, { in: project.toRef() }));
 
     const changes: string[][] = [];
     const watcher = db.watchQuery("tasks", {

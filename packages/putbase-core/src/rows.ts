@@ -1,5 +1,5 @@
 import { RowHandle } from "./row-handle";
-import { createMutationReceipt } from "./mutation-receipt";
+import { createMutationReceipt, type MutationReceipt } from "./mutation-receipt";
 import { OptimisticStore } from "./optimistic-store";
 import type { RowRuntime } from "./row-runtime";
 import type { WriteSettler } from "./write-settler";
@@ -47,7 +47,7 @@ export class Rows<Schema extends DbSchema> {
     collection: TCollection,
     fields: InsertFields<Schema, TCollection>,
     options?: DbPutOptions<Schema, TCollection>,
-  ): RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema> {
+  ): MutationReceipt<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>> {
     const collectionSpec = getCollectionSpec(this.schema, collection);
     const parentRefs = normalizeParentRefs(options?.in);
     assertPutParents(collection, collectionSpec, parentRefs);
@@ -80,7 +80,6 @@ export class Rows<Schema extends DbSchema> {
       parents: parentRefs,
       receipt,
     });
-    handle.attachSettlement(receipt);
     this.notifyLocalMutation();
 
     const dependencies = parentRefs
@@ -116,14 +115,14 @@ export class Rows<Schema extends DbSchema> {
       dependencies,
     ).catch(() => undefined);
 
-    return handle;
+    return receipt;
   }
 
   update<TCollection extends CollectionName<Schema>>(
     collection: TCollection,
     row: DbRowRef<TCollection>,
     fields: Partial<RowFields<Schema, TCollection>>,
-  ): RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema> {
+  ): MutationReceipt<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>> {
     const rowRef: DbRowRef<TCollection> = toRowRef({
       id: row.id,
       collection,
@@ -140,7 +139,6 @@ export class Rows<Schema extends DbSchema> {
     const nextFields = this.optimisticStore.applyOverlay(rowRef, collection, fields as Record<string, JsonValue>);
     const handle = this.createRowHandle(collection, rowRef, nextFields as RowFields<Schema, TCollection>);
     const receipt = createMutationReceipt(handle);
-    handle.attachSettlement(receipt);
     this.notifyLocalMutation();
 
     const dependencies = [
@@ -173,7 +171,7 @@ export class Rows<Schema extends DbSchema> {
       dependencies,
     ).catch(() => undefined);
 
-    return handle;
+    return receipt;
   }
 
   async getRow<TCollection extends CollectionName<Schema>>(

@@ -184,22 +184,30 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
     await clearRememberedPerUserRow(resolveBackend(this.options.backend), user.username, rowKey);
   }
 
+  /**
+   * Create a row optimistically and return a mutation receipt immediately.
+   * Use `.value` for the row handle and await `.settled` when you need remote confirmation.
+   */
   put<TCollection extends CollectionName<Schema>>(
     collection: TCollection,
     fields: InsertFields<Schema, TCollection>,
     ...args: DbPutArgs<Schema, TCollection>
-  ): RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema> {
+  ): MutationReceipt<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>> {
     const options = args[0];
     const row = this.rowsModule.put(collection, fields, this.resolveImplicitPutOptionsSync(collection, options));
     this.notifyLocalMutation();
     return row;
   }
 
+  /**
+   * Apply an optimistic field update and return a mutation receipt immediately.
+   * Use `.value` for the refreshed row handle and await `.settled` when you need remote confirmation.
+   */
   update<TCollection extends CollectionName<Schema>>(
     collection: TCollection,
     row: DbRowRef<TCollection>,
     fields: Partial<RowFields<Schema, TCollection>>,
-  ): RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema> {
+  ): MutationReceipt<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>> {
     const updated = this.rowsModule.update(collection, row, fields);
     this.notifyLocalMutation();
     return updated;

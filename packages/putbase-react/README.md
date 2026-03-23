@@ -204,8 +204,8 @@ function InviteHandler() {
 import { useMutation } from "@putbase/react";
 
 function AddCard({ board }: { board: BoardHandle }) {
-  const { mutate: addCard, status } = useMutation((text: string) =>
-    db.put("cards", { text, done: false, createdAt: Date.now() }, { in: board }),
+  const { mutate: addCard, status } = useMutation(async (text: string) =>
+    db.put("cards", { text, done: false, createdAt: Date.now() }, { in: board }).value,
   );
 
   return (
@@ -374,5 +374,4 @@ function useMutation<TArgs extends unknown[], TResult>(
   reset(): void;
 }
 ```
-=
-- Use it to wrap writes like `db.put(...)`, `row.update(...)`, or any other async workflow you want to expose as a React action state.
+- Use it to wrap writes like `db.put(...)`, `db.update(...)`, or any other async workflow you want to expose as a React action state.
