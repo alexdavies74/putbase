@@ -36,6 +36,31 @@ function settledReceipt<TValue>(value: TValue): MutationReceipt<TValue> {
   };
 }
 
+function encodeUpdate(update: Uint8Array): { type: string; data: string } {
+  return {
+    type: "yjs-update",
+    data: btoa(Array.from(update, (b) => String.fromCharCode(b)).join("")),
+  };
+}
+
+function decodeUpdate(body: unknown): Uint8Array | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return null;
+  }
+
+  const record = body as Record<string, unknown>;
+  if (record.type !== "yjs-update" || typeof record.data !== "string") {
+    return null;
+  }
+
+  try {
+    const binary = atob(record.data);
+    return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  } catch {
+    return null;
+  }
+}
+
 class MockDb implements WoofDbPort {
   public failOpenTarget = false;
   public readonly memberList = ["alex", "friend"];
@@ -49,6 +74,8 @@ class MockDb implements WoofDbPort {
 
   private readonly rowFields = new Map<string, Record<string, unknown>>();
   private readonly historyRows = new Map<string, DogHistoryRowHandle>();
+  private readonly rowDocs = new Map<string, Y.Doc>();
+  private createdDogCount = 0;
 
   private readonly backend: RowHandleBackend<WoofSchema> = {
     addParent: () => settledReceipt(undefined),
@@ -66,13 +93,31 @@ class MockDb implements WoofDbPort {
       via: "direct",
     })) as Array<DbMemberInfo<WoofSchema>>,
     refreshFields: async (row: DbRowLocator) => this.readFields(row.id),
-    connectCrdt: (_row: DbRowLocator, callbacks: CrdtConnectCallbacks): CrdtConnection => {
+    connectCrdt: (row: DbRowLocator, callbacks: CrdtConnectCallbacks): CrdtConnection => {
       this.crdtCallbacks = callbacks;
+      const storedDoc = this.getRowDoc(row.target);
+      const storedMessages = storedDoc.getArray("messages");
+      if (storedMessages.length > 0) {
+        const update = Y.encodeStateAsUpdate(storedDoc);
+        callbacks.applyRemoteUpdate(encodeUpdate(update), {
+          id: "msg_restore",
+          rowId: row.id,
+          body: encodeUpdate(update),
+          createdAt: Date.now(),
+          signedBy: "alex",
+          sequence: 1,
+        });
+      }
       return {
         disconnect: () => undefined,
         flush: async () => {
           const update = callbacks.produceLocalUpdate();
-          void update;
+          const decoded = decodeUpdate(update);
+          if (!decoded) {
+            return;
+          }
+
+          Y.applyUpdate(this.getRowDoc(row.target), decoded, "local-test");
         },
       };
     },
@@ -85,6 +130,17 @@ class MockDb implements WoofDbPort {
 
   private readFields(id: string): Record<string, unknown> {
     return this.rowFields.get(id) ?? {};
+  }
+
+  private getRowDoc(target: string): Y.Doc {
+    const existing = this.rowDocs.get(target);
+    if (existing) {
+      return existing;
+    }
+
+    const doc = new Y.Doc();
+    this.rowDocs.set(target, doc);
+    return doc;
   }
 
   private makeDogRow(id: string, fields: Record<string, unknown>): DogRowHandle {
@@ -153,7 +209,9 @@ class MockDb implements WoofDbPort {
   ): DogRowHandle | DogHistoryRowHandle | TagRowHandle {
     this.putCalls.push({ collection, fields, options });
     if (collection === "dogs") {
-      return this.makeDogRow("row_created", fields);
+      this.createdDogCount += 1;
+      const id = this.createdDogCount === 1 ? "row_created" : `row_created_${this.createdDogCount}`;
+      return this.makeDogRow(id, fields);
     }
 
     if (collection === "dogHistory") {
@@ -429,6 +487,34 @@ describe("WoofService", () => {
     await service.relinquish();
 
     expect(service.chatArray.toArray()).toEqual([]);
+  });
+
+  it("clears local CRDT state when switching to a different dog row", async () => {
+    const db = new MockDb();
+    const service = new WoofService(db, new Y.Doc());
+
+    const firstRow = service.enterChat({ dogName: "Rex" });
+    service.connectToRow(firstRow);
+    await service.sendTurn(firstRow, "hello");
+    expect(service.chatArray.toArray()).toHaveLength(2);
+
+    await service.relinquish();
+
+    const secondRow = service.enterChat({ dogName: "Fido" });
+    service.connectToRow(secondRow);
+
+    expect(secondRow.id).not.toBe(firstRow.id);
+    expect(service.chatArray.toArray()).toEqual([]);
+
+    await service.sendTurn(secondRow, "fresh start");
+    expect(service.chatArray.toArray()).toHaveLength(2);
+
+    const restored = new WoofService(db, new Y.Doc());
+    restored.connectToRow(secondRow);
+
+    expect(restored.chatArray.toArray()).toHaveLength(2);
+    expect(restored.chatArray.toArray().every((entry) => entry.content !== "hello")).toBe(true);
+    expect(restored.chatArray.toArray()[0]).toMatchObject({ content: "fresh start" });
   });
 
   it("applies remote CRDT updates via applyRemoteUpdate callback", async () => {

@@ -9,6 +9,7 @@ import type { AI, ChatMessage, ChatResponse } from "@heyputer/puter.js";
 import type { DogRowHandle, TagRowHandle, WoofDb, WoofSchema } from "./schema";
 
 type PuterAI = Pick<AI, "chat">;
+const REMOTE_UPDATE_ORIGIN = "putbase-remote-sync";
 
 export type WoofDbPort = Pick<
   WoofDb,
@@ -58,16 +59,13 @@ function expectDogRow(row: AnyRowHandle<WoofSchema>): DogRowHandle {
 export class WoofService {
   private connection: CrdtConnection | null = null;
   private pendingUpdate: Uint8Array | null = null;
+  private loadedRowTarget: string | null = null;
 
   constructor(
     private readonly db: WoofDbPort,
-    private readonly doc: Y.Doc = new Y.Doc(),
+    private doc: Y.Doc = new Y.Doc(),
   ) {
-    this.doc.on("update", (update: Uint8Array) => {
-      this.pendingUpdate = this.pendingUpdate
-        ? Y.mergeUpdates([this.pendingUpdate, update])
-        : update;
-    });
+    this.doc.on("update", this.handleDocUpdate);
   }
 
   get chatArray(): Y.Array<ChatEntry> {
@@ -85,12 +83,17 @@ export class WoofService {
   }
 
   connectToRow(row: DogRowHandle): void {
+    if (this.loadedRowTarget && this.loadedRowTarget !== row.target) {
+      this.resetDoc();
+    }
+
+    this.loadedRowTarget = row.target;
     this.connection?.disconnect();
     this.connection = row.connectCrdt({
       applyRemoteUpdate: (body) => {
         const update = decodeUpdate(body);
         if (update) {
-          Y.applyUpdate(this.doc, update);
+          Y.applyUpdate(this.doc, update, REMOTE_UPDATE_ORIGIN);
         }
       },
       produceLocalUpdate: () => {
@@ -178,6 +181,8 @@ export class WoofService {
   async relinquish(): Promise<void> {
     await this.clearActiveHistory();
     this.disconnectRow();
+    this.resetDoc();
+    this.loadedRowTarget = null;
   }
 
   activateHistory(row: DogRowHandle): void {
@@ -271,6 +276,23 @@ export class WoofService {
       });
       return fallbackToActor();
     }
+  }
+
+  private readonly handleDocUpdate = (update: Uint8Array, origin: unknown): void => {
+    if (origin === REMOTE_UPDATE_ORIGIN) {
+      return;
+    }
+
+    this.pendingUpdate = this.pendingUpdate
+      ? Y.mergeUpdates([this.pendingUpdate, update])
+      : update;
+  };
+
+  private resetDoc(): void {
+    this.doc.off("update", this.handleDocUpdate);
+    this.pendingUpdate = null;
+    this.doc = new Y.Doc();
+    this.doc.on("update", this.handleDocUpdate);
   }
 
 }
