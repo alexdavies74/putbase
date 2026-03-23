@@ -205,21 +205,29 @@ describe("PutBase rows", () => {
     expect(done[0].id).toBe(task.id);
   });
 
-  it("accepts a parent row ref for put and query inputs", async () => {
+  it("accepts row handles for row-scoped API inputs", async () => {
     const network = new TestWorkerNetwork();
     const db = await buildReadyDb({ username: "alice", network });
 
     const project = await settle(db.put("projects", { name: "Website" }));
-    const task = await settle(db.put("tasks", { title: "Ship v2" }, { in: project.ref }));
+    const task = await settle(db.put("tasks", { title: "Ship v2" }, { in: project }));
+    await settle(db.update("tasks", task, { status: "done" }));
 
     const tasks = await db.query("tasks", {
-      in: project.ref,
-      where: { status: "todo" },
+      in: project,
+      where: { status: "done" },
     });
+    const members = await db.listMembers(project);
+    const invite = db.createInviteToken(project);
+    await invite.settled;
+    const inviteLink = db.createInviteLink(project, invite.value.token);
 
     expect(tasks).toHaveLength(1);
     expect(tasks[0].id).toBe(task.id);
     expect(tasks[0].fields.title).toBe("Ship v2");
+    expect(tasks[0].fields.status).toBe("done");
+    expect(members).toContain("alice");
+    expect(inviteLink).toContain("pb=");
   });
 
   it("puts and queries user-scoped rows without explicit parents", async () => {

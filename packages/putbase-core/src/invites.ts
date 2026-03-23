@@ -1,7 +1,7 @@
 import type { Identity } from "./identity";
 import type { PutBaseOptions } from "./putbase";
 import type { Transport } from "./transport";
-import type { RowRef } from "./schema";
+import type { RowRef, RowTarget } from "./schema";
 import { normalizeRowRef } from "./row-reference";
 import type { ParsedInvite, InviteToken } from "./types";
 
@@ -45,18 +45,18 @@ export class Invites {
     private readonly identity: Identity,
   ) {}
 
-  async getExistingInviteToken(row: RowRef): Promise<InviteToken | null> {
-    const response = await this.transport.row(row).request<GetInviteResponse>("invite-token/get", {});
+  async getExistingInviteToken(row: RowTarget): Promise<InviteToken | null> {
+    const response = await this.transport.row(normalizeRowRef(row)).request<GetInviteResponse>("invite-token/get", {});
     return response.inviteToken;
   }
 
-  async createInviteTokenRemote(row: RowRef, payload: InviteToken): Promise<InviteToken> {
-    const response = await this.transport.row(row).request<PostInviteResponse>("invite-token/create", payload);
+  async createInviteTokenRemote(row: RowTarget, payload: InviteToken): Promise<InviteToken> {
+    const response = await this.transport.row(normalizeRowRef(row)).request<PostInviteResponse>("invite-token/create", payload);
 
     return response.inviteToken;
   }
 
-  createInviteLink(row: RowRef, inviteToken: string): string {
+  createInviteLink(row: RowTarget, inviteToken: string): string {
     const appBaseUrl =
       this.options.appBaseUrl ??
       (typeof window !== "undefined" ? window.location.origin : "http://localhost:5173");

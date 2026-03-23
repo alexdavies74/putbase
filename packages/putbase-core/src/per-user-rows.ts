@@ -1,5 +1,5 @@
 import { resolveBackendAsync } from "./backend";
-import type { RowRef } from "./schema";
+import type { RowRef, RowTarget } from "./schema";
 import { normalizeRowRef } from "./row-reference";
 import type { BackendClient } from "./types";
 
@@ -23,7 +23,7 @@ function rememberedRowKey(username: string, key: string): string {
   return `${PER_USER_ROW_PREFIX}:${username}:${normalizeStorageKey(key)}`;
 }
 
-function resolveStoredRow(row: RowRef): string {
+function resolveStoredRow(row: RowTarget): string {
   return JSON.stringify(normalizeRowRef(row));
 }
 
@@ -82,7 +82,7 @@ export async function rememberPerUserRow(
   backend: BackendClient | undefined,
   username: string,
   key: string,
-  row: RowRef,
+  row: RowTarget,
 ): Promise<void> {
   const resolvedBackend = await resolveBackendAsync(backend);
   const entryKey = rememberedRowKey(username, key);

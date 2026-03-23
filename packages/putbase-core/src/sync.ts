@@ -1,17 +1,19 @@
 import { createAdaptivePoller } from "./polling";
 import type { RowRuntime } from "./row-runtime";
 import type { CrdtConnectCallbacks, CrdtConnection, SyncMessage } from "./types";
-import type { RowRef } from "./schema";
+import type { RowTarget } from "./schema";
+import { normalizeRowRef } from "./row-reference";
 
 export class Sync {
   constructor(private readonly rowRuntime: RowRuntime) {}
 
-  connectCrdt(row: RowRef, callbacks: CrdtConnectCallbacks): CrdtConnection {
+  connectCrdt(row: RowTarget, callbacks: CrdtConnectCallbacks): CrdtConnection {
+    const rowRef = normalizeRowRef(row);
     let lastSequence = 0;
 
     const poller = createAdaptivePoller({
       run: async ({ markActivity }) => {
-        const poll = await this.rowRuntime.pollSyncMessages(row, lastSequence);
+        const poll = await this.rowRuntime.pollSyncMessages(rowRef, lastSequence);
         const messages = poll.messages.slice().sort(
           (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
         );
@@ -31,7 +33,7 @@ export class Sync {
 
         const update = callbacks.produceLocalUpdate();
         if (update !== null) {
-          const sent = await this.rowRuntime.sendSyncMessage(row, update);
+          const sent = await this.rowRuntime.sendSyncMessage(rowRef, update);
           lastSequence = Math.max(lastSequence, sent.sequence);
           markActivity();
         }

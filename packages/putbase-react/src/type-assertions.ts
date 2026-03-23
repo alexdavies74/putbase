@@ -7,7 +7,7 @@ import {
   type RowRef,
 } from "@putbase/core";
 
-import { useQuery, useRow } from "./index";
+import { useInviteLink, useQuery, useRow } from "./index";
 
 const schema = defineSchema({
   dogs: collection({
@@ -35,6 +35,7 @@ type TagRows = ReturnType<typeof useQuery<TestSchema, "tags">>["rows"];
 declare const dogResult: DogResult;
 declare const tagRows: TagRows;
 declare const tagRef: RowRef<"tags">;
+declare const anyClient: any;
 
 const maybeAnyRowHandle: AnyRowHandle<TestSchema> | undefined = dogResult.data;
 void maybeAnyRowHandle;
@@ -53,6 +54,9 @@ if (tagRows[0]) {
 
   // @ts-expect-error tags can only be parented by dogs
   void tagRows[0].in.add(tagRef);
+
+  void useRow(anyClient, tagRows[0]);
+  void useInviteLink(anyClient, tagRows[0]);
 }
 
 export {};

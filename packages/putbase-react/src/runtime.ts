@@ -10,6 +10,7 @@ import type {
   MemberRole,
   PutBaseUser,
   RowRef,
+  RowTarget,
   RowFields,
 } from "@putbase/core";
 import type { RowHandle } from "@putbase/core";
@@ -106,6 +107,23 @@ function isRowRefLike(value: unknown): value is RowRef {
   );
 }
 
+function isRowTargetLike(value: unknown): value is RowTarget {
+  if (isRowRefLike(value)) {
+    return true;
+  }
+
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return isRowRefLike(record.ref);
+}
+
+function resolveRowTarget(value: RowTarget): RowRef {
+  return isRowRefLike(value) ? value : value.ref;
+}
+
 function canonicalizeRowRef(value: RowRef): Record<string, string> {
   return {
     id: value.id,
@@ -119,8 +137,8 @@ function canonicalizeKeyPart(value: unknown, seen = new WeakSet<object>()): unkn
     return value;
   }
 
-  if (isRowRefLike(value)) {
-    return canonicalizeRowRef(value);
+  if (isRowTargetLike(value)) {
+    return canonicalizeRowRef(resolveRowTarget(value));
   }
 
   if (seen.has(value)) {
@@ -486,20 +504,20 @@ export function makeQueryKey<Schema extends DbSchema, TCollection extends Collec
 
 export function makeRowKey<TCollection extends string>(
   collection: TCollection,
-  row: RowRef<TCollection>,
+  row: RowTarget<TCollection>,
 ): string {
   return `row:${collection}:${stableJsonStringify(canonicalizeKeyPart(row))}`;
 }
 
-export function makeParentsKey(row: RowRef): string {
+export function makeParentsKey(row: RowTarget): string {
   return `parents:${stableJsonStringify(canonicalizeKeyPart(row))}`;
 }
 
-export function makeMembersKey(kind: "usernames" | "direct" | "effective", row: RowRef): string {
+export function makeMembersKey(kind: "usernames" | "direct" | "effective", row: RowTarget): string {
   return `${kind}:${stableJsonStringify(canonicalizeKeyPart(row))}`;
 }
 
-export function makeInviteLinkKey(row: RowRef): string {
+export function makeInviteLinkKey(row: RowTarget): string {
   return `invite-link:${stableJsonStringify(canonicalizeKeyPart(row))}`;
 }
 

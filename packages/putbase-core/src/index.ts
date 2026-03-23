@@ -38,5 +38,6 @@ export type {
   QueryWhere,
   MemberRole,
   RowRef,
+  RowTarget,
   RowFields,
 } from "./schema";

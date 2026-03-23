@@ -11,6 +11,7 @@ import type {
   DbSchema,
   InsertFields,
   RowRef,
+  RowTarget,
   RowFields,
 } from "./schema";
 import { applyDefaults, assertPutParents, assertValidFieldValues, getCollectionSpec } from "./schema";
@@ -38,7 +39,7 @@ export class Rows<Schema extends DbSchema> {
       owner: string,
       fields: RowFields<Schema, TCollection>,
     ) => RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>,
-    private readonly addParentRemote: (child: RowRef, parent: RowRef) => Promise<void>,
+    private readonly addParentRemote: (child: RowTarget, parent: RowTarget) => Promise<void>,
     private readonly notifyLocalMutation: () => void,
   ) {}
 
@@ -120,23 +121,19 @@ export class Rows<Schema extends DbSchema> {
 
   update<TCollection extends CollectionName<Schema>>(
     collection: TCollection,
-    row: RowRef<TCollection>,
+    row: RowTarget<TCollection>,
     fields: Partial<RowFields<Schema, TCollection>>,
   ): MutationReceipt<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>> {
-    const rowRef = normalizeRowRef({
-      id: row.id,
-      collection,
-      baseUrl: row.baseUrl,
-    });
+    const rowRef = normalizeRowRef(row);
     const collectionSpec = getCollectionSpec(this.schema, collection);
     assertValidFieldValues(collection, collectionSpec, fields as Record<string, unknown>);
     const previousFields = this.optimisticStore.getLogicalFields(rowRef);
     const owner = this.optimisticStore.getOwner(rowRef);
     if (!previousFields) {
-      throw new Error(`Cannot update ${collection} row ${row.id} before it has been loaded locally.`);
+      throw new Error(`Cannot update ${collection} row ${rowRef.id} before it has been loaded locally.`);
     }
     if (!owner) {
-      throw new Error(`Cannot update ${collection} row ${row.id} before its owner has been loaded locally.`);
+      throw new Error(`Cannot update ${collection} row ${rowRef.id} before its owner has been loaded locally.`);
     }
 
     const nextFields = this.optimisticStore.applyOverlay(rowRef, collection, fields as Record<string, JsonValue>);
@@ -178,16 +175,16 @@ export class Rows<Schema extends DbSchema> {
   }
 
   async getRow<TCollection extends CollectionName<Schema>>(
-    row: RowRef<TCollection>,
+    row: RowTarget<TCollection>,
   ): Promise<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>> {
     const rowRef = normalizeRowRef(row);
     const fields = await this.refreshFields(rowRef);
     const owner = this.optimisticStore.getOwner(rowRef) ?? (await this.rowRuntime.getRow(rowRef)).owner;
-    this.optimisticStore.upsertBaseRow(rowRef, owner, row.collection, fields);
-    return this.createRowHandle(row.collection, rowRef, owner, fields as RowFields<Schema, TCollection>);
+    this.optimisticStore.upsertBaseRow(rowRef, owner, rowRef.collection, fields);
+    return this.createRowHandle(rowRef.collection as TCollection, rowRef, owner, fields as RowFields<Schema, TCollection>);
   }
 
-  async refreshFields(row: RowRef): Promise<Record<string, JsonValue>> {
+  async refreshFields(row: RowTarget): Promise<Record<string, JsonValue>> {
     const rowRef = normalizeRowRef(row);
     const localFields = this.optimisticStore.getLogicalFields(rowRef);
     const localCollection = this.optimisticStore.getCollection(rowRef);
@@ -215,7 +212,7 @@ export class Rows<Schema extends DbSchema> {
   }
 
   async fetchWithCollection(
-    row: RowRef,
+    row: RowTarget,
   ): Promise<{ fields: Record<string, JsonValue>; collection: string | null }> {
     const rowRef = normalizeRowRef(row);
     const localRecord = this.optimisticStore.getRowByRef(rowRef);
@@ -245,19 +242,20 @@ export class Rows<Schema extends DbSchema> {
     };
   }
 
-  getCurrentParents(row: RowRef, serverParents: RowRef[] = []): RowRef[] {
-    return this.optimisticStore.getCurrentParents(row, serverParents);
+  getCurrentParents(row: RowTarget, serverParents: RowRef[] = []): RowRef[] {
+    return this.optimisticStore.getCurrentParents(normalizeRowRef(row), serverParents);
   }
 
-  private async syncParentIndexes(row: RowRef, fields: Record<string, JsonValue>): Promise<void> {
-    const snapshot = await this.rowRuntime.getRow(row);
-    this.optimisticStore.recordParents(row, snapshot.parentRefs);
+  private async syncParentIndexes(row: RowTarget, fields: Record<string, JsonValue>): Promise<void> {
+    const rowRef = normalizeRowRef(row);
+    const snapshot = await this.rowRuntime.getRow(rowRef);
+    this.optimisticStore.recordParents(rowRef, snapshot.parentRefs);
     await Promise.all(
       snapshot.parentRefs.map((parentRef) =>
         this.transport.row(parentRef).request("parents/update-index", {
-          childRef: row,
+          childRef: rowRef,
           childOwner: snapshot.owner,
-          collection: row.collection,
+          collection: rowRef.collection,
           fields,
         }),
       ),

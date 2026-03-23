@@ -8,20 +8,21 @@ import type {
   DbSchema,
   MemberRole,
   RowRef,
+  RowTarget,
   RowFields,
 } from "./schema";
 
 export interface RowHandleBackend<Schema extends DbSchema = DbSchema> {
-  addParent(child: RowRef, parent: RowRef): MutationReceipt<void>;
-  removeParent(child: RowRef, parent: RowRef): MutationReceipt<void>;
-  listParents<TParentCollection extends string>(child: RowRef): Promise<Array<RowRef<TParentCollection>>>;
-  addMember(row: RowRef, username: string, role: MemberRole): MutationReceipt<void>;
-  removeMember(row: RowRef, username: string): MutationReceipt<void>;
-  listDirectMembers(row: RowRef): Promise<Array<{ username: string; role: MemberRole }>>;
-  listEffectiveMembers(row: RowRef): Promise<Array<DbMemberInfo<Schema>>>;
-  refreshFields(row: RowRef): Promise<Record<string, JsonValue>>;
-  connectCrdt(row: RowRef, callbacks: CrdtConnectCallbacks): CrdtConnection;
-  listMembers(row: RowRef): Promise<string[]>;
+  addParent(child: RowTarget, parent: RowTarget): MutationReceipt<void>;
+  removeParent(child: RowTarget, parent: RowTarget): MutationReceipt<void>;
+  listParents<TParentCollection extends string>(child: RowTarget): Promise<Array<RowRef<TParentCollection>>>;
+  addMember(row: RowTarget, username: string, role: MemberRole): MutationReceipt<void>;
+  removeMember(row: RowTarget, username: string): MutationReceipt<void>;
+  listDirectMembers(row: RowTarget): Promise<Array<{ username: string; role: MemberRole }>>;
+  listEffectiveMembers(row: RowTarget): Promise<Array<DbMemberInfo<Schema>>>;
+  refreshFields(row: RowTarget): Promise<Record<string, JsonValue>>;
+  connectCrdt(row: RowTarget, callbacks: CrdtConnectCallbacks): CrdtConnection;
+  listMembers(row: RowTarget): Promise<string[]>;
 }
 
 export type AnyRowHandle<Schema extends DbSchema> = {
@@ -50,8 +51,8 @@ export class RowHandle<
   fields: TFields;
 
   readonly in: {
-    add: (parent: RowRef<TAllowedParentCollections>) => MutationReceipt<void>;
-    remove: (parent: RowRef<TAllowedParentCollections>) => MutationReceipt<void>;
+    add: (parent: RowTarget<TAllowedParentCollections>) => MutationReceipt<void>;
+    remove: (parent: RowTarget<TAllowedParentCollections>) => MutationReceipt<void>;
     list: () => Promise<Array<RowRef<TAllowedParentCollections>>>;
   };
 
@@ -76,8 +77,8 @@ export class RowHandle<
     this.fields = fields;
 
     this.in = {
-      add: (parent: RowRef<TAllowedParentCollections>) => this.backend.addParent(this.ref, parent),
-      remove: (parent: RowRef<TAllowedParentCollections>) => this.backend.removeParent(this.ref, parent),
+      add: (parent: RowTarget<TAllowedParentCollections>) => this.backend.addParent(this.ref, parent),
+      remove: (parent: RowTarget<TAllowedParentCollections>) => this.backend.removeParent(this.ref, parent),
       list: async () => this.backend.listParents<TAllowedParentCollections>(this.ref),
     };
 

@@ -1,18 +1,25 @@
-import type { RowRef } from "./schema";
+import type { RowRef, RowTarget } from "./schema";
 import { normalizeBaseUrl } from "./transport";
 
+function hasEmbeddedRowRef<TCollection extends string>(
+  row: RowTarget<TCollection>,
+): row is { ref: RowRef<TCollection> } {
+  return "ref" in row;
+}
+
 export function normalizeRowRef<TCollection extends string>(
-  row: Pick<RowRef<TCollection>, "id" | "collection" | "baseUrl">,
+  row: RowTarget<TCollection>,
 ): RowRef<TCollection> {
+  const resolved = hasEmbeddedRowRef(row) ? row.ref : row;
   return {
-    id: row.id,
-    collection: row.collection,
-    baseUrl: normalizeBaseUrl(row.baseUrl),
+    id: resolved.id,
+    collection: resolved.collection,
+    baseUrl: normalizeBaseUrl(resolved.baseUrl),
   };
 }
 
 export function normalizeParentRefs<TCollection extends string>(
-  input: RowRef<TCollection> | RowRef<TCollection>[] | undefined,
+  input: RowTarget<TCollection> | RowTarget<TCollection>[] | undefined,
 ): RowRef<TCollection>[] {
   if (!input) {
     return [];

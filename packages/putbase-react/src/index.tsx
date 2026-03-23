@@ -24,6 +24,7 @@ import type {
   MemberRole,
   PutBaseUser,
   RowRef,
+  RowTarget,
   RowFields,
 } from "@putbase/core";
 import type { RowHandle } from "@putbase/core";
@@ -268,6 +269,10 @@ function hasRowRef(value: unknown): value is { ref: RowRef } {
     && typeof (candidate.ref as { baseUrl?: unknown }).baseUrl === "string";
 }
 
+function resolveRowTarget<TCollection extends string>(row: RowTarget<TCollection>): RowRef<TCollection> {
+  return hasRowRef(row) ? row.ref as RowRef<TCollection> : row;
+}
+
 function getRowFromResult<TResult>(
   result: TResult,
   getRow?: (result: TResult) => RowRef,
@@ -470,25 +475,26 @@ export function useRow<
   TCollection extends CollectionName<Schema>,
 >(
   client: PutBase<Schema>,
-  row: RowRef<TCollection> | null | undefined,
+  row: RowTarget<TCollection> | null | undefined,
   options: UseHookOptions = {},
 ): UseResourceResult<
   RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>
 > {
   const runtime = useRuntime(client);
   const session = useSessionResource(runtime, options.enabled ?? true);
-  const resourceKey = row ? makeRowKey(row.collection, row) : null;
+  const rowRef = row ? resolveRowTarget(row) : null;
+  const resourceKey = rowRef ? makeRowKey(rowRef.collection, rowRef) : null;
   const blocked = blockedResourceResult<
     RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>
   >(session);
   const resource = useOptionalResource(
-    (options.enabled ?? true) && !!row && !blocked,
+    (options.enabled ?? true) && !!rowRef && !blocked,
     resourceKey,
     runtime,
     () => runtime.getLive(
       resourceKey as string,
       () => runtime.client.getRow(
-        row as RowRef<TCollection>,
+        rowRef as RowRef<TCollection>,
       ) as Promise<
         RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>
       >,
@@ -500,20 +506,21 @@ export function useRow<
 
 export function useParents<Schema extends DbSchema>(
   client: PutBase<Schema>,
-  row: RowRef | null | undefined,
+  row: RowTarget | null | undefined,
   options: UseHookOptions = {},
 ): UseResourceResult<Array<RowRef>> {
   const runtime = useRuntime(client);
   const session = useSessionResource(runtime, options.enabled ?? true);
-  const resourceKey = row ? makeParentsKey(row) : null;
+  const rowRef = row ? resolveRowTarget(row) : null;
+  const resourceKey = rowRef ? makeParentsKey(rowRef) : null;
   const blocked = blockedResourceResult<Array<RowRef>>(session);
   const resource = useOptionalResource(
-    (options.enabled ?? true) && !!row && !blocked,
+    (options.enabled ?? true) && !!rowRef && !blocked,
     resourceKey,
     runtime,
     () => runtime.getLive(
       resourceKey as string,
-      () => runtime.client.listParents(row as RowRef),
+      () => runtime.client.listParents(rowRef as RowRef),
       snapshots.rowRefs,
     ),
   );
@@ -522,20 +529,21 @@ export function useParents<Schema extends DbSchema>(
 
 export function useMemberUsernames<Schema extends DbSchema>(
   client: PutBase<Schema>,
-  row: RowRef | null | undefined,
+  row: RowTarget | null | undefined,
   options: UseHookOptions = {},
 ): UseResourceResult<string[]> {
   const runtime = useRuntime(client);
   const session = useSessionResource(runtime, options.enabled ?? true);
-  const resourceKey = row ? makeMembersKey("usernames", row) : null;
+  const rowRef = row ? resolveRowTarget(row) : null;
+  const resourceKey = rowRef ? makeMembersKey("usernames", rowRef) : null;
   const blocked = blockedResourceResult<string[]>(session);
   const resource = useOptionalResource(
-    (options.enabled ?? true) && !!row && !blocked,
+    (options.enabled ?? true) && !!rowRef && !blocked,
     resourceKey,
     runtime,
     () => runtime.getLive(
       resourceKey as string,
-      () => runtime.client.listMembers(row as RowRef),
+      () => runtime.client.listMembers(rowRef as RowRef),
       snapshots.memberUsernames,
     ),
   );
@@ -544,20 +552,21 @@ export function useMemberUsernames<Schema extends DbSchema>(
 
 export function useDirectMembers<Schema extends DbSchema>(
   client: PutBase<Schema>,
-  row: RowRef | null | undefined,
+  row: RowTarget | null | undefined,
   options: UseHookOptions = {},
 ): UseResourceResult<Array<{ username: string; role: MemberRole }>> {
   const runtime = useRuntime(client);
   const session = useSessionResource(runtime, options.enabled ?? true);
-  const resourceKey = row ? makeMembersKey("direct", row) : null;
+  const rowRef = row ? resolveRowTarget(row) : null;
+  const resourceKey = rowRef ? makeMembersKey("direct", rowRef) : null;
   const blocked = blockedResourceResult<Array<{ username: string; role: MemberRole }>>(session);
   const resource = useOptionalResource(
-    (options.enabled ?? true) && !!row && !blocked,
+    (options.enabled ?? true) && !!rowRef && !blocked,
     resourceKey,
     runtime,
     () => runtime.getLive(
       resourceKey as string,
-      () => runtime.client.listDirectMembers(row as RowRef),
+      () => runtime.client.listDirectMembers(rowRef as RowRef),
       snapshots.directMembers,
     ),
   );
@@ -566,20 +575,21 @@ export function useDirectMembers<Schema extends DbSchema>(
 
 export function useEffectiveMembers<Schema extends DbSchema>(
   client: PutBase<Schema>,
-  row: RowRef | null | undefined,
+  row: RowTarget | null | undefined,
   options: UseHookOptions = {},
 ): UseResourceResult<Array<DbMemberInfo<Schema>>> {
   const runtime = useRuntime(client);
   const session = useSessionResource(runtime, options.enabled ?? true);
-  const resourceKey = row ? makeMembersKey("effective", row) : null;
+  const rowRef = row ? resolveRowTarget(row) : null;
+  const resourceKey = rowRef ? makeMembersKey("effective", rowRef) : null;
   const blocked = blockedResourceResult<Array<DbMemberInfo<Schema>>>(session);
   const resource = useOptionalResource(
-    (options.enabled ?? true) && !!row && !blocked,
+    (options.enabled ?? true) && !!rowRef && !blocked,
     resourceKey,
     runtime,
     () => runtime.getLive(
       resourceKey as string,
-      () => runtime.client.listEffectiveMembers(row as RowRef),
+      () => runtime.client.listEffectiveMembers(rowRef as RowRef),
       snapshots.effectiveMembers,
     ),
   );
@@ -588,23 +598,24 @@ export function useEffectiveMembers<Schema extends DbSchema>(
 
 export function useInviteLink<Schema extends DbSchema>(
   client: PutBase<Schema>,
-  row: RowRef | null | undefined,
+  row: RowTarget | null | undefined,
   options: UseHookOptions = {},
 ): UseInviteLinkResult {
   const runtime = useRuntime(client);
   const session = useSessionResource(runtime, options.enabled ?? true);
-  const resourceKey = row ? makeInviteLinkKey(row as RowRef) : null;
+  const rowRef = row ? resolveRowTarget(row) : null;
+  const resourceKey = rowRef ? makeInviteLinkKey(rowRef) : null;
   const blocked = blockedResourceResult<string>(session);
   const resource = useOptionalResource(
-    (options.enabled ?? true) && !!row && !blocked,
+    (options.enabled ?? true) && !!rowRef && !blocked,
     resourceKey,
     runtime,
     () => runtime.getLoadOnce(
       resourceKey as string,
       async () => {
-        const existing = await runtime.client.getExistingInviteToken(row as RowRef);
-        const invite = existing ?? runtime.client.createInviteToken(row as RowRef).value;
-        return runtime.client.createInviteLink(row as RowRef, invite.token);
+        const existing = await runtime.client.getExistingInviteToken(rowRef as RowRef);
+        const invite = existing ?? runtime.client.createInviteToken(rowRef as RowRef).value;
+        return runtime.client.createInviteLink(rowRef as RowRef, invite.token);
       },
     ),
   );

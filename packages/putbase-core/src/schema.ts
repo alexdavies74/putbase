@@ -6,6 +6,10 @@ export interface RowRef<TCollection extends string = string> {
   baseUrl: string;
 }
 
+export type RowTarget<TCollection extends string = string> =
+  | RowRef<TCollection>
+  | { ref: RowRef<TCollection> };
+
 export type DbFieldValue = string | number | boolean | RowRef;
 
 export type FieldType = "string" | "number" | "boolean" | "date" | "ref";
@@ -276,7 +280,7 @@ export type AnyRowRef<Schema extends DbSchema> = {
 }[CollectionName<Schema>];
 
 type ParentInput<TCollection extends string> =
-  [TCollection] extends [never] ? never : RowRef<TCollection> | RowRef<TCollection>[];
+  [TCollection] extends [never] ? never : RowTarget<TCollection> | RowTarget<TCollection>[];
 
 export type AllowedParentRef<
   Schema extends DbSchema,

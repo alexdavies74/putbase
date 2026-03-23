@@ -30,6 +30,7 @@ import type {
   InsertFields,
   MemberRole,
   RowRef,
+  RowTarget,
   RowFields,
 } from "./schema";
 import { resolveBackend } from "./backend";
@@ -159,7 +160,7 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
     return this.identity.whoAmI();
   }
 
-  async rememberPerUserRow(rowKey: string, row: RowRef): Promise<void> {
+  async rememberPerUserRow(rowKey: string, row: RowTarget): Promise<void> {
     const user = await this.identity.whoAmI();
     await rememberPerUserRow(resolveBackend(this.options.backend), user.username, rowKey, row);
   }
@@ -204,7 +205,7 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
    */
   update<TCollection extends CollectionName<Schema>>(
     collection: TCollection,
-    row: RowRef<TCollection>,
+    row: RowTarget<TCollection>,
     fields: Partial<RowFields<Schema, TCollection>>,
   ): MutationReceipt<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>> {
     const updated = this.rowsModule.update(collection, row, fields);
@@ -213,7 +214,7 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
   }
 
   async getRow<TCollection extends CollectionName<Schema>>(
-    row: RowRef<TCollection>,
+    row: RowTarget<TCollection>,
   ): Promise<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>> {
     return this.rowsModule.getRow(row);
   }
@@ -233,33 +234,35 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
     return this.queryModule.watchQuery(collection, options, callbacks);
   }
 
-  async getExistingInviteToken(row: RowRef): Promise<InviteToken | null> {
-    return this.optimisticStore.getInviteToken(row) ?? this.invitesModule.getExistingInviteToken(row);
+  async getExistingInviteToken(row: RowTarget): Promise<InviteToken | null> {
+    const rowRef = normalizeRowRef(row);
+    return this.optimisticStore.getInviteToken(rowRef) ?? this.invitesModule.getExistingInviteToken(rowRef);
   }
 
-  createInviteToken(row: RowRef): MutationReceipt<InviteToken> {
+  createInviteToken(row: RowTarget): MutationReceipt<InviteToken> {
     const state = this.assertReadyForMutation();
+    const rowRef = normalizeRowRef(row);
     const inviteToken = this.writePlanner.planInviteToken({
-      rowId: row.id,
+      rowId: rowRef.id,
       invitedBy: state.user.username,
     });
     const receipt = createMutationReceipt(inviteToken);
-    this.optimisticStore.setInviteToken(row, inviteToken);
+    this.optimisticStore.setInviteToken(rowRef, inviteToken);
     this.notifyLocalMutation();
 
     this.scheduleConfirmableWrite({
-      key: `invite:${rowRefKey(row)}`,
-      operation: () => this.invitesModule.createInviteTokenRemote(row, inviteToken),
-      confirm: () => this.optimisticStore.clearInviteToken(row),
-      rollback: () => this.optimisticStore.clearInviteToken(row),
-      dependencies: [this.optimisticStore.getPendingCreateDependency(row)].filter((value): value is Promise<unknown> => value !== null),
+      key: `invite:${rowRefKey(rowRef)}`,
+      operation: () => this.invitesModule.createInviteTokenRemote(rowRef, inviteToken),
+      confirm: () => this.optimisticStore.clearInviteToken(rowRef),
+      rollback: () => this.optimisticStore.clearInviteToken(rowRef),
+      dependencies: [this.optimisticStore.getPendingCreateDependency(rowRef)].filter((value): value is Promise<unknown> => value !== null),
       receipt,
     });
 
     return receipt;
   }
 
-  createInviteLink(row: RowRef, inviteToken: string): string {
+  createInviteLink(row: RowTarget, inviteToken: string): string {
     return this.invitesModule.createInviteLink(row, inviteToken);
   }
 
@@ -277,7 +280,7 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
     return row;
   }
 
-  async listMembers(row: RowRef): Promise<string[]> {
+  async listMembers(row: RowTarget): Promise<string[]> {
     const rowRef = normalizeRowRef(row);
     if (this.optimisticStore.getPendingCreateDependency(rowRef)) {
       return Array.from(new Set([
@@ -290,21 +293,23 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
     return Array.from(new Set([...usernames, ...directMembers.map((member) => member.username)]));
   }
 
-  addParent(child: RowRef, parent: RowRef): MutationReceipt<void> {
+  addParent(child: RowTarget, parent: RowTarget): MutationReceipt<void> {
     this.assertReadyForMutation();
-    this.optimisticStore.addParent(child, parent);
+    const childRef = normalizeRowRef(child);
+    const parentRef = normalizeRowRef(parent);
+    this.optimisticStore.addParent(childRef, parentRef);
     const receipt = createMutationReceipt(undefined);
     this.notifyLocalMutation();
     const dependencies = [
-      this.optimisticStore.getPendingCreateDependency(child),
-      this.optimisticStore.getPendingCreateDependency(parent),
+      this.optimisticStore.getPendingCreateDependency(childRef),
+      this.optimisticStore.getPendingCreateDependency(parentRef),
     ].filter((dependency): dependency is Promise<unknown> => dependency !== null);
 
     this.scheduleConfirmableWrite({
-      key: `parent-add:${rowRefKey(child)}`,
-      operation: () => this.parentsModule.addRemote(child, parent),
-      confirm: () => this.optimisticStore.confirmParentAdd(child, parent),
-      rollback: () => this.optimisticStore.rollbackParentAdd(child, parent),
+      key: `parent-add:${rowRefKey(childRef)}`,
+      operation: () => this.parentsModule.addRemote(childRef, parentRef),
+      confirm: () => this.optimisticStore.confirmParentAdd(childRef, parentRef),
+      rollback: () => this.optimisticStore.rollbackParentAdd(childRef, parentRef),
       dependencies,
       receipt,
     });
@@ -312,33 +317,36 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
     return receipt;
   }
 
-  removeParent(child: RowRef, parent: RowRef): MutationReceipt<void> {
+  removeParent(child: RowTarget, parent: RowTarget): MutationReceipt<void> {
     this.assertReadyForMutation();
-    this.optimisticStore.removeParent(child, parent);
+    const childRef = normalizeRowRef(child);
+    const parentRef = normalizeRowRef(parent);
+    this.optimisticStore.removeParent(childRef, parentRef);
     const receipt = createMutationReceipt(undefined);
     this.notifyLocalMutation();
     this.scheduleConfirmableWrite({
-      key: `parent-remove:${rowRefKey(child)}`,
-      operation: () => this.parentsModule.removeRemote(child, parent),
-      confirm: () => this.optimisticStore.confirmParentRemove(child, parent),
-      rollback: () => this.optimisticStore.rollbackParentRemove(child, parent),
-      dependencies: [this.optimisticStore.getPendingCreateDependency(child)].filter((dependency): dependency is Promise<unknown> => dependency !== null),
+      key: `parent-remove:${rowRefKey(childRef)}`,
+      operation: () => this.parentsModule.removeRemote(childRef, parentRef),
+      confirm: () => this.optimisticStore.confirmParentRemove(childRef, parentRef),
+      rollback: () => this.optimisticStore.rollbackParentRemove(childRef, parentRef),
+      dependencies: [this.optimisticStore.getPendingCreateDependency(childRef)].filter((dependency): dependency is Promise<unknown> => dependency !== null),
       receipt,
     });
 
     return receipt;
   }
 
-  async listParents<TParentCollection extends string>(child: RowRef): Promise<Array<RowRef<TParentCollection>>> {
-    if (this.optimisticStore.getPendingCreateDependency(child)) {
-      return this.optimisticStore.getCurrentParents(child, []) as Array<RowRef<TParentCollection>>;
+  async listParents<TParentCollection extends string>(child: RowTarget): Promise<Array<RowRef<TParentCollection>>> {
+    const childRef = normalizeRowRef(child);
+    if (this.optimisticStore.getPendingCreateDependency(childRef)) {
+      return this.optimisticStore.getCurrentParents(childRef, []) as Array<RowRef<TParentCollection>>;
     }
-    const serverParents = await this.parentsModule.list<TParentCollection>(child);
-    this.optimisticStore.recordParents(child, serverParents as RowRef[]);
-    return this.optimisticStore.getCurrentParents(child, serverParents as RowRef[]) as Array<RowRef<TParentCollection>>;
+    const serverParents = await this.parentsModule.list<TParentCollection>(childRef);
+    this.optimisticStore.recordParents(childRef, serverParents as RowRef[]);
+    return this.optimisticStore.getCurrentParents(childRef, serverParents as RowRef[]) as Array<RowRef<TParentCollection>>;
   }
 
-  addMember(row: RowRef, username: string, role: MemberRole): MutationReceipt<void> {
+  addMember(row: RowTarget, username: string, role: MemberRole): MutationReceipt<void> {
     this.assertReadyForMutation();
     const rowRef = normalizeRowRef(row);
     this.optimisticStore.addMember(rowRef, username, role);
@@ -356,7 +364,7 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
     return receipt;
   }
 
-  removeMember(row: RowRef, username: string): MutationReceipt<void> {
+  removeMember(row: RowTarget, username: string): MutationReceipt<void> {
     this.assertReadyForMutation();
     const rowRef = normalizeRowRef(row);
     this.optimisticStore.removeMember(rowRef, username);
@@ -374,7 +382,7 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
     return receipt;
   }
 
-  async listDirectMembers(row: RowRef): Promise<Array<{ username: string; role: MemberRole }>> {
+  async listDirectMembers(row: RowTarget): Promise<Array<{ username: string; role: MemberRole }>> {
     const rowRef = normalizeRowRef(row);
     const optimisticDirect = this.optimisticStore.getDirectMembers(rowRef);
     if (optimisticDirect && this.optimisticStore.getPendingCreateDependency(rowRef)) {
@@ -385,7 +393,7 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
     return this.optimisticStore.getDirectMembers(rowRef) ?? direct;
   }
 
-  async listEffectiveMembers(row: RowRef): Promise<Array<DbMemberInfo<Schema>>> {
+  async listEffectiveMembers(row: RowTarget): Promise<Array<DbMemberInfo<Schema>>> {
     const rowRef = normalizeRowRef(row);
     if (this.optimisticStore.getPendingCreateDependency(rowRef)) {
       const direct = this.optimisticStore.getDirectMembers(rowRef) ?? [];
@@ -399,11 +407,11 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
     return this.optimisticStore.getEffectiveMembers(rowRef, effective);
   }
 
-  async refreshFields(row: RowRef): Promise<Record<string, JsonValue>> {
+  async refreshFields(row: RowTarget): Promise<Record<string, JsonValue>> {
     return this.rowsModule.refreshFields(row);
   }
 
-  connectCrdt(row: RowRef, callbacks: CrdtConnectCallbacks): CrdtConnection {
+  connectCrdt(row: RowTarget, callbacks: CrdtConnectCallbacks): CrdtConnection {
     return this.syncModule.connectCrdt(row, callbacks);
   }
 

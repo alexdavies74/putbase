@@ -98,6 +98,19 @@ const project = projectWrite.value;
 const projectName: string = project.fields.name;
 void projectName;
 void projectWrite.settled;
+void db.put("tasks", { title: "Ship v2" }, { in: project });
+void db.query("tasks", { in: project, where: { status: "done" } });
+void db.getRow(project).then((row) => {
+  const collection: "projects" = row.collection;
+  void collection;
+});
+void db.createInviteToken(project);
+void db.createInviteLink(project, "invite_token");
+void db.listMembers(project);
+void db.rememberPerUserRow("recent-project", project);
+
+// @ts-expect-error ref fields still require a serializable RowRef
+void db.put("gameRecords", { gameRef: project, role: "owner" });
 
 const taskWrite = db.put("tasks", { title: "Ship v2" }, { in: projectRef });
 const task = taskWrite.value;
@@ -108,7 +121,8 @@ void title;
 void status;
 void maybePoints;
 void taskWrite.settled;
-void task.in.add(projectRef);
+void db.update("tasks", task, { status: "done" });
+void task.in.add(project);
 void task.in.list().then((parents) => {
   const firstParent = parents[0];
   if (firstParent) {

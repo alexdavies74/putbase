@@ -74,7 +74,7 @@ import { db } from "./db";
 
 function CardList({ board }: { board: BoardHandle }) {
   const { rows: cards } = useQuery<Schema, "cards">(db, "cards", {
-    in: board.ref,
+    in: board,
     index: "byCreatedAt",
     order: "asc",
   });
@@ -113,7 +113,7 @@ function RecentBoards() {
 
 `useRow` is the single-row equivalent of `useQuery`: it polls for changes and re-renders automatically.
 
-If you need one row in React, prefer `useRow(db, rowRef)` over calling `db.getRow(...)` in an effect and wiring your own polling loop.
+If you need one row in React, prefer `useRow(db, row)` over calling `db.getRow(...)` in an effect and wiring your own polling loop. `row` can be either a `RowHandle` or a `RowRef`.
 
 ```tsx
 import { useRow } from "@putbase/react";
@@ -180,7 +180,7 @@ import { db } from "./db";
 
 // Sharer side
 function ShareButton({ board }: { board: BoardHandle }) {
-  const { inviteLink } = useInviteLink(db, board.ref);
+  const { inviteLink } = useInviteLink(db, board);
   return <button onClick={() => navigator.clipboard.writeText(inviteLink ?? "")}>Copy invite link</button>;
 }
 
@@ -204,7 +204,7 @@ import { useMutation } from "@putbase/react";
 
 function AddCard({ board }: { board: BoardHandle }) {
   const { mutate: addCard, status } = useMutation(async (text: string) => {
-    const write = db.put("cards", { text, done: false, createdAt: Date.now() }, { in: board.ref });
+    const write = db.put("cards", { text, done: false, createdAt: Date.now() }, { in: board });
     await write.settled;
     return write.value;
   });
@@ -226,12 +226,12 @@ function AddCard({ board }: { board: BoardHandle }) {
 | `usePutBase()` | — | `PutBase` client from context |
 | `usePutBaseReady(client)` | `PutBase` client | `{ status, isRefreshing, error, refreshError, refresh }` — resolves when auth + provisioning complete |
 | `useQuery(client, collection, options)` | client, collection name, query options | `{ rows, data, status, isRefreshing, error, refreshError, refresh }` |
-| `useRow(client, row)` | client, row ref | `{ data: RowHandle, status, isRefreshing, error, refreshError, refresh }` |
-| `useParents(client, row)` | client, row ref | `{ data: RowRef[], status, isRefreshing, error, refreshError, refresh }` |
-| `useMemberUsernames(client, row)` | client, row ref | `{ data: string[], status, isRefreshing, error, refreshError, refresh }` |
-| `useDirectMembers(client, row)` | client, row ref | `{ data: { username, role }[], status, isRefreshing, error, refreshError, refresh }` |
-| `useEffectiveMembers(client, row)` | client, row ref | `{ data: DbMemberInfo[], status, isRefreshing, error, refreshError, refresh }` |
-| `useInviteLink(client, row)` | client, row ref | `{ inviteLink: string, status, isRefreshing, error, refreshError, refresh }` |
+| `useRow(client, row)` | client, row handle or row ref | `{ data: RowHandle, status, isRefreshing, error, refreshError, refresh }` |
+| `useParents(client, row)` | client, row handle or row ref | `{ data: RowRef[], status, isRefreshing, error, refreshError, refresh }` |
+| `useMemberUsernames(client, row)` | client, row handle or row ref | `{ data: string[], status, isRefreshing, error, refreshError, refresh }` |
+| `useDirectMembers(client, row)` | client, row handle or row ref | `{ data: { username, role }[], status, isRefreshing, error, refreshError, refresh }` |
+| `useEffectiveMembers(client, row)` | client, row handle or row ref | `{ data: DbMemberInfo[], status, isRefreshing, error, refreshError, refresh }` |
+| `useInviteLink(client, row)` | client, row handle or row ref | `{ inviteLink: string, status, isRefreshing, error, refreshError, refresh }` |
 | `useInviteFromLocation(client, options?)` | client, `{ href?, clearLocation?, onOpen?, open? }` | `{ hasInvite, inviteInput, data, status, isRefreshing, error, refreshError, refresh }` |
 | `usePerUserRow(client, options)` | client, `{ key, href?, clearLocation?, loadRememberedRow?, openInvite?, getRow? }` | `{ hasInvite, inviteInput, data, status, isRefreshing, error, refreshError, refresh, remember, clear }` |
 | `useMutation(fn)` | async function | `{ mutate, data, status, error, reset }` |
@@ -287,7 +287,7 @@ function useRow<
   TCollection extends CollectionName<Schema>,
 >(
   client: PutBase<Schema>,
-  row: RowRef<TCollection> | null | undefined,
+  row: RowTarget<TCollection> | null | undefined,
   hookOptions?: UseHookOptions,
 ): UseResourceResult<
   RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>
@@ -295,6 +295,7 @@ function useRow<
 ```
 
 - `row: null | undefined` keeps the hook idle.
+- `row` can be either a `RowHandle` or `RowRef`.
 - `useRow` polls for changes and re-renders automatically. In React, prefer it over manual polling around `client.getRow(...)`.
 - The returned handle matches `client.getRow(...)`, including parent collection constraints.
 
@@ -303,7 +304,7 @@ function useRow<
 ```ts
 function useInviteLink<Schema extends DbSchema>(
   client: PutBase<Schema>,
-  row: RowRef | null | undefined,
+  row: RowTarget | null | undefined,
   options?: UseHookOptions,
 ): {
   inviteLink: string | undefined;
@@ -312,6 +313,7 @@ function useInviteLink<Schema extends DbSchema>(
 ```
 
 - `row: null | undefined` keeps the hook idle.
+- `row` can be either a `RowHandle` or `RowRef`.
 - `inviteLink` is the generated or reused invite URL for the row.
 
 ### `useInviteFromLocation`

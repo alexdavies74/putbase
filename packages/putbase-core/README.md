@@ -13,17 +13,17 @@ This makes PutBase particularly well-suited for:
 ```ts
 // Write
 const board = db.put("boards", { title: "Launch checklist" }).value;
-db.put("cards", { text: "Ship it", done: false, createdAt: Date.now() }, { in: board.ref });
+db.put("cards", { text: "Ship it", done: false, createdAt: Date.now() }, { in: board });
 
 // Read (React)
 const { rows: cards } = useQuery<Schema, "cards">(db, "cards", {
-  in: board.ref,
+  in: board,
   index: "byCreatedAt",
   order: "asc",
 });
 
 // Share
-const { inviteLink } = useInviteLink(db, board.ref);
+const { inviteLink } = useInviteLink(db, board);
 ```
 
 ---
@@ -130,9 +130,9 @@ await db.ensureReady();
 // Create a top-level row
 const board = db.put("boards", { title: "Launch checklist" }).value;
 
-// Create a child row — pass the parent row ref
-db.put("cards", { text: "Write README", done: false, createdAt: Date.now() }, { in: board.ref });
-db.put("cards", { text: "Publish to npm", done: false, createdAt: Date.now() }, { in: board.ref });
+// Create a child row — pass the parent row or row ref
+db.put("cards", { text: "Write README", done: false, createdAt: Date.now() }, { in: board });
+db.put("cards", { text: "Publish to npm", done: false, createdAt: Date.now() }, { in: board });
 ```
 
 `put` and `update` are synchronous optimistic writes. Use `.value` on the returned receipt when you want the row handle immediately.
@@ -140,14 +140,14 @@ db.put("cards", { text: "Publish to npm", done: false, createdAt: Date.now() }, 
 To update fields on an existing row:
 
 ```ts
-db.update("cards", card.ref, { done: true });
+db.update("cards", card, { done: true });
 ```
 
 ---
 
 ## Querying
 
-PutBase queries always run within a known scope. For `cards`, that scope is a `board`, so you pass `in: board.ref`. For collections declared as `in: ["user"]`, omitting `in` means "use the current signed-in user's built-in `user` row."
+PutBase queries always run within a known scope. For `cards`, that scope is a `board`, so you pass `in: board`. For collections declared as `in: ["user"]`, omitting `in` means "use the current signed-in user's built-in `user` row."
 
 Queries never mean "all accessible rows". If a collection is not declared as `in: ["user"]`, omitting `in` is an error.
 
@@ -181,7 +181,7 @@ import { useQuery } from "@putbase/react";
 
 function CardList({ board }: { board: BoardHandle }) {
   const { rows: cards } = useQuery<Schema, "cards">(db, "cards", {
-    in: board.ref,
+    in: board,
     index: "byCreatedAt",
     order: "asc",
   });
@@ -229,10 +229,10 @@ Sharing is a three-step flow:
 
 ```ts
 // 1. Generate a token for the row you want to share
-const token = db.createInviteToken(board.ref).value;
+const token = db.createInviteToken(board).value;
 
 // 2. Build a link the recipient can open in their browser
-const link = db.createInviteLink(board.ref, token.token);
+const link = db.createInviteLink(board, token.token);
 // → "https://yourapp.com/?pb=..."
 
 // 3. Recipient opens the link; your app calls openInvite
@@ -253,15 +253,15 @@ Once users have joined a row you can inspect and manage the member list:
 
 ```ts
 // Flat list of usernames
-const members = await db.listMembers(board.ref);
+const members = await db.listMembers(board);
 
 // With roles
-const detailed = await db.listDirectMembers(board.ref);
+const detailed = await db.listDirectMembers(board);
 // → [{ username: "alice", role: "writer" }, ...]
 
 // Add or remove manually
-await db.addMember(board.ref, "bob", "writer").settled;
-await db.removeMember(board.ref, "eve").settled;
+await db.addMember(board, "bob", "writer").settled;
+await db.removeMember(board, "eve").settled;
 ```
 
 Membership inherited through a parent row is visible via `listEffectiveMembers`.
@@ -317,8 +317,8 @@ pnpm --filter woof-app dev
 | `new PutBase({ schema, appBaseUrl? })` | Create a client. Pass `appBaseUrl` so invite links point back to your app. |
 | `ensureReady()` | Explicitly await authentication and provisioning before mutations. Recommended during app startup. |
 | `whoAmI()` | Returns `{ username }` for the signed-in Puter user. |
-| `put(collection, fields, options?)` | Create a row optimistically and return a `MutationReceipt<RowHandle>` immediately. Pass `{ in: parentRef }` for child rows; for collections declared as `in: ["user"]`, omitting `in` uses the current signed-in user's built-in `user` row. Most apps use `.value`; await `.settled` when you need remote confirmation. |
-| `update(collection, row, fields)` | Merge field updates onto a row optimistically and return a `MutationReceipt<RowHandle>` immediately. |
+| `put(collection, fields, options?)` | Create a row optimistically and return a `MutationReceipt<RowHandle>` immediately. Pass `{ in: parent }` for child rows, where `parent` can be a `RowHandle` or `RowRef`; for collections declared as `in: ["user"]`, omitting `in` uses the current signed-in user's built-in `user` row. Most apps use `.value`; await `.settled` when you need remote confirmation. |
+| `update(collection, row, fields)` | Merge field updates onto a row optimistically and return a `MutationReceipt<RowHandle>` immediately. `row` can be a `RowHandle` or `RowRef`. |
 | `getRow(row)` | Fetch a row by typed reference. |
 | `query(collection, options)` | Load rows under a parent, with optional index, order, and limit. For collections declared as `in: ["user"]`, omitting `in` uses the current signed-in user's built-in `user` row. |
 | `watchQuery(collection, options, callbacks)` | Subscribe to repeated query refreshes via `callbacks.onChange`. For collections declared as `in: ["user"]`, omitting `in` uses the current signed-in user's built-in `user` row. Returns a handle with `.disconnect()`. |
@@ -346,7 +346,7 @@ pnpm --filter woof-app dev
 |--------|-------------|
 | `.fields` | Current field snapshot, typed from your schema. Treat it as read-only; the object is replaced when fields change. |
 | `.collection` | The collection this row belongs to. |
-| `.ref` | Portable `RowRef` object for persistence, invites, and reopening the row later. |
+| `.ref` | Portable `RowRef` object for persistence, invites, ref-typed fields, and reopening the row later. |
 | `.id` / `.owner` | Row identity metadata. |
 | `.refresh()` | Re-fetch fields from the server. Resolves to the latest field snapshot. |
 | `.connectCrdt(callbacks)` | Shorthand for `db.connectCrdt(row, callbacks)`. |
