@@ -3,15 +3,12 @@ import { OptimisticStore } from "./optimistic-store";
 import { RowHandle } from "./row-handle";
 import { normalizeParentRefs, normalizeRowRef } from "./row-reference";
 import type {
-  AllowedParentCollections,
   CollectionName,
   DbQueryOptions,
   DbQueryWatchCallbacks,
   DbQueryWatchHandle,
-  DbRowFields,
   DbSchema,
   RowRef,
-  RowFields,
 } from "./schema";
 import { getCollectionSpec, pickIndex } from "./schema";
 import { stableJsonStringify } from "./stable-json";
@@ -112,7 +109,7 @@ function compareIndexedRows(
   return order === "desc" ? -rowIdComparison : rowIdComparison;
 }
 
-function snapshotRows(rows: Array<RowHandle<string, DbRowFields>>): string {
+function snapshotRows(rows: Array<RowHandle<DbSchema, string>>): string {
   const snapshot = rows.map((row) => ({
     id: row.id,
     collection: row.collection,
@@ -126,7 +123,7 @@ function snapshotRows(rows: Array<RowHandle<string, DbRowFields>>): string {
 interface QueryRowLoader<Schema extends DbSchema> {
   getRow<TCollection extends CollectionName<Schema>>(
     row: RowRef<TCollection>,
-  ): Promise<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>>;
+  ): Promise<RowHandle<Schema, TCollection>>;
 }
 
 export class Query<Schema extends DbSchema> {
@@ -144,7 +141,7 @@ export class Query<Schema extends DbSchema> {
   async query<TCollection extends CollectionName<Schema>>(
     collection: TCollection,
     options: DbQueryOptions<Schema, TCollection>,
-  ): Promise<Array<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>>> {
+  ): Promise<Array<RowHandle<Schema, TCollection>>> {
     const resolvedOptions = this.resolveOptions
       ? await this.resolveOptions(collection, options)
       : options;
@@ -279,14 +276,14 @@ export class Query<Schema extends DbSchema> {
   watchQuery<TCollection extends CollectionName<Schema>>(
     collection: TCollection,
     options: DbQueryOptions<Schema, TCollection>,
-    callbacks: DbQueryWatchCallbacks<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>>,
+    callbacks: DbQueryWatchCallbacks<RowHandle<Schema, TCollection>>,
   ): DbQueryWatchHandle {
     let lastSnapshot: string | null = null;
 
     const poller = createAdaptivePoller({
       run: async ({ markActivity }) => {
         const result = await this.query(collection, options);
-        const nextSnapshot = snapshotRows(result as unknown as Array<RowHandle<string, DbRowFields>>);
+        const nextSnapshot = snapshotRows(result as unknown as Array<RowHandle<DbSchema, string>>);
 
         if (lastSnapshot === nextSnapshot) {
           return;

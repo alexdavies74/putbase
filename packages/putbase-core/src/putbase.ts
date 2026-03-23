@@ -192,7 +192,7 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
     collection: TCollection,
     fields: InsertFields<Schema, TCollection>,
     ...args: DbPutArgs<Schema, TCollection>
-  ): MutationReceipt<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>> {
+  ): MutationReceipt<RowHandle<Schema, TCollection>> {
     const options = args[0];
     const row = this.rowsModule.put(collection, fields, this.resolveImplicitPutOptionsSync(collection, options));
     this.notifyLocalMutation();
@@ -207,7 +207,7 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
     collection: TCollection,
     row: RowTarget<TCollection>,
     fields: Partial<RowFields<Schema, TCollection>>,
-  ): MutationReceipt<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>> {
+  ): MutationReceipt<RowHandle<Schema, TCollection>> {
     const updated = this.rowsModule.update(collection, row, fields);
     this.notifyLocalMutation();
     return updated;
@@ -215,21 +215,21 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
 
   async getRow<TCollection extends CollectionName<Schema>>(
     row: RowTarget<TCollection>,
-  ): Promise<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>> {
+  ): Promise<RowHandle<Schema, TCollection>> {
     return this.rowsModule.getRow(row);
   }
 
   async query<TCollection extends CollectionName<Schema>>(
     collection: TCollection,
     options: DbQueryOptions<Schema, TCollection>,
-  ): Promise<Array<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>>> {
+  ): Promise<Array<RowHandle<Schema, TCollection>>> {
     return this.queryModule.query(collection, options);
   }
 
   watchQuery<TCollection extends CollectionName<Schema>>(
     collection: TCollection,
     options: DbQueryOptions<Schema, TCollection>,
-    callbacks: DbQueryWatchCallbacks<RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema>>,
+    callbacks: DbQueryWatchCallbacks<RowHandle<Schema, TCollection>>,
   ): DbQueryWatchHandle {
     return this.queryModule.watchQuery(collection, options, callbacks);
   }
@@ -535,7 +535,7 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
     row: RowRef<TCollection>,
     owner: string,
     fields: Record<string, JsonValue>,
-  ): RowHandle<TCollection, RowFields<Schema, TCollection>, AllowedParentCollections<Schema, TCollection>, Schema> {
+  ): RowHandle<Schema, TCollection> {
     const rowRef = normalizeRowRef(row);
     const cacheKey = `${collection}:${rowRefKey(rowRef)}`;
     const snapshot = stableJsonStringify({
@@ -547,12 +547,7 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
     });
     const cached = this.rowHandleCache.get(cacheKey);
     if (cached) {
-      const handle = cached.handle as unknown as RowHandle<
-        TCollection,
-        RowFields<Schema, TCollection>,
-        AllowedParentCollections<Schema, TCollection>,
-        Schema
-      >;
+      const handle = cached.handle as unknown as RowHandle<Schema, TCollection>;
       if (cached.snapshot !== snapshot) {
         handle.fields = fields as RowFields<Schema, TCollection>;
         cached.snapshot = snapshot;
@@ -562,10 +557,10 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
     }
 
     const handle = new RowHandle<
+      Schema,
       TCollection,
       RowFields<Schema, TCollection>,
-      AllowedParentCollections<Schema, TCollection>,
-      Schema
+      AllowedParentCollections<Schema, TCollection>
     >(
       this,
       rowRef,

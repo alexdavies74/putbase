@@ -1,13 +1,13 @@
 import { useInviteFromLocation, useInviteLink, useMutation, useQuery, useRow, useSession } from "@putbase/react";
 import { useEffect, useState } from "react";
-import type { RowHandle, RowFields } from "@putbase/core";
+import type { RowHandle } from "@putbase/core";
 import { db } from "./db";
 import type { Schema } from "./schema";
 
 // Convenience type aliases
-export type BoardHandle = RowHandle<"boards", RowFields<Schema, "boards">, never, Schema>;
-export type RecentBoardHandle = RowHandle<"recentBoards", RowFields<Schema, "recentBoards">, "user", Schema>;
-export type CardHandle = RowHandle<"cards", RowFields<Schema, "cards">, "boards", Schema>;
+export type BoardHandle = RowHandle<Schema, "boards">;
+export type RecentBoardHandle = RowHandle<Schema, "recentBoards">;
+export type CardHandle = RowHandle<Schema, "cards">;
 
 async function rememberRecentBoard(board: BoardHandle): Promise<void> {
   // `recentBoards` is declared as `in: ["user"]`, so omitting `in` uses the
