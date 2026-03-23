@@ -143,7 +143,7 @@ export class Transport {
     }
 
     return {
-      request: <T, TPayload = unknown>(
+      request: async <T, TPayload = unknown>(
         action: RowAction,
         payload: TPayload,
         options?: RowRequestOptions,

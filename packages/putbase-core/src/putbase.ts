@@ -318,10 +318,6 @@ export class PutBase<Schema extends DbSchema = DbSchema> implements RowHandleBac
 
   async listMembers(row: DbRowLocator): Promise<string[]> {
     const rowRef = toMemberRowRef(row);
-    const optimistic = this.optimisticStore.getMemberUsernames(rowRef);
-    if (optimistic) {
-      return optimistic;
-    }
     if (this.optimisticStore.getPendingCreateDependency(rowRef)) {
       return Array.from(new Set([
         row.owner,

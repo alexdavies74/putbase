@@ -143,6 +143,56 @@ describe("PutBase", () => {
     expect(row.fields.name).toBe("Rex");
   });
 
+  it("does not let stale optimistic direct-members cache hide row/get members", async () => {
+    const db = new PutBase({
+      schema: MINIMAL_SCHEMA,
+      identityProvider: async () => ({ username: "owner" }),
+      fetchFn: async (input: RequestInfo | URL): Promise<Response> => {
+        const url = asUrl(input);
+
+        if (url.endsWith("/row/get")) {
+          return new Response(
+            JSON.stringify({
+              id: "row_public",
+              name: "Rex",
+              owner: "owner",
+              target: "https://worker.example/rows/row_public",
+              createdAt: 1,
+              collection: "rows",
+              members: ["owner", "friend"],
+              parentRefs: [],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+
+        if (url.endsWith("/members/direct")) {
+          return new Response(
+            JSON.stringify({ members: [] }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+
+        if (url.endsWith("/fields/get") || url.endsWith("/fields/set")) {
+          return new Response(
+            JSON.stringify({ fields: { name: "Rex" }, collection: "rows" }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+
+        return new Response(JSON.stringify({ code: "BAD_REQUEST", message: "Unexpected URL" }), {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    const row = await db.openTarget("https://worker.example/rows/row_public");
+
+    await expect(db.listDirectMembers(row)).resolves.toEqual([]);
+    await expect(db.listMembers(row)).resolves.toEqual(["owner", "friend"]);
+  });
+
   it("uses globalThis.puter when no backend option is provided", async () => {
     runtimeGlobal.puter = {
       auth: {
