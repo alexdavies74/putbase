@@ -685,8 +685,17 @@ export function useInviteFromLocation<
 
     if (detectedInviteInput && detectedInviteInput !== latchedInviteInput) {
       setLatchedInviteInput(detectedInviteInput);
+      return;
     }
-  }, [detectedInviteInput, enabled, latchedInviteInput]);
+
+    if (
+      !detectedInviteInput
+      && latchedInviteInput !== null
+      && deliveryState.status === "success"
+    ) {
+      setLatchedInviteInput(null);
+    }
+  }, [deliveryState.status, detectedInviteInput, enabled, latchedInviteInput]);
 
   const resource = useOptionalResource(
     (options.enabled ?? true)

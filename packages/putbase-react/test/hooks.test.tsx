@@ -697,6 +697,11 @@ describe("@putbase/react", () => {
     await waitFor(() => {
       expect(window.location.search).toBe("");
     });
+    await waitFor(() => {
+      expect(latest?.hasInvite).toBe(false);
+      expect(latest?.status).toBe("idle");
+      expect(latest?.data).toBeUndefined();
+    });
     await app.unmount();
   });
 
@@ -747,12 +752,46 @@ describe("@putbase/react", () => {
     });
 
     await waitFor(() => {
-      expect(latest?.status).toBe("success");
-      expect(latest?.data?.fields.name).toBe("Buddy");
+      expect(window.location.search).toBe("");
+      expect(latest?.hasInvite).toBe(false);
+      expect(latest?.status).toBe("idle");
+      expect(latest?.data).toBeUndefined();
     });
+    await app.unmount();
+  });
+
+  it("drops accepted location invites after the URL is cleared", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      inviteUrl(dogRef()),
+    );
+
+    const db = new FakeDb();
+    const session = deferred<{ signedIn: true; user: { username: string } }>();
+    db.sessionPromise = session.promise;
+    let latest: ReturnType<typeof useInviteFromLocation<TestSchema, ReturnType<typeof makeDogRow>>> | null = null;
+
+    function Probe() {
+      latest = useInviteFromLocation<TestSchema, ReturnType<typeof makeDogRow>>(db as unknown as PutBase<TestSchema>);
+      return <div>{latest.hasInvite ? latest.status : "no-invite"}</div>;
+    }
+
+    const app = await renderApp(<Probe />);
+
+    await act(async () => {
+      session.resolve({ signedIn: true, user: { username: "alex" } });
+      await flushMicrotasks();
+      await flushMicrotasks();
+    });
+
     await waitFor(() => {
       expect(window.location.search).toBe("");
+      expect(latest?.hasInvite).toBe(false);
+      expect(latest?.status).toBe("idle");
+      expect(latest?.data).toBeUndefined();
     });
+    expect(db.openInviteCalls).toBe(1);
     await app.unmount();
   });
 
@@ -849,6 +888,7 @@ describe("@putbase/react", () => {
         row: ReturnType<typeof makeDogRow>;
         self?: unknown;
       }>(db as unknown as PutBase<TestSchema>, {
+        clearInviteParams: false,
         open: async (inviteInput) => openInvite(inviteInput),
       });
       return <div>{latest.status}</div>;
@@ -868,9 +908,7 @@ describe("@putbase/react", () => {
     });
 
     expect(db.openInviteCalls).toBe(0);
-    await waitFor(() => {
-      expect(window.location.search).toBe("");
-    });
+    expect(window.location.search).toContain(PUTBASE_INVITE_TARGET_PARAM);
     await app.unmount();
   });
 
