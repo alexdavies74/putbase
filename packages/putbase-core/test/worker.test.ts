@@ -173,7 +173,7 @@ describe("RowWorker", () => {
       }),
     );
     expect(ownerJoin.status).toBe(200);
-    expect((await jsonBody(ownerJoin)).target).toBe("https://worker.example/rows/row_1");
+    expect((await jsonBody(ownerJoin)).baseUrl).toBe("https://worker.example");
 
     const guestJoinWithoutInvite = await worker.handle(
       await authedRequest({
@@ -364,8 +364,7 @@ describe("RowWorker", () => {
     const parentRef = {
       id: "project_1",
       collection: "projects",
-      owner: "owner",
-      target: "https://worker.example/rows/project_1",
+      baseUrl: "https://worker.example",
     };
 
     const link = await worker.handle(
@@ -379,7 +378,7 @@ describe("RowWorker", () => {
     );
 
     expect(link.status).toBe(200);
-    expect((await jsonBody(link)).parentRefs).toEqual([parentRef]);
+    expect((await jsonBody(link)).parentRefs).toEqual([expect.objectContaining(parentRef)]);
 
     const snapshot = await worker.handle(
       await authedRequest({
@@ -394,7 +393,7 @@ describe("RowWorker", () => {
     expect((await jsonBody(snapshot))).toMatchObject({
       id: "task_1",
       collection: "tasks",
-      parentRefs: [parentRef],
+      parentRefs: [expect.objectContaining(parentRef)],
     });
 
     const unlink = await worker.handle(
@@ -449,7 +448,7 @@ describe("RowWorker", () => {
     expect(response.status).toBe(400);
     await expect(jsonBody(response)).resolves.toMatchObject({
       code: "BAD_REQUEST",
-      message: "fields.title must be a string, number, or boolean",
+      message: "fields.title must be a string, number, boolean, or row ref",
     });
   });
 
@@ -1203,9 +1202,12 @@ describe("RowWorker", () => {
       rowId: "dog_1",
       username: "bob",
       body: {
-        childRowId: "tag_1",
+        childRef: {
+          id: "tag_1",
+          collection: "tags",
+          baseUrl: bobBase,
+        },
         childOwner: "bob",
-        childTarget: `${bobBase}/rows/tag_1`,
         collection: "tags",
         fields: { label: "friendly", createdBy: "bob", createdAt: 1 },
       },
@@ -1220,8 +1222,7 @@ describe("RowWorker", () => {
         parentRef: {
           id: "dog_1",
           collection: "dogs",
-          owner: "alice",
-          target: `${aliceBase}/rows/dog_1`,
+          baseUrl: aliceBase,
         },
       },
     })).toMatchObject({ status: 200 });
@@ -1238,7 +1239,7 @@ describe("RowWorker", () => {
       expect.objectContaining({
         rowId: "tag_1",
         owner: "bob",
-        target: `${bobBase}/rows/tag_1`,
+        baseUrl: bobBase,
       }),
     ]);
 

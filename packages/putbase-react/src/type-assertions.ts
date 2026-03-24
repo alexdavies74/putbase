@@ -66,7 +66,7 @@ if (tagRows[0]) {
   void tagRows[0].in.add({
     id: "dog_1",
     collection: "dogs",
-    baseUrl: "https://worker.example/rows",
+    baseUrl: "https://worker.example",
   });
   const createdAt: number = tagRows[0].fields.createdAt;
   void createdAt;

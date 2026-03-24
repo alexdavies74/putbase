@@ -18,53 +18,41 @@ class FakeDb {
   }
 
   async query() {
+    const backend = {
+      addParent: async () => undefined,
+      removeParent: async () => undefined,
+      listParents: async () => [],
+      addMember: async () => undefined,
+      removeMember: async () => undefined,
+      listDirectMembers: async () => [],
+      listEffectiveMembers: async () => [],
+      refreshFields: async () => ({}),
+      connectCrdt: () => ({
+        disconnect: () => undefined,
+        flush: async () => undefined,
+      }),
+      listMembers: async () => [],
+    };
+
     return [
       new RowHandle(
-        {
-          addParent: async () => undefined,
-          removeParent: async () => undefined,
-          listParents: async () => [],
-          addMember: async () => undefined,
-          removeMember: async () => undefined,
-          listDirectMembers: async () => [],
-          listEffectiveMembers: async () => [],
-          refreshFields: async () => ({}),
-          connectCrdt: () => ({
-            disconnect: () => undefined,
-            flush: async () => undefined,
-          }),
-          listMembers: async () => [],
-        },
+        backend,
         {
           id: "tag_1",
           collection: "tags",
-          owner: "alex",
-          target: "https://worker.example/rows/tag_1",
+          baseUrl: "https://worker.example",
         },
+        "alex",
         { label: "playful", createdBy: "alex", createdAt: 100 },
       ),
       new RowHandle(
-        {
-          addParent: async () => undefined,
-          removeParent: async () => undefined,
-          listParents: async () => [],
-          addMember: async () => undefined,
-          removeMember: async () => undefined,
-          listDirectMembers: async () => [],
-          listEffectiveMembers: async () => [],
-          refreshFields: async () => ({}),
-          connectCrdt: () => ({
-            disconnect: () => undefined,
-            flush: async () => undefined,
-          }),
-          listMembers: async () => [],
-        },
+        backend,
         {
           id: "tag_2",
           collection: "tags",
-          owner: "alex",
-          target: "https://worker.example/rows/tag_2",
+          baseUrl: "https://worker.example",
         },
+        "alex",
         { label: " ", createdBy: "alex", createdAt: 101 },
       ),
     ];
@@ -127,17 +115,15 @@ describe("TagsPanel", () => {
       id: "dog_1",
       collection: "dogs" as const,
       owner: "alex",
-      target: "https://worker.example/rows/dog_1",
+      ref: {
+        id: "dog_1",
+        collection: "dogs" as const,
+        baseUrl: "https://worker.example",
+      },
       fields: { name: "Rex" },
       connectCrdt: () => ({
         disconnect: () => undefined,
         flush: async () => undefined,
-      }),
-      toRef: () => ({
-        id: "dog_1",
-        collection: "dogs" as const,
-        owner: "alex",
-        target: "https://worker.example/rows/dog_1",
       }),
     };
 
