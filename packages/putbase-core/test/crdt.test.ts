@@ -34,9 +34,8 @@ function buildRow(db: PutBase) {
   return new RowHandle(db, {
     id: "row_1",
     collection: "rows",
-    owner: "owner",
-    target: "https://worker.example/rows/row_1",
-  }, {});
+    baseUrl: "https://worker.example",
+  }, "owner", {});
 }
 
 describe("connectCrdt", () => {

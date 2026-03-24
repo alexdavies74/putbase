@@ -115,7 +115,7 @@ describe("PutBase", () => {
               id: "row_public",
               name: "Rex",
               owner: "owner",
-              target: "https://worker.example/rows/row_public",
+              baseUrl: "https://worker.example",
               createdAt: 1,
               collection: "rows",
               members: ["owner", "friend"],
@@ -142,7 +142,7 @@ describe("PutBase", () => {
     const row = await db.getRow({
       id: "row_public",
       collection: "rows",
-      baseUrl: "https://worker.example/rows",
+      baseUrl: "https://worker.example",
     });
     expect(row.id).toBe("row_public");
     expect(row.collection).toBe("rows");
@@ -150,7 +150,7 @@ describe("PutBase", () => {
     expect(row.ref).toEqual({
       id: "row_public",
       collection: "rows",
-      baseUrl: "https://worker.example/rows",
+      baseUrl: "https://worker.example",
     });
     expect(row.fields.name).toBe("Rex");
   });
@@ -168,7 +168,7 @@ describe("PutBase", () => {
               id: "row_public",
               name: "Rex",
               owner: "owner",
-              target: "https://worker.example/rows/row_public",
+              baseUrl: "https://worker.example",
               createdAt: 1,
               collection: "rows",
               members: ["owner", "friend"],
@@ -202,7 +202,7 @@ describe("PutBase", () => {
     const row = await db.getRow({
       id: "row_public",
       collection: "rows",
-      baseUrl: "https://worker.example/rows",
+      baseUrl: "https://worker.example",
     });
 
     await expect(db.listDirectMembers(row.ref)).resolves.toEqual([]);
@@ -295,7 +295,7 @@ describe("PutBase", () => {
               id: "row_1",
               name: "Rex",
               owner: "owner",
-              target: "https://worker.example/rows/row_1",
+              baseUrl: "https://worker.example",
               createdAt: 1,
               collection: "rows",
               members: ["owner"],
@@ -324,14 +324,14 @@ describe("PutBase", () => {
     await db.rememberPerUserRow("current-row", {
       id: "row_1",
       collection: "rows",
-      baseUrl: "https://worker.example/rows",
+      baseUrl: "https://worker.example",
     });
     await expect(db.openRememberedPerUserRow("current-row")).resolves.toMatchObject({
       id: "row_1",
       ref: {
         id: "row_1",
         collection: "rows",
-        baseUrl: "https://worker.example/rows",
+        baseUrl: "https://worker.example",
       },
     });
 
@@ -346,15 +346,15 @@ describe("PutBase", () => {
       const rowId = url.includes("friend_row") ? "friend_row" : "owner_row";
       if (url.endsWith("/row/get")) {
         return new Response(
-          JSON.stringify({
-            id: rowId,
-            name: rowId,
-            owner: rowId === "friend_row" ? "friend" : "owner",
-            target: `https://worker.example/rows/${rowId}`,
-            createdAt: 1,
-            collection: "rows",
-            members: ["owner"],
-            parentRefs: [],
+            JSON.stringify({
+              id: rowId,
+              name: rowId,
+              owner: rowId === "friend_row" ? "friend" : "owner",
+              baseUrl: "https://worker.example",
+              createdAt: 1,
+              collection: "rows",
+              members: ["owner"],
+              parentRefs: [],
           }),
           { status: 200, headers: { "content-type": "application/json" } },
         );
@@ -388,12 +388,12 @@ describe("PutBase", () => {
     await ownerDb.rememberPerUserRow("current-row", {
       id: "owner_row",
       collection: "rows",
-      baseUrl: "https://worker.example/rows",
+      baseUrl: "https://worker.example",
     });
     await friendDb.rememberPerUserRow("current-row", {
       id: "friend_row",
       collection: "rows",
-      baseUrl: "https://worker.example/rows",
+      baseUrl: "https://worker.example",
     });
 
     await expect(ownerDb.openRememberedPerUserRow("current-row")).resolves.toMatchObject({
@@ -401,7 +401,7 @@ describe("PutBase", () => {
       ref: {
         id: "owner_row",
         collection: "rows",
-        baseUrl: "https://worker.example/rows",
+        baseUrl: "https://worker.example",
       },
     });
     await expect(friendDb.openRememberedPerUserRow("current-row")).resolves.toMatchObject({
@@ -409,7 +409,7 @@ describe("PutBase", () => {
       ref: {
         id: "friend_row",
         collection: "rows",
-        baseUrl: "https://worker.example/rows",
+        baseUrl: "https://worker.example",
       },
     });
   });
@@ -524,7 +524,7 @@ describe("PutBase", () => {
     await expect(db.getRow({
       id: "row_public",
       collection: "rows",
-      baseUrl: "https://worker.example/rows",
+      baseUrl: "https://worker.example",
     })).rejects.toBeInstanceOf(
       PutBaseError,
     );
@@ -556,7 +556,7 @@ describe("PutBase", () => {
               id: "row_1",
               name: "Rex",
               owner: "owner",
-              target: "https://workers.puter.site/owner-federation/rows/row_1",
+              baseUrl: "https://workers.puter.site/owner-federation",
               createdAt: 1,
               collection: "rows",
               members: ["owner"],
@@ -593,7 +593,7 @@ describe("PutBase", () => {
     const row = await db.openInvite(db.createInviteLink({
       id: "row_1",
       collection: "rows",
-      baseUrl: "https://workers.puter.site/owner-federation/rows",
+      baseUrl: "https://workers.puter.site/owner-federation",
     }, "invite_1"));
 
     expect(row.id).toBe("row_1");
@@ -740,14 +740,14 @@ describe("PutBase", () => {
       if (url === `${deployedWorkerBase}/rows` && init?.body && typeof init.body === "string") {
         rowId = (JSON.parse(init.body) as { payload: { rowId: string } }).payload.rowId;
         return new Response(
-          JSON.stringify({
-            id: rowId,
-            name: "Rex",
-            owner: "owner",
-            target: `${deployedWorkerBase}/rows/${rowId}`,
-            createdAt: 1,
-            collection: null,
-            members: [],
+            JSON.stringify({
+              id: rowId,
+              name: "Rex",
+              owner: "owner",
+              baseUrl: deployedWorkerBase,
+              createdAt: 1,
+              collection: null,
+              members: [],
             parentRefs: [],
           }),
           { status: 200, headers: { "content-type": "application/json" } },
@@ -763,14 +763,14 @@ describe("PutBase", () => {
 
       if (rowId && url === `${deployedWorkerBase}/rows/${rowId}/row/get`) {
         return new Response(
-          JSON.stringify({
-            id: rowId,
-            name: "Rex",
-            owner: "owner",
-            target: `${deployedWorkerBase}/rows/${rowId}`,
-            createdAt: 1,
-            collection: null,
-            members: ["owner"],
+            JSON.stringify({
+              id: rowId,
+              name: "Rex",
+              owner: "owner",
+              baseUrl: deployedWorkerBase,
+              createdAt: 1,
+              collection: null,
+              members: ["owner"],
             parentRefs: [],
           }),
           { status: 200, headers: { "content-type": "application/json" } },
@@ -832,14 +832,14 @@ describe("PutBase", () => {
       if (url === `${deployedWorkerBase}/rows` && init?.body && typeof init.body === "string") {
         rowId = (JSON.parse(init.body) as { payload: { rowId: string } }).payload.rowId;
         return new Response(
-          JSON.stringify({
-            id: rowId,
-            name: "Rex",
-            owner: "owner",
-            target: `${deployedWorkerBase}/rows/${rowId}`,
-            createdAt: 1,
-            collection: null,
-            members: [],
+            JSON.stringify({
+              id: rowId,
+              name: "Rex",
+              owner: "owner",
+              baseUrl: deployedWorkerBase,
+              createdAt: 1,
+              collection: null,
+              members: [],
             parentRefs: [],
           }),
           { status: 200, headers: { "content-type": "application/json" } },
@@ -855,14 +855,14 @@ describe("PutBase", () => {
 
       if (rowId && url === `${deployedWorkerBase}/rows/${rowId}/row/get`) {
         return new Response(
-          JSON.stringify({
-            id: rowId,
-            name: "Rex",
-            owner: "owner",
-            target: `${deployedWorkerBase}/rows/${rowId}`,
-            createdAt: 1,
-            collection: null,
-            members: ["owner"],
+            JSON.stringify({
+              id: rowId,
+              name: "Rex",
+              owner: "owner",
+              baseUrl: deployedWorkerBase,
+              createdAt: 1,
+              collection: null,
+              members: ["owner"],
             parentRefs: [],
           }),
           { status: 200, headers: { "content-type": "application/json" } },
@@ -1190,7 +1190,7 @@ describe("PutBase", () => {
               id: "row_exec",
               name: "Rex",
               owner: "owner",
-              target: "https://worker.example/rows/row_exec",
+              baseUrl: "https://worker.example",
               createdAt: 1,
               collection: "rows",
               members: ["owner"],
@@ -1229,7 +1229,7 @@ describe("PutBase", () => {
     const row = await db.getRow({
       id: "row_exec",
       collection: "rows",
-      baseUrl: "https://worker.example/rows",
+      baseUrl: "https://worker.example",
     });
     expect(row.id).toBe("row_exec");
     expect(execCalls.some((c) => c.url.endsWith("/row/get"))).toBe(true);
@@ -1259,8 +1259,7 @@ describe("PutBase", () => {
     const rowRef = {
       id: "row_reload",
       collection: "rows",
-      owner: "owner",
-      target: "https://worker.example/rows/row_reload",
+      baseUrl: "https://worker.example",
     };
 
     const firstDb = new PutBase({
@@ -1269,7 +1268,7 @@ describe("PutBase", () => {
       fetchFn: fetchFn as typeof fetch,
     });
 
-    const row1 = new RowHandle(firstDb, rowRef, {});
+    const row1 = new RowHandle(firstDb, rowRef, "owner", {});
     const conn1 = row1.connectCrdt({
       applyRemoteUpdate() {},
       produceLocalUpdate: () => ({ type: "yjs-update", data: "AAAA" }),
@@ -1283,7 +1282,7 @@ describe("PutBase", () => {
       fetchFn: fetchFn as typeof fetch,
     });
 
-    const row2 = new RowHandle(secondDb, rowRef, {});
+    const row2 = new RowHandle(secondDb, rowRef, "owner", {});
     const conn2 = row2.connectCrdt({
       applyRemoteUpdate() {},
       produceLocalUpdate: () => ({ type: "yjs-update", data: "BBBB" }),

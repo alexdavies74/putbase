@@ -106,7 +106,7 @@ function buildWatchRow(id: string, title: string) {
     ref: {
       id,
       collection: "tasks",
-      baseUrl: "https://worker.example/rows",
+      baseUrl: "https://worker.example",
     },
     fields: { title, status: "todo" },
   };
@@ -276,7 +276,7 @@ describe("PutBase rows", () => {
     await rememberPerUserRow(backend, "alice", INTERNAL_USER_SCOPE_ROW_KEY, {
       id: "row_missing",
       collection: "user",
-      baseUrl: "https://alice-federation.example/rows",
+      baseUrl: "https://alice-federation.example",
     });
     const secondProject = await settle(db.put("projects", { name: "Game 2" }));
 
@@ -458,7 +458,7 @@ describe("PutBase rows", () => {
           rows: [{
             rowId: "task_1",
             owner: "alice",
-            baseUrl: "https://worker.example/rows/",
+            baseUrl: "https://worker.example/",
             collection: "tasks",
             fields: { title: "Embedded snapshot", status: "todo" },
           }],
@@ -478,14 +478,14 @@ describe("PutBase rows", () => {
       in: {
         id: "project_1",
         collection: "projects",
-        baseUrl: "https://worker.example/rows",
+        baseUrl: "https://worker.example",
       },
     })).rejects.toThrow("canonical fetch failed");
 
     expect(getRow).toHaveBeenCalledWith({
       id: "task_1",
       collection: "tasks",
-      baseUrl: "https://worker.example/rows",
+      baseUrl: "https://worker.example",
     });
   });
 
@@ -514,14 +514,14 @@ describe("PutBase rows", () => {
           {
             rowId: "card_2",
             owner: "alice",
-            baseUrl: "https://worker.example/rows",
+            baseUrl: "https://worker.example",
             collection: "cards",
             fields: { rank: 2 },
           },
           {
             rowId: "card_3",
             owner: "alice",
-            baseUrl: "https://worker.example/rows",
+            baseUrl: "https://worker.example",
             collection: "cards",
             fields: { rank: 3 },
           },
@@ -532,14 +532,14 @@ describe("PutBase rows", () => {
           {
             rowId: "card_1",
             owner: "alice",
-            baseUrl: "https://worker.example/rows",
+            baseUrl: "https://worker.example",
             collection: "cards",
             fields: { rank: 1 },
           },
           {
             rowId: "card_2",
             owner: "alice",
-            baseUrl: "https://worker.example/rows",
+            baseUrl: "https://worker.example",
             collection: "cards",
             fields: { rank: 2 },
           },
@@ -572,12 +572,12 @@ describe("PutBase rows", () => {
         {
           id: "shelf_1",
           collection: "shelves",
-          baseUrl: "https://worker.example/rows",
+          baseUrl: "https://worker.example",
         },
         {
           id: "shelf_2",
           collection: "shelves",
-          baseUrl: "https://worker.example/rows",
+          baseUrl: "https://worker.example",
         },
       ],
       index: "byRank",
@@ -599,7 +599,7 @@ describe("PutBase rows", () => {
     const parent = {
       id: "project_1",
       collection: "projects",
-      baseUrl: "https://worker.example/rows",
+      baseUrl: "https://worker.example",
     } as const;
     optimisticStore.beginCreate({
       row: parent,
@@ -664,7 +664,7 @@ describe("Query watchQuery", () => {
       in: {
         id: "project_1",
         collection: "projects",
-        baseUrl: "https://worker.example/rows",
+        baseUrl: "https://worker.example",
       },
     }, {
       onChange: (rows) => {
@@ -698,7 +698,7 @@ describe("Query watchQuery", () => {
       in: {
         id: "project_1",
         collection: "projects",
-        baseUrl: "https://worker.example/rows",
+        baseUrl: "https://worker.example",
       },
     }, { onChange() {} });
 
@@ -734,7 +734,7 @@ describe("Query watchQuery", () => {
       in: {
         id: "project_1",
         collection: "projects",
-        baseUrl: "https://worker.example/rows",
+        baseUrl: "https://worker.example",
       },
     }, {
       onChange: (rows) => { changes.push(rows.map((row) => row.id).join(",")); },
@@ -766,7 +766,7 @@ describe("Query watchQuery", () => {
       in: {
         id: "project_1",
         collection: "projects",
-        baseUrl: "https://worker.example/rows",
+        baseUrl: "https://worker.example",
       },
     }, { onChange() {} });
 

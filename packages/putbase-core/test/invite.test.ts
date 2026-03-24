@@ -18,7 +18,7 @@ describe("invite parsing", () => {
     const ref = {
       id: "row_abc",
       collection: "dogs",
-      baseUrl: "https://workers.example/alex-1234abcd-federation/rows",
+      baseUrl: "https://workers.example/alex-1234abcd-federation",
     } as const;
     const link = db.createInviteLink(
       ref,
@@ -26,7 +26,7 @@ describe("invite parsing", () => {
     );
 
     expect(link).toBe(
-      `https://woof.example/?${PUTBASE_INVITE_TARGET_PARAM}=%7B%22ref%22%3A%7B%22id%22%3A%22row_abc%22%2C%22collection%22%3A%22dogs%22%2C%22baseUrl%22%3A%22https%3A%2F%2Fworkers.example%2Falex-1234abcd-federation%2Frows%22%7D%2C%22inviteToken%22%3A%22invite_xyz%22%7D`,
+      `https://woof.example/?${PUTBASE_INVITE_TARGET_PARAM}=%7B%22ref%22%3A%7B%22id%22%3A%22row_abc%22%2C%22collection%22%3A%22dogs%22%2C%22baseUrl%22%3A%22https%3A%2F%2Fworkers.example%2Falex-1234abcd-federation%22%7D%2C%22inviteToken%22%3A%22invite_xyz%22%7D`,
     );
 
     const parsed = db.parseInvite(link);
@@ -43,7 +43,7 @@ describe("invite parsing", () => {
         ref: {
           id: "row_abc",
           collection: "dogs",
-          baseUrl: "https://workers.example/alex-1234abcd-federation/rows",
+          baseUrl: "https://workers.example/alex-1234abcd-federation",
         },
         inviteToken: "invite_xyz",
       }))}`,
@@ -52,7 +52,7 @@ describe("invite parsing", () => {
     expect(parsed.ref).toEqual({
       id: "row_abc",
       collection: "dogs",
-      baseUrl: "https://workers.example/alex-1234abcd-federation/rows",
+      baseUrl: "https://workers.example/alex-1234abcd-federation",
     });
     expect(parsed.inviteToken).toBe("invite_xyz");
   });
@@ -64,7 +64,7 @@ describe("invite parsing", () => {
         ref: {
           id: "row_abc",
           collection: "dogs",
-          baseUrl: "https://workers.example/alex-1234abcd-federation/rows",
+          baseUrl: "https://workers.example/alex-1234abcd-federation",
         },
       }))}`,
     );
@@ -72,7 +72,7 @@ describe("invite parsing", () => {
     expect(parsed.ref).toEqual({
       id: "row_abc",
       collection: "dogs",
-      baseUrl: "https://workers.example/alex-1234abcd-federation/rows",
+      baseUrl: "https://workers.example/alex-1234abcd-federation",
     });
     expect(parsed.inviteToken).toBeUndefined();
   });

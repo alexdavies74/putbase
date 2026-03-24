@@ -6,6 +6,7 @@ import {
   RowHandle,
   CrdtConnectCallbacks,
   CrdtConnection,
+  PUTBASE_INVITE_TARGET_PARAM,
 } from "@putbase/core";
 import type {
   DbMemberInfo,
@@ -87,6 +88,13 @@ function dogHistoryRef(id: string): RowRef<"dogHistory"> {
     collection: "dogHistory",
     baseUrl: "https://workers.puter.site/alex",
   };
+}
+
+function inviteLink(rowId: string): string {
+  return `https://woof.example/?${PUTBASE_INVITE_TARGET_PARAM}=${encodeURIComponent(JSON.stringify({
+    ref: dogRef(rowId),
+    inviteToken: "invite_1",
+  }))}`;
 }
 
 class MockDb implements WoofDbPort {
@@ -304,7 +312,7 @@ describe("WoofService", () => {
     const db = new MockDb();
     const service = new WoofService(db);
     const row = await db.openInvite(
-      "https://woof.example/?worker=https%3A%2F%2Fworkers.puter.site%2Falex%2Frows%2Frow_joined&token=invite_1",
+      inviteLink("row_joined"),
     );
 
     expect(service.expectDogRow(row).id).toBe("row_joined");
@@ -375,7 +383,7 @@ describe("WoofService", () => {
     let chatInput: ChatMessage[] | undefined;
 
     const row = await db.openInvite(
-      "https://woof.example/?worker=https%3A%2F%2Fworkers.puter.site%2Falex%2Frows%2Frow_joined&token=invite_1",
+      inviteLink("row_joined"),
     );
     const connected = connectDoc(row);
 

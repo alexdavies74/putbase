@@ -232,8 +232,8 @@ function AddCard({ board }: { board: BoardHandle }) {
 | `useDirectMembers(pb, row)` | pb, row handle or row ref | `{ data: { username, role }[], status, isRefreshing, error, refreshError, refresh }` |
 | `useEffectiveMembers(pb, row)` | pb, row handle or row ref | `{ data: DbMemberInfo[], status, isRefreshing, error, refreshError, refresh }` |
 | `useInviteLink(pb, row)` | pb, row handle or row ref | `{ inviteLink: string, status, isRefreshing, error, refreshError, refresh }` |
-| `useInviteFromLocation(pb, options?)` | pb, `{ href?, clearLocation?, onOpen?, open? }` | `{ hasInvite, inviteInput, data, status, isRefreshing, error, refreshError, refresh }` |
-| `usePerUserRow(pb, options)` | pb, `{ key, href?, clearLocation?, loadRememberedRow?, openInvite?, getRow? }` | `{ hasInvite, inviteInput, data, status, isRefreshing, error, refreshError, refresh, remember, clear }` |
+| `useInviteFromLocation(pb, options?)` | pb, `{ href?, clearInviteParams?, onOpen?, open? }` | `{ hasInvite, inviteInput, data, status, isRefreshing, error, refreshError, refresh }` |
+| `usePerUserRow(pb, options)` | pb, `{ key, href?, clearInviteParams?, loadRememberedRow?, openInvite?, getRow? }` | `{ hasInvite, inviteInput, data, status, isRefreshing, error, refreshError, refresh, remember, clear }` |
 | `useMutation(fn)` | async function | `{ mutate, data, status, error, reset }` |
 
 All data-fetching hooks return `status: "idle" | "loading" | "success" | "error"`. `loading` means there is no usable data yet. Once a hook has usable data, it stays `success` during background reloads and exposes that work through `isRefreshing` / `refreshError`.
@@ -324,7 +324,7 @@ interface UseInviteFromLocationOptions<
   TResult = AnyRowHandle<Schema>,
 > extends UseHookOptions {
   href?: string | null;
-  clearLocation?: boolean | ((url: URL) => string);
+  clearInviteParams?: boolean | ((url: URL) => string);
   onOpen?: (result: TResult) => void | Promise<void>;
   open?: (inviteInput: string, pb: PutBase<Schema>) => Promise<TResult>;
 }
@@ -344,9 +344,9 @@ function useInviteFromLocation<
 ```
 
 - `href` defaults to `window.location.href`.
-- `clearLocation` defaults to `true`.
+- `clearInviteParams` defaults to `true`.
 - `onOpen` runs after invite acceptance succeeds and may be async.
-- The hook stays in `loading` until `onOpen` finishes and the invite URL is cleared.
+- The hook stays in `loading` until `onOpen` finishes and the invite params are removed from the current URL.
 - Override `open` when invite acceptance should return something other than `pb.openInvite(...)`.
 
 ### `useMutation`
