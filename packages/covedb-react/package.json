@@ -1,6 +1,6 @@
 {
   "name": "@covedb/react",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "React hooks for CoveDB — a multi-user database for apps that have no backend.",
   "license": "Apache-2.0",
   "keywords": ["database", "puter", "backend-free", "collaborative", "realtime", "react", "hooks"],
