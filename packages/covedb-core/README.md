@@ -1,14 +1,8 @@
 # CoveDB
 
-**A multi-user database for apps that have no backend.**
+**Build multi-user apps without writing a single access rule.**
 
-CoveDB is a TypeScript SDK that gives your web app collaborative, multi-user data storage — without you ever running a server. Users sign in with their [Puter](https://puter.com) accounts. Their data lives in their Puter storage. You write a schema, call `create` and `query`, share links, and you're done.
-
-This makes CoveDB particularly well-suited for:
-
-- **Hobbyists and open-source projects** — no infrastructure to run or pay for
-- **Apps built by AI coding agents** — the explicit-grant access model is simple enough that even a small-context agent can reason about it correctly
-- **Apps with user-pays AI** — Puter provides AI APIs billed to the user's own account, so you can build AI-powered features with zero hosting cost and a single login flow
+CoveDB is a TypeScript SDK for collaborative, local-first web apps — with no backend to run, no server to pay for, and no access control rules to misconfigure. Users sign in with their [Puter](https://puter.com) account. Their data lives in their Puter storage. You write a schema, call `create` and `query`, and you're done.
 
 ```tsx
 // Write
@@ -26,15 +20,25 @@ const { rows: cards } = useQuery(db, "cards", {
 const { shareLink } = useShareLink(db, board);
 ```
 
+Write your frontend. CoveDB handles the rest.
+
+- **Zero backend** — no server to run, no infrastructure bill
+- **No access rules to write** — share a link, they're in; that's the whole model
+- **Local-first & real-time** — data lives on the user's device, syncs via CRDT
+- **NoSQL, open source**
+- **Auth, server functions** — via Puter, one login for your whole app
+- **User-pays AI** — Puter's AI APIs are billed to the user, not you; build AI features with zero hosting cost
+- **Agent-friendly** — the explicit-grant model is simple enough that AI coding agents get it right first time
+
 ---
 
 ## How it works
 
-Every piece of data in CoveDB is a **row**. A row belongs to a **collection** defined in your schema, holds typed fields, and has its own identity and access control. You get a `RowHandle` when you create or fetch a row — that handle is your entry point for reading fields, sharing the row, and subscribing to real-time updates.
+Every piece of data in CoveDB is a **row**. A row belongs to a **collection** defined in your schema, holds typed fields, and has its own identity.
 
-Rows can be nested. A collection can declare that its rows live **inside** a parent collection: a `card` lives inside a `board`, and a `recentBoard` row lives inside the built-in `user` collection. The parent relationship constrains who can see child rows — gaining access to a parent automatically makes the children visible too.
+Rows can be **nested**. A `card` lives inside a `board`; a `recentBoard` lives inside the built-in `user` collection. The parent relationship defines visibility — gaining access to a parent automatically grants access to its children.
 
-Access control is **explicit-grant only**. There are no complex rule expressions to misconfigure. To let another user into a row, you generate a share link and send it to them. They accept it, they're in. That's the whole model.
+Access is **explicit-grant only**. To let someone into a row, generate a share link and send it to them. They accept it, they're in. There are no rule expressions to write and no policy surface to misconfigure.
 
 ---
 
