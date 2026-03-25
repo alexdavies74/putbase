@@ -1,7 +1,8 @@
 {
   "name": "@covedb/core",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "A multi-user database for apps that have no backend.",
+  "license": "Apache-2.0",
   "keywords": ["database", "puter", "backend-free", "collaborative", "realtime", "crdt", "storage"],
   "repository": {
     "type": "git",
