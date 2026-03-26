@@ -18,7 +18,7 @@ interface MarkdownContentProps {
 }
 
 const markdownComponents = {
-  a: ({ href, children, ...props }: ComponentPropsWithoutRef<"a">) => {
+  a: ({ node: _node, href, children, ...props }: ComponentPropsWithoutRef<"a"> & { node?: unknown }) => {
     const external = Boolean(href?.startsWith("http"));
     return (
       <a
@@ -31,7 +31,7 @@ const markdownComponents = {
       </a>
     );
   },
-  img: ({ src, alt, ...props }: ComponentPropsWithoutRef<"img">) => (
+  img: ({ node: _node, src, alt, ...props }: ComponentPropsWithoutRef<"img"> & { node?: unknown }) => (
     <img
       {...props}
       alt={alt}
@@ -39,7 +39,12 @@ const markdownComponents = {
       src={resolveReadmeAssetUrl(src)}
     />
   ),
-  code: ({ className, children, ...props }: ComponentPropsWithoutRef<"code">) => {
+  code: ({
+    node: _node,
+    className,
+    children,
+    ...props
+  }: ComponentPropsWithoutRef<"code"> & { node?: unknown }) => {
     const isBlock = Boolean(className?.includes("language-"));
     if (isBlock) {
       return (
@@ -55,7 +60,7 @@ const markdownComponents = {
       </code>
     );
   },
-  pre: ({ children, ...props }: ComponentPropsWithoutRef<"pre">) => {
+  pre: ({ node: _node, children, ...props }: ComponentPropsWithoutRef<"pre"> & { node?: unknown }) => {
     const language = getCodeLanguage(children);
     return (
       <div className="code-frame">
@@ -71,7 +76,7 @@ const markdownComponents = {
       </div>
     );
   },
-  table: ({ children, ...props }: ComponentPropsWithoutRef<"table">) => (
+  table: ({ node: _node, children, ...props }: ComponentPropsWithoutRef<"table"> & { node?: unknown }) => (
     <div className="table-scroll">
       <table {...props}>{children}</table>
     </div>

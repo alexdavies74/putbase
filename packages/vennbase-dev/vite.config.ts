@@ -1,7 +1,8 @@
-import { cpSync, createReadStream, existsSync, statSync } from "node:fs";
+import { cpSync, createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { extname, resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
+import { renderStaticPage } from "./src/render-static";
 
 const packageRoot = __dirname;
 const workspaceRoot = resolve(packageRoot, "../..");
@@ -58,8 +59,39 @@ function contentTypeFor(filePath: string): string {
   }
 }
 
+function vennbaseStaticDocsPlugin(): Plugin {
+  const readmePath = resolve(workspaceRoot, "packages/vennbase-core/README.md");
+
+  return {
+    name: "vennbase-static-docs",
+    transformIndexHtml(html, ctx) {
+      const pathname = normalizePagePath(ctx.path);
+
+      if (!pathname) {
+        return html;
+      }
+
+      const readmeMarkdown = readFileSync(readmePath, "utf8");
+
+      return html.replace('<div id="app"></div>', `<div id="app">${renderStaticPage(pathname, readmeMarkdown)}</div>`);
+    },
+  };
+}
+
+function normalizePagePath(pathname: string): "/" | "/reference/" | null {
+  if (pathname === "/" || pathname === "/index.html") {
+    return "/";
+  }
+
+  if (pathname === "/reference/" || pathname === "/reference/index.html") {
+    return "/reference/";
+  }
+
+  return null;
+}
+
 export default defineConfig({
-  plugins: [react(), vennbaseCoreAssetsPlugin()],
+  plugins: [react(), vennbaseCoreAssetsPlugin(), vennbaseStaticDocsPlugin()],
   server: {
     fs: {
       allow: [workspaceRoot],

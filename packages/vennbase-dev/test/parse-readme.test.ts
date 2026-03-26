@@ -12,7 +12,7 @@ describe("parseReadme", () => {
 
     expect(parsed.title).toBe("Vennbase");
     expect(parsed.tagline).toBe("Build multi-user apps without writing a single access rule.");
-    expect(parsed.lead).toContain("TypeScript SDK for collaborative, local-first web apps");
+    expect(parsed.lead).toContain("TypeScript client-side database for collaborative, local-first web apps");
     expect(parsed.supportingLine).toBe("Write your frontend. Vennbase handles the rest.");
     expect(parsed.heroCode).toContain('const board = db.create("boards"');
     expect(parsed.featureBullets).toContain("**Zero backend** — no server to run, no infrastructure bill");
