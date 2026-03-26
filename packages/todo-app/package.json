@@ -11,8 +11,8 @@
   },
   "dependencies": {
     "@heyputer/puter.js": "^2.2.11",
-    "@covedb/core": "workspace:*",
-    "@covedb/react": "workspace:*",
+    "@vennbase/core": "workspace:*",
+    "@vennbase/react": "workspace:*",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },

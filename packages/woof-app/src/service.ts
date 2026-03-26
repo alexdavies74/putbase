@@ -1,8 +1,8 @@
 import * as Y from "yjs";
 import type {
   AnyRowHandle,
-  CoveDBUser,
-} from "@covedb/core";
+  VennbaseUser,
+} from "@vennbase/core";
 import type { AI, ChatMessage, ChatResponse } from "@heyputer/puter.js";
 
 import type { DogRowHandle, TagRowHandle, WoofDb, WoofSchema } from "./schema";
@@ -165,7 +165,7 @@ export class WoofService {
   }
 
   private async getDogReplies(args: {
-    actor: CoveDBUser;
+    actor: VennbaseUser;
     dogName: string;
     entries: ChatEntry[];
     members: string[];
@@ -232,7 +232,7 @@ export class WoofService {
 }
 
 function buildDogPrompt(args: {
-  actor: CoveDBUser;
+  actor: VennbaseUser;
   dogName: string;
   entries: ChatEntry[];
   members: string[];

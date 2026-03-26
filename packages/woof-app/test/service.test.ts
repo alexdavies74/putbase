@@ -1,20 +1,20 @@
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { createYjsAdapter } from "@covedb/yjs";
+import { createYjsAdapter } from "@vennbase/yjs";
 
 import {
   RowHandle,
   CrdtConnectCallbacks,
   CrdtConnection,
-  COVEDB_INVITE_TARGET_PARAM,
-} from "@covedb/core";
+  VENNBASE_INVITE_TARGET_PARAM,
+} from "@vennbase/core";
 import type {
   DbMemberInfo,
   MemberRole,
   MutationReceipt,
   RowRef,
   RowHandleBackend,
-} from "@covedb/core";
+} from "@vennbase/core";
 import type { ChatMessage } from "@heyputer/puter.js";
 
 import type {
@@ -91,7 +91,7 @@ function dogHistoryRef(id: string): RowRef<"dogHistory"> {
 }
 
 function shareLink(rowId: string): string {
-  return `https://woof.example/?${COVEDB_INVITE_TARGET_PARAM}=${encodeURIComponent(JSON.stringify({
+  return `https://woof.example/?${VENNBASE_INVITE_TARGET_PARAM}=${encodeURIComponent(JSON.stringify({
     ref: dogRef(rowId),
     inviteToken: "invite_1",
   }))}`;

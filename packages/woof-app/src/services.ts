@@ -1,9 +1,9 @@
-import { CoveDB } from "@covedb/core";
+import { Vennbase } from "@vennbase/core";
 
 import { woofSchema, type WoofDb } from "./schema";
 import { WoofService } from "./service";
 
-export const db: WoofDb = new CoveDB({
+export const db: WoofDb = new Vennbase({
   appBaseUrl: window.location.origin,
   schema: woofSchema,
 });

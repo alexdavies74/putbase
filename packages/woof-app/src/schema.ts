@@ -1,11 +1,11 @@
 import {
-  CoveDB,
+  Vennbase,
   RowHandle,
   collection,
   defineSchema,
   field,
   index,
-} from "@covedb/core";
+} from "@vennbase/core";
 
 export const woofSchema = defineSchema({
   dogs: collection({
@@ -38,7 +38,7 @@ export const woofSchema = defineSchema({
 });
 
 export type WoofSchema = typeof woofSchema;
-export type WoofDb = CoveDB<WoofSchema>;
+export type WoofDb = Vennbase<WoofSchema>;
 export type DogRowHandle = RowHandle<WoofSchema, "dogs">;
 export type DogHistoryRowHandle = RowHandle<WoofSchema, "dogHistory">;
 export type TagRowHandle = RowHandle<WoofSchema, "tags">;

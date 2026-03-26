@@ -3,9 +3,9 @@
 import { act, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
-import { RowHandle, type CoveDB } from "@covedb/core";
+import { RowHandle, type Vennbase } from "@vennbase/core";
 
-import { CoveDBProvider } from "@covedb/react";
+import { VennbaseProvider } from "@vennbase/react";
 import { TagsPanel } from "../src/tags-panel";
 import { woofSchema } from "../src/schema";
 
@@ -128,9 +128,9 @@ describe("TagsPanel", () => {
     };
 
     const app = await renderApp(
-      <CoveDBProvider db={new FakeDb() as unknown as CoveDB<typeof woofSchema>}>
+      <VennbaseProvider db={new FakeDb() as unknown as Vennbase<typeof woofSchema>}>
         <TagsPanel row={row} onCreateTag={async () => undefined} />
-      </CoveDBProvider>,
+      </VennbaseProvider>,
     );
 
     await waitFor(() => {

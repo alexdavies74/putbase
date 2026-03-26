@@ -1,0 +1,45 @@
+{
+  "name": "@vennbase/yjs",
+  "version": "0.1.7",
+  "description": "Yjs adapters for Vennbase CRDT sync.",
+  "license": "Apache-2.0",
+  "keywords": ["database", "puter", "backend-free", "collaborative", "realtime", "crdt", "yjs"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alexdavies74/vennbase.git",
+    "directory": "packages/vennbase-yjs"
+  },
+  "homepage": "https://github.com/alexdavies74/vennbase/tree/main/packages/vennbase-yjs#readme",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@vennbase/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "yjs": "^13.6.0"
+  },
+  "devDependencies": {
+    "yjs": "^13.6.0"
+  }
+}

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation, useCoveDB, useQuery } from "@covedb/react";
+import { useMutation, useVennbase, useQuery } from "@vennbase/react";
 
 import type { DogRowHandle, WoofSchema } from "./schema";
 import { getErrorMessage } from "./utils";
@@ -35,7 +35,7 @@ export interface TagsPanelProps {
 }
 
 export function TagsPanel({ row, onCreateTag }: TagsPanelProps) {
-  const db = useCoveDB<WoofSchema>();
+  const db = useVennbase<WoofSchema>();
   const [tagInput, setTagInput] = useState("");
   const [validationError, setValidationError] = useState("");
   const tagsQuery = useQuery(db, "tags", {

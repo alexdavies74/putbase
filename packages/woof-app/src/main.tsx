@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import { CoveDBProvider } from "@covedb/react";
+import { VennbaseProvider } from "@vennbase/react";
 
 import { App } from "./App";
 import { db } from "./services";
@@ -13,8 +13,8 @@ if (!appElement) {
 
 createRoot(appElement).render(
   <StrictMode>
-    <CoveDBProvider db={db}>
+    <VennbaseProvider db={db}>
       <App />
-    </CoveDBProvider>
+    </VennbaseProvider>
   </StrictMode>,
 );

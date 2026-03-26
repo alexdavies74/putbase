@@ -1,6 +1,6 @@
-import { useAcceptInviteFromUrl, useMutation, useQuery, useRow, useSession, useShareLink } from "@covedb/react";
+import { useAcceptInviteFromUrl, useMutation, useQuery, useRow, useSession, useShareLink } from "@vennbase/react";
 import { useEffect, useState } from "react";
-import type { RowHandle } from "@covedb/core";
+import type { RowHandle } from "@vennbase/core";
 import { db } from "./db";
 import type { Schema } from "./schema";
 
@@ -74,7 +74,7 @@ export default function App() {
   return !signedIn
     ? (
       <main>
-        <h1>CoveDB Todo</h1>
+        <h1>Vennbase Todo</h1>
         <section>
           <h2>{invitePending ? "Log in to join board" : "Log in to start"}</h2>
           <p>{invitePending ? "Sign in with Puter to open this shared board." : "Sign in with Puter before creating or joining a board."}</p>
@@ -146,7 +146,7 @@ function LandingView({ errorMessage, onBoard }: { errorMessage?: string; onBoard
 
   return (
     <main>
-      <h1>CoveDB Todo</h1>
+      <h1>Vennbase Todo</h1>
 
       <section>
         <h2>New board</h2>
@@ -230,7 +230,7 @@ function OpeningInviteView() {
   return (
     <main>
       <section>
-        <h1>CoveDB Todo</h1>
+        <h1>Vennbase Todo</h1>
         <h2>Opening shared board</h2>
         <p className="muted">Joining the invite and loading the board…</p>
       </section>

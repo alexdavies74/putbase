@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 
-const packages = ["@covedb/core", "@covedb/react", "@covedb/yjs"];
+const packages = ["@vennbase/core", "@vennbase/react", "@vennbase/yjs"];
 const publishArgs = process.argv.slice(2);
 
 if (publishArgs[0] === "--") {

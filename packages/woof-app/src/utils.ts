@@ -1,7 +1,7 @@
-import { COVEDB_INVITE_TARGET_PARAM, CoveDBError } from "@covedb/core";
+import { VENNBASE_INVITE_TARGET_PARAM, VennbaseError } from "@vennbase/core";
 
 export function getErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof CoveDBError) {
+  if (error instanceof VennbaseError) {
     const detailsParts: Array<string | number> = [error.code];
     if (error.status !== undefined) {
       detailsParts.push(error.status);
@@ -37,7 +37,7 @@ function hasStringMessage(value: unknown): value is { message: string } {
 
 export function getInviteInputFromLocation(href: string): string | null {
   const url = new URL(href);
-  return url.searchParams.has(COVEDB_INVITE_TARGET_PARAM) ? url.toString() : null;
+  return url.searchParams.has(VENNBASE_INVITE_TARGET_PARAM) ? url.toString() : null;
 }
 
 export function clearInviteLocation(): void {

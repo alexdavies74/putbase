@@ -1,7 +1,7 @@
 import { puter } from "@heyputer/puter.js";
-import type { CrdtAdapter, RowRef } from "@covedb/core";
-import { useCrdt, useAcceptInviteFromUrl, useShareLink, useMutation, useCoveDB, useQuery, useRow, useSession } from "@covedb/react";
-import { createYjsAdapter } from "@covedb/yjs";
+import type { CrdtAdapter, RowRef } from "@vennbase/core";
+import { useCrdt, useAcceptInviteFromUrl, useShareLink, useMutation, useVennbase, useQuery, useRow, useSession } from "@vennbase/react";
+import { createYjsAdapter } from "@vennbase/yjs";
 import { useEffect, useRef, useState } from "react";
 import * as Y from "yjs";
 
@@ -169,7 +169,7 @@ function RoomScreen(props: {
   onRelinquished(): Promise<void>;
   row: DogRowHandle;
 }) {
-  const db = useCoveDB<WoofSchema>();
+  const db = useVennbase<WoofSchema>();
   const [copyStatus, setCopyStatus] = useState("");
   const bindingRef = useRef<CrdtAdapter<Y.Doc> | null>(null);
   if (bindingRef.current === null) {
@@ -235,7 +235,7 @@ function RoomScreen(props: {
 }
 
 export function App() {
-  const db = useCoveDB<WoofSchema>();
+  const db = useVennbase<WoofSchema>();
   const session = useSession(db);
   const signedInUser =
     session.status === "success" && session.data?.signedIn

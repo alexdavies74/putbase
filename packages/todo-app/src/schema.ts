@@ -1,4 +1,4 @@
-import { collection, defineSchema, field, index } from "@covedb/core";
+import { collection, defineSchema, field, index } from "@vennbase/core";
 
 export const schema = defineSchema({
   boards: collection({
