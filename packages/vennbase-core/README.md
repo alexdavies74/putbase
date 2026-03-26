@@ -24,7 +24,8 @@ Write your frontend. Vennbase handles the rest.
 
 - **Zero backend** — no server to run, no infrastructure bill
 - **No access rules to write** — share a link, they're in; that's the whole model
-- **Local-first & real-time** — data lives on the user's device, syncs via CRDT
+- **Optimistic updates** — instant writes built-in
+- **Local-first support** — app data syncs via CRDT automatically
 - **NoSQL, open source**
 - **Auth, server functions** — via Puter, one login for your whole app
 - **User-pays AI** — Puter's AI APIs are billed to the user, not you; build AI features with zero hosting cost

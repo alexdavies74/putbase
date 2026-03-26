@@ -1,0 +1,288 @@
+import { Children, type ComponentPropsWithoutRef, isValidElement, type ReactElement, type ReactNode } from "react";
+import ReactMarkdown from "react-markdown";
+import rehypeHighlight from "rehype-highlight";
+import remarkGfm from "remark-gfm";
+import type { ParsedReadme, ReadmeSection, ReferenceSubsection } from "./parse-readme";
+
+interface MarkdownCardProps {
+  title: string;
+  markdown: string;
+  slug: string;
+  tone: string;
+  eyebrow?: string;
+  className?: string;
+}
+
+interface MarkdownContentProps {
+  markdown: string;
+}
+
+const markdownComponents = {
+  a: ({ href, children, ...props }: ComponentPropsWithoutRef<"a">) => {
+    const external = Boolean(href?.startsWith("http"));
+    return (
+      <a
+        {...props}
+        href={href}
+        rel={external ? "noreferrer" : undefined}
+        target={external ? "_blank" : undefined}
+      >
+        {children}
+      </a>
+    );
+  },
+  code: ({ className, children, ...props }: ComponentPropsWithoutRef<"code">) => {
+    const isBlock = Boolean(className?.includes("language-"));
+    if (isBlock) {
+      return (
+        <code {...props} className={className}>
+          {children}
+        </code>
+      );
+    }
+
+    return (
+      <code {...props} className={["inline-code", className].filter(Boolean).join(" ")}>
+        {children}
+      </code>
+    );
+  },
+  pre: ({ children, ...props }: ComponentPropsWithoutRef<"pre">) => {
+    const language = getCodeLanguage(children);
+    return (
+      <div className="code-frame">
+        <div className="code-frame__bar">
+          <span className="code-frame__label">{language ?? "snippet"}</span>
+          <span className="code-frame__dots" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+        </div>
+        <pre {...props}>{children}</pre>
+      </div>
+    );
+  },
+  table: ({ children, ...props }: ComponentPropsWithoutRef<"table">) => (
+    <div className="table-scroll">
+      <table {...props}>{children}</table>
+    </div>
+  ),
+} satisfies Parameters<typeof ReactMarkdown>[0]["components"];
+
+export function HomePage({ content }: { content: ParsedReadme }) {
+  const featuredHeadings = new Set([
+    "How it works",
+    "Schema",
+    "Querying",
+    "Sharing rows with share links",
+  ]);
+  const featuredSections = content.sections.filter((section) => featuredHeadings.has(section.heading));
+  const remainingSections = content.sections.filter(
+    (section) => section.heading !== "Install" && !featuredHeadings.has(section.heading),
+  );
+
+  return (
+    <div className="site-shell">
+      <div className="site-backdrop" aria-hidden="true" />
+      <div className="site-grid" aria-hidden="true" />
+      <header className="hero-wrap">
+        <TopNav />
+        <section className="hero">
+          <div className="hero-copy">
+            <h1 className="hero-title">
+              <span>{content.title}</span>
+            </h1>
+            <p className="hero-tagline">{content.tagline}</p>
+            <p className="hero-lead">
+              <InlineMarkdown markdown={content.lead} />
+            </p>
+            <p className="hero-support">{content.supportingLine}</p>
+            <ul className="feature-list">
+              {content.featureBullets.map((feature) => (
+                <li key={feature}>
+                  <InlineMarkdown markdown={feature} />
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="hero-code">
+            <MarkdownContent markdown={content.heroCode} />
+          </div>
+        </section>
+      </header>
+
+      <main className="page-content">
+        <section className="dark-strip">
+          <div className="featured-grid">
+            {featuredSections.map((section, index) => (
+              <MarkdownCard
+                key={section.heading}
+                className={
+                  index === 0
+                    ? "section-card--featured section-card--heroic"
+                    : "section-card--featured"
+                }
+                markdown={section.markdown}
+                slug={section.slug}
+                title={section.heading}
+                tone={sectionTone(index)}
+              />
+            ))}
+          </div>
+        </section>
+
+        <div className="columns-layout">
+          {remainingSections.map((section, index) => (
+            <SectionCard
+              key={section.heading}
+              section={section}
+              tone={sectionTone(index + featuredSections.length)}
+            />
+          ))}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+export function ReferencePage({ content }: { content: ParsedReadme }) {
+  return (
+    <div className="site-shell site-shell--reference">
+      <div className="site-backdrop" aria-hidden="true" />
+      <header className="reference-hero">
+        <TopNav />
+        <div className="reference-hero__content">
+          <div>
+            <h1>{content.reference.heading}</h1>
+          </div>
+        </div>
+      </header>
+
+      <main className="reference-layout">
+        <aside className="reference-nav">
+          <nav>
+            {content.reference.sections.map((section) => (
+              <a key={section.slug} href={`#${section.slug}`}>
+                {section.heading}
+              </a>
+            ))}
+          </nav>
+        </aside>
+
+        <section className="reference-content">
+          {content.reference.introMarkdown ? (
+            <div className="reference-intro">
+              <MarkdownContent markdown={content.reference.introMarkdown} />
+            </div>
+          ) : null}
+          {content.reference.sections.map((section, index) => (
+            <ReferenceCard
+              key={section.heading}
+              section={section}
+              tone={sectionTone(index)}
+            />
+          ))}
+        </section>
+      </main>
+    </div>
+  );
+}
+
+function TopNav() {
+  return (
+    <nav className="top-nav">
+      <a className="wordmark" href="/">
+        <span className="wordmark__dot" aria-hidden="true" />
+        vennbase.dev
+      </a>
+      <div className="top-nav__links">
+        <a href="/">Overview</a>
+        <a href="/reference/">Reference</a>
+        <a href="https://github.com/alexdavies74/vennbase/tree/main/packages/vennbase-core">
+          GitHub
+        </a>
+      </div>
+    </nav>
+  );
+}
+
+function SectionCard({ section, tone }: { section: ReadmeSection; tone: string }) {
+  return (
+    <MarkdownCard
+      markdown={section.markdown}
+      slug={section.slug}
+      title={section.heading}
+      tone={tone}
+    />
+  );
+}
+
+function ReferenceCard({ section, tone }: { section: ReferenceSubsection; tone: string }) {
+  return (
+    <MarkdownCard
+      markdown={section.markdown}
+      slug={section.slug}
+      title={section.heading}
+      tone={tone}
+    />
+  );
+}
+
+function MarkdownCard({ title, markdown, slug, tone, eyebrow, className }: MarkdownCardProps) {
+  return (
+    <article className={["section-card", tone, className].filter(Boolean).join(" ")} id={slug}>
+      <div className="section-card__accent" aria-hidden="true" />
+      {eyebrow ? <p className="section-card__eyebrow">{eyebrow}</p> : null}
+      <h2>
+        <InlineMarkdown markdown={title} />
+      </h2>
+      <MarkdownContent markdown={markdown} />
+    </article>
+  );
+}
+
+function MarkdownContent({ markdown }: MarkdownContentProps) {
+  return (
+    <ReactMarkdown
+      components={markdownComponents}
+      rehypePlugins={[rehypeHighlight]}
+      remarkPlugins={[remarkGfm]}
+    >
+      {markdown}
+    </ReactMarkdown>
+  );
+}
+
+function InlineMarkdown({ markdown }: { markdown: string }) {
+  return (
+    <ReactMarkdown
+      components={{
+        a: markdownComponents.a,
+        code: markdownComponents.code,
+        p: ({ children }) => <>{children}</>,
+      }}
+      remarkPlugins={[remarkGfm]}
+    >
+      {markdown}
+    </ReactMarkdown>
+  );
+}
+
+function getCodeLanguage(children: ReactNode): string | null {
+  const codeChild = Children.toArray(children).find((child): child is ReactElement<{ className?: string }> =>
+    isValidElement(child),
+  );
+
+  if (!codeChild?.props.className) {
+    return null;
+  }
+
+  const match = /language-([\w-]+)/.exec(codeChild.props.className);
+  return match?.[1] ?? null;
+}
+
+function sectionTone(index: number): string {
+  const tones = ["tone-mint", "tone-gold", "tone-coral"];
+  return tones[index % tones.length] ?? tones[0];
+}
