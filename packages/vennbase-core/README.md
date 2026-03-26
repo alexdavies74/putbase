@@ -2,7 +2,7 @@
 
 **Build multi-user apps without writing a single access rule.**
 
-Vennbase is a TypeScript SDK for collaborative, local-first web apps — with no backend to run, no server to pay for, and no access control rules to misconfigure. Users sign in with their [Puter](https://puter.com) account. Their data lives in their Puter storage. You write a schema, call `create` and `query`, and you're done.
+Vennbase is a TypeScript SDK for collaborative, local-first web apps — with no backend to run, no server to pay for, and no access control rules to misconfigure. Users sign in with their [Puter](https://puter.com) account. Your app only sees the user's subset of the data stored in Puter.
 
 ```tsx
 // Write
