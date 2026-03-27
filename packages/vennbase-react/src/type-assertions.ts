@@ -44,11 +44,13 @@ declare const anyClient: any;
 
 const maybeAnyRowHandle: AnyRowHandle<TestSchema> | undefined = dogResult.data;
 const maybeDogHandle: DogHandle | undefined = dogResult.data;
-const maybeTagHandle: TagHandle | undefined = tagRows[0];
+const fallbackTagRows: TagHandle[] = tagRows ?? [];
+const maybeTagHandle: TagHandle | undefined = tagRows?.[0];
 const dogName: string = dogHandle.fields.name;
 void maybeAnyRowHandle;
 void maybeDogHandle;
 void maybeTagHandle;
+void fallbackTagRows;
 void dogName;
 
 if (dogResult.data) {
@@ -62,20 +64,22 @@ if (anyRowHandle.collection === "dogs") {
   void narrowedDogName;
 }
 
-if (tagRows[0]) {
-  void tagRows[0].in.add({
+const firstTag = tagRows?.[0];
+
+if (firstTag) {
+  void firstTag.in.add({
     id: "dog_1",
     collection: "dogs",
     baseUrl: "https://worker.example",
   });
-  const createdAt: number = tagRows[0].fields.createdAt;
+  const createdAt: number = firstTag.fields.createdAt;
   void createdAt;
 
   // @ts-expect-error tags can only be parented by dogs
-  void tagRows[0].in.add(tagRef);
+  void firstTag.in.add(tagRef);
 
-  void useRow(anyClient, tagRows[0]);
-  void useShareLink(anyClient, tagRows[0]);
+  void useRow(anyClient, firstTag);
+  void useShareLink(anyClient, firstTag);
 }
 
 export {};

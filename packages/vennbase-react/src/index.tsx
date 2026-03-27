@@ -55,7 +55,7 @@ export interface UseResourceResult<TData> extends ResourceSnapshot<TData> {
 }
 
 export interface UseQueryResult<TRow> extends UseResourceResult<TRow[]> {
-  rows: TRow[];
+  rows: TRow[] | undefined;
 }
 
 export type UseShareLinkResult = Omit<UseResourceResult<string>, "data"> & {
@@ -464,7 +464,7 @@ export function useQuery<
 
   return {
     ...(blocked ?? resource),
-    rows: (blocked ?? resource).data ?? [],
+    rows: (blocked ?? resource).data,
   };
 }
 

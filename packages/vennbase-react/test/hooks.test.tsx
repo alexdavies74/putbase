@@ -1070,7 +1070,7 @@ describe("@vennbase/react", () => {
 
     function Probe() {
       const result = useQuery(db as unknown as Vennbase<TestSchema>, "tags", queryOptions);
-      return <div>{result.rows.map((row) => row.fields.label).join(",")}</div>;
+      return <div>{(result.rows ?? []).map((row) => row.fields.label).join(",")}</div>;
     }
 
     const app = await renderApp(
@@ -1106,7 +1106,7 @@ describe("@vennbase/react", () => {
 
     function Probe() {
       const result = useQuery(db as unknown as Vennbase<TestSchema>, "tags", queryOptions);
-      return <div>{result.rows.map((row) => row.fields.label).join(",")}</div>;
+      return <div>{(result.rows ?? []).map((row) => row.fields.label).join(",")}</div>;
     }
 
     const app = await renderApp(<Probe />);
@@ -1144,7 +1144,7 @@ describe("@vennbase/react", () => {
     const app = await renderApp(<Probe />);
 
     expect(latest?.status).toBe("loading");
-    expect(latest?.rows).toEqual([]);
+    expect(latest?.rows).toBeUndefined();
     expect(latest?.isRefreshing).toBe(false);
     expect(latest?.refreshError).toBeUndefined();
 
@@ -1154,7 +1154,7 @@ describe("@vennbase/react", () => {
     });
 
     expect(latest?.status).toBe("success");
-    expect(latest?.rows.map((row) => row.fields.label)).toEqual(["friendly", "sleepy"]);
+    expect(latest?.rows?.map((row) => row.fields.label)).toEqual(["friendly", "sleepy"]);
     expect(latest?.isRefreshing).toBe(false);
     expect(latest?.refreshError).toBeUndefined();
     await app.unmount();
@@ -1174,7 +1174,7 @@ describe("@vennbase/react", () => {
 
     function Probe() {
       latest = useQuery(db as unknown as Vennbase<TestSchema>, "tags", queryOptions);
-      return <div>{latest.rows.map((row) => row.fields.label).join(",")}</div>;
+      return <div>{(latest.rows ?? []).map((row) => row.fields.label).join(",")}</div>;
     }
 
     const app = await renderApp(<Probe />);
@@ -1189,7 +1189,7 @@ describe("@vennbase/react", () => {
     });
 
     expect(latest?.status).toBe("success");
-    expect(latest?.rows.map((row) => row.fields.label)).toEqual(["friendly"]);
+    expect(latest?.rows?.map((row) => row.fields.label)).toEqual(["friendly"]);
     expect(latest?.isRefreshing).toBe(true);
     expect(latest?.refreshError).toBeUndefined();
 
@@ -1199,7 +1199,7 @@ describe("@vennbase/react", () => {
     });
 
     expect(latest?.status).toBe("success");
-    expect(latest?.rows.map((row) => row.fields.label)).toEqual(["friendly", "sleepy"]);
+    expect(latest?.rows?.map((row) => row.fields.label)).toEqual(["friendly", "sleepy"]);
     expect(latest?.isRefreshing).toBe(false);
     expect(latest?.refreshError).toBeUndefined();
     await app.unmount();
@@ -1218,7 +1218,7 @@ describe("@vennbase/react", () => {
 
     function Probe() {
       latest = useQuery(db as unknown as Vennbase<TestSchema>, "tags", queryOptions);
-      return <div>{latest.rows.map((row) => row.fields.label).join(",")}</div>;
+      return <div>{(latest.rows ?? []).map((row) => row.fields.label).join(",")}</div>;
     }
 
     const app = await renderApp(<Probe />);
@@ -1230,7 +1230,7 @@ describe("@vennbase/react", () => {
     });
 
     expect(latest?.status).toBe("success");
-    expect(latest?.rows.map((row) => row.fields.label)).toEqual(["friendly"]);
+    expect(latest?.rows?.map((row) => row.fields.label)).toEqual(["friendly"]);
     expect(latest?.error).toBeUndefined();
     expect(latest?.refreshError).toBeInstanceOf(Error);
     expect(latest?.isRefreshing).toBe(false);
@@ -1256,7 +1256,7 @@ describe("@vennbase/react", () => {
     const app = await renderApp(<Probe />);
 
     expect(latest?.status).toBe("error");
-    expect(latest?.rows).toEqual([]);
+    expect(latest?.rows).toBeUndefined();
     expect(latest?.error).toBeInstanceOf(Error);
     expect(latest?.refreshError).toBeUndefined();
     expect(latest?.isRefreshing).toBe(false);
@@ -1274,7 +1274,7 @@ describe("@vennbase/react", () => {
         index: "byCreatedAt",
         order: "asc",
       });
-      return <div>{latest.rows.map((row) => row.fields.label).join(",")}</div>;
+      return <div>{(latest.rows ?? []).map((row) => row.fields.label).join(",")}</div>;
     }
 
     const app = await renderApp(<Probe />);

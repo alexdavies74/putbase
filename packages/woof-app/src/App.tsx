@@ -272,7 +272,7 @@ export function App() {
       }
       : null,
   );
-  const activeHistoryRow = dogHistory.rows.find((historyRow) => {
+  const activeHistoryRow = (dogHistory.rows ?? []).find((historyRow) => {
     if (!dismissedDogRef) {
       return true;
     }

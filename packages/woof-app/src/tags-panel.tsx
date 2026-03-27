@@ -11,7 +11,11 @@ interface DogTag {
   createdAt: number | null;
 }
 
-function mapDogTags(rows: Array<{ id: string; fields: Record<string, unknown> }>): DogTag[] {
+function mapDogTags(rows: Array<{ id: string; fields: Record<string, unknown> }> | undefined): DogTag[] {
+  if (!rows) {
+    return [];
+  }
+
   return rows
     .map((row) => {
       const label = typeof row.fields.label === "string" ? row.fields.label.trim() : "";
@@ -58,9 +62,9 @@ export function TagsPanel({ row, onCreateTag }: TagsPanelProps) {
   return (
     <section className="tag-section">
       <h2>Tags</h2>
-      {tagsQuery.status === "loading" && tags.length === 0 ? <p className="muted">Loading tags…</p> : null}
+      {tagsQuery.status === "loading" ? <p className="muted">Loading tags…</p> : null}
       <ul className="tag-list">
-        {tags.length === 0 ? (
+        {tagsQuery.status === "success" && tags.length === 0 ? (
           <li className="tag-empty">No tags yet.</li>
         ) : tags.map((tag) => (
           <li key={tag.id} className="tag-item">

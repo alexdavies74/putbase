@@ -1,5 +1,5 @@
 import { useAcceptInviteFromUrl, useMutation, useQuery, useRow, useSession, useShareLink } from "@vennbase/react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { RowHandle } from "@vennbase/core";
 import { db } from "./db";
 import type { Schema } from "./schema";
@@ -32,15 +32,6 @@ async function rememberRecentBoard(board: BoardHandle): Promise<void> {
     openedAt: Date.now(),
   });
   await recentBoardWrite.committed;
-}
-
-async function loadRecentBoards(): Promise<RecentBoardHandle[]> {
-  // This query also runs inside the current signed-in user's implicit `user` scope.
-  return db.query("recentBoards", {
-    index: "byOpenedAt",
-    order: "desc",
-    limit: 10,
-  });
 }
 
 async function openRecentBoard(recentBoard: RecentBoardHandle): Promise<BoardHandle> {
@@ -111,8 +102,6 @@ export default function App() {
 
 function LandingView({ errorMessage, onBoard }: { errorMessage?: string; onBoard: (b: BoardHandle) => void }) {
   const [title, setTitle] = useState("");
-  const [recentBoards, setRecentBoards] = useState<RecentBoardHandle[]>([]);
-  const [recentBoardsError, setRecentBoardsError] = useState("");
 
   const createBoard = useMutation(async (t: string) => {
     const boardWrite = db.create("boards", { title: t });
@@ -122,27 +111,16 @@ function LandingView({ errorMessage, onBoard }: { errorMessage?: string; onBoard
     return board;
   });
   const openRecent = useMutation(async (recentBoard: RecentBoardHandle) => openRecentBoard(recentBoard));
-
-  useEffect(() => {
-    let cancelled = false;
-
-    void loadRecentBoards()
-      .then((rows) => {
-        if (!cancelled) {
-          setRecentBoards(rows);
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          const message = error instanceof Error ? error.message : "Could not load recent boards.";
-          setRecentBoardsError(message);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { rows: recentBoards = [], error: recentBoardsError } = useQuery(db, "recentBoards", {
+    index: "byOpenedAt",
+    order: "desc",
+    limit: 10,
+  });
+  const recentBoardsErrorMessage = recentBoardsError instanceof Error
+    ? recentBoardsError.message
+    : recentBoardsError
+      ? "Could not load recent boards."
+      : "";
 
   return (
     <main>
@@ -190,7 +168,7 @@ function LandingView({ errorMessage, onBoard }: { errorMessage?: string; onBoard
         </section>
       ) : null}
 
-      {recentBoardsError ? <p className="error">{recentBoardsError}</p> : null}
+      {recentBoardsErrorMessage ? <p className="error">{recentBoardsErrorMessage}</p> : null}
     </main>
   );
 }
@@ -243,11 +221,16 @@ function OpeningInviteView() {
 function BoardView({ board, onLeave }: { board: BoardHandle; onLeave: () => void }) {
   const [text, setText] = useState("");
 
-  const { rows: cards } = useQuery<Schema, "cards">(db, "cards", {
+  const { rows: cards = [], status, error } = useQuery(db, "cards", {
     in: board.ref,
     index: "byCreatedAt",
     order: "asc",
   });
+  const cardsError = error instanceof Error
+    ? error.message
+    : status === "error"
+      ? "Failed to load cards."
+      : "";
 
   const { shareLink } = useShareLink(db, board.ref);
 
@@ -289,19 +272,24 @@ function BoardView({ board, onLeave }: { board: BoardHandle; onLeave: () => void
         </button>
       </form>
 
-      <ul>
-        {cards.map((card) => (
-          <li key={card.id} className={card.fields.done ? "done" : ""}>
-            <button
-              className="secondary small"
-              onClick={() => toggleDone.mutate(card).catch(console.error)}
-            >
-              {card.fields.done ? "✓" : "○"}
-            </button>
-            {card.fields.text}
-          </li>
-        ))}
-      </ul>
+      {status === "loading" ? <p className="muted">Loading cards…</p> : null}
+      {cardsError ? <p className="error">{cardsError}</p> : null}
+      {status === "success" && cards.length === 0 ? <p className="muted">No cards yet. Add the first one above.</p> : null}
+      {cards.length > 0 ? (
+        <ul>
+          {cards.map((card) => (
+            <li key={card.id} className={card.fields.done ? "done" : ""}>
+              <button
+                className="secondary small"
+                onClick={() => toggleDone.mutate(card).catch(console.error)}
+              >
+                {card.fields.done ? "✓" : "○"}
+              </button>
+              {card.fields.text}
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
       <div className="invite-bar">
         <span>Invite others to collaborate:</span>

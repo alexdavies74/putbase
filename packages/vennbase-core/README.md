@@ -14,7 +14,7 @@ const board = db.create("boards", { title: "Launch checklist" }).value;
 db.create("cards", { text: "Ship it", done: false, createdAt: Date.now() }, { in: board });
 
 // Read (React)
-const { rows: cards } = useQuery(db, "cards", {
+const { rows: cards = [] } = useQuery(db, "cards", {
   in: board,
   index: "byCreatedAt",
   order: "asc",
@@ -194,14 +194,13 @@ const cards = await db.query("cards", {
 ```tsx
 import { useQuery } from "@vennbase/react";
 
-const { rows: cards } = useQuery(db, "cards", {
+const { rows: cards = [], status } = useQuery(db, "cards", {
   in: board,
   index: "byCreatedAt",
   order: "asc",
 });
 ```
 
-`rows` is always a typed array — never `undefined`.
 
 ---
 

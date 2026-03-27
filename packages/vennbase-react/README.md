@@ -64,7 +64,7 @@ function AppShell() {
 
 ## Querying
 
-`useQuery` polls for changes and re-renders automatically. `rows` is always a typed array — never `undefined`.
+`useQuery` polls for changes and re-renders automatically.
 
 `useQuery(db, "games", ...)` never means "all accessible games". If a collection is not declared as `in: ["user"]`, omitting `in` is an error.
 
@@ -73,7 +73,7 @@ import { useQuery } from "@vennbase/react";
 import { db } from "./db";
 
 function CardList({ board }: { board: BoardHandle }) {
-  const { rows: cards } = useQuery<Schema, "cards">(db, "cards", {
+  const { rows: cards = [], status } = useQuery(db, "cards", {
     in: board,
     index: "byCreatedAt",
     order: "asc",
@@ -93,7 +93,7 @@ Collections declared as `in: ["user"]` keep the same ergonomics in React: if you
 
 ```tsx
 function RecentBoards() {
-  const { rows: recentBoards } = useQuery<Schema, "recentBoards">(db, "recentBoards", {
+  const { rows: recentBoards = [] } = useQuery(db, "recentBoards", {
     index: "byOpenedAt",
     order: "desc",
     limit: 10,
@@ -121,7 +121,7 @@ import { db } from "./db";
 import type { RowRef } from "@vennbase/core";
 
 function BoardTitle({ boardRef }: { boardRef: RowRef<"boards"> }) {
-  const { data: board, status } = useRow<Schema, "boards">(db, boardRef);
+  const { data: board, status } = useRow(db, boardRef);
 
   if (status !== "success" || !board) return <p>Loading…</p>;
   return <h1>{board.fields.title}</h1>;
@@ -255,7 +255,7 @@ interface UseResourceResult<TData> {
 }
 
 interface UseQueryResult<TRow> extends UseResourceResult<TRow[]> {
-  rows: TRow[];
+  rows: TRow[] | undefined;
 }
 ```
 
@@ -276,7 +276,8 @@ function useQuery<
 ```
 
 - `options: null | undefined` keeps the hook idle.
-- `rows` is always an array and mirrors `data ?? []`.
+- `rows` is `undefined` until the first usable result arrives.
+- Once a query has succeeded, `rows` stays populated during background refreshes.
 - The row type matches `db.query(...)`, including parent collection constraints.
 
 ### `useRow`
