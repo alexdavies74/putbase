@@ -287,6 +287,12 @@ For a fuller picture of how the pieces fit together in a real app, read `package
 pnpm --filter woof-app dev
 ```
 
+`packages/appointment-app` goes further into access-control territory: a blind booking inbox where customers can add rows without seeing each other, run anonymous slot-availability queries using `select: "keys"`, and schema design that controls exactly what key-only queries expose. Read [`packages/appointment-app/README.md`](../appointment-app/README.md) for a recipe-style walkthrough of each pattern.
+
+```bash
+pnpm --filter appointment-app dev
+```
+
 ---
 
 ## API reference
