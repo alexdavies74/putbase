@@ -229,6 +229,12 @@ h3 {
   font-size: 14px;
 }
 
+.slot-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
 @media (max-width: 760px) {
   .field-grid {
     grid-template-columns: 1fr;

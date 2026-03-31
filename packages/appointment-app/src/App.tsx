@@ -489,7 +489,7 @@ function CustomerScheduleView(props: {
   bookingRootRef: BookingRootRef;
 }) {
   const db = useVennbase<Schema>();
-  const [activeKey, setActiveKey] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<{ key: string; type: "book" | "cancel" } | null>(null);
   const [actionMessage, setActionMessage] = useState("");
   const {
     rows: sharedBookings = [],
@@ -562,9 +562,9 @@ function CustomerScheduleView(props: {
                       <button
                         className="primary small"
                         type="button"
-                        disabled={activeKey === slot.key}
+                        disabled={pendingAction?.key === slot.key}
                         onClick={() => {
-                          setActiveKey(slot.key);
+                          setPendingAction({ key: slot.key, type: "book" });
                           setActionMessage("");
                           void reserve.mutate(slot)
                             .then(() => {
@@ -579,40 +579,49 @@ function CustomerScheduleView(props: {
                               setActionMessage(getErrorMessage(error, "Could not book slot."));
                             })
                             .finally(() => {
-                              setActiveKey(null);
+                              setPendingAction((current) =>
+                                current?.key === slot.key && current.type === "book"
+                                  ? null
+                                  : current);
                             });
                         }}
                       >
-                        {activeKey === slot.key ? "Booking..." : "Book"}
+                        {pendingAction?.key === slot.key && pendingAction.type === "book" ? "Booking..." : "Book"}
                       </button>
                     ) : slot.status === "owned" && slot.savedBooking ? (
-                      <button
-                        className="secondary small"
-                        type="button"
-                        disabled={activeKey === slot.key}
-                        onClick={() => {
-                          setActiveKey(slot.key);
-                          setActionMessage("");
+                      <div className="slot-actions">
+                        <span className="slot-status">Booked</span>
+                        <button
+                          className="secondary small"
+                          type="button"
+                          disabled={pendingAction?.key === slot.key}
+                          onClick={() => {
+                            setPendingAction({ key: slot.key, type: "cancel" });
+                            setActionMessage("");
                           void cancel.mutate(slot.savedBooking!)
                             .then(() => {
                               setActionMessage("Booking canceled.");
                             })
-                            .catch((error) => {
-                              logAppError("cancel booking failed", error, {
-                                scheduleId: props.schedule.id,
-                                savedBookingId: slot.savedBooking?.id ?? null,
+                              .catch((error) => {
+                                logAppError("cancel booking failed", error, {
+                                  scheduleId: props.schedule.id,
+                                  savedBookingId: slot.savedBooking?.id ?? null,
+                                });
+                                setActionMessage(getErrorMessage(error, "Could not cancel booking."));
+                              })
+                              .finally(() => {
+                                setPendingAction((current) =>
+                                  current?.key === slot.key && current.type === "cancel"
+                                    ? null
+                                    : current);
                               });
-                              setActionMessage(getErrorMessage(error, "Could not cancel booking."));
-                            })
-                            .finally(() => {
-                              setActiveKey(null);
-                            });
-                        }}
-                      >
-                        {activeKey === slot.key ? "Canceling..." : "Cancel"}
-                      </button>
+                          }}
+                        >
+                          {pendingAction?.key === slot.key && pendingAction.type === "cancel" ? "Canceling..." : "Cancel"}
+                        </button>
+                      </div>
                     ) : (
-                      <span className="slot-status">Booked</span>
+                      <span className="slot-status">Taken</span>
                     )}
                   </li>
                 ))}
