@@ -1,7 +1,7 @@
 import type { Identity } from "./identity";
 import type { VennbaseOptions } from "./vennbase";
 import type { Transport } from "./transport";
-import type { RowInput, RowRef } from "./schema";
+import type { MemberRole, RowInput, RowRef } from "./schema";
 import { normalizeRowRef } from "./row-reference";
 import type { ParsedInvite, InviteToken } from "./types";
 
@@ -13,6 +13,10 @@ interface GetInviteResponse {
 
 interface PostInviteResponse {
   inviteToken: InviteToken;
+}
+
+interface GetInvitePayload {
+  role: MemberRole;
 }
 
 function isRowRefLike(value: unknown): value is RowRef {
@@ -45,8 +49,11 @@ export class Invites {
     private readonly identity: Identity,
   ) {}
 
-  async getExistingInviteToken(row: RowInput): Promise<InviteToken | null> {
-    const response = await this.transport.row(normalizeRowRef(row)).request<GetInviteResponse>("invite-token/get", {});
+  async getExistingInviteToken(row: RowInput, options: { role: MemberRole }): Promise<InviteToken | null> {
+    const response = await this.transport.row(normalizeRowRef(row)).request<GetInviteResponse, GetInvitePayload>(
+      "invite-token/get",
+      { role: options.role },
+    );
     return response.inviteToken;
   }
 

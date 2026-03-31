@@ -1,4 +1,4 @@
-import type { RowRef } from "./schema";
+import type { MemberRole, RowRef } from "./schema";
 import { normalizeBaseUrl } from "./transport";
 import type { InviteToken, VennbaseUser, Row } from "./types";
 import type { Transport } from "./transport";
@@ -36,12 +36,13 @@ export class WritePlanner {
     };
   }
 
-  planInviteToken(args: { rowId: string; invitedBy: string }): InviteToken {
+  planInviteToken(args: { rowId: string; invitedBy: string; role: MemberRole }): InviteToken {
     return {
       token: this.transport.createId("invite"),
       rowId: args.rowId,
       invitedBy: args.invitedBy,
       createdAt: Date.now(),
+      role: args.role,
     };
   }
 }

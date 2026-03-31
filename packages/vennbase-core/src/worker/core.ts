@@ -53,7 +53,11 @@ interface MessagesRequest {
   sinceSequence: number;
 }
 
-type InvitePayload = Pick<InviteToken, "token" | "rowId" | "createdAt" | "invitedBy">;
+type InvitePayload = Pick<InviteToken, "token" | "rowId" | "createdAt" | "invitedBy" | "role">;
+
+interface GetInviteRequest {
+  role: MemberRole;
+}
 
 type SyncMessagePayload = Omit<SyncMessage, "signedBy" | "sequence">;
 
@@ -431,8 +435,10 @@ function roleRank(role: MemberRole | null): number {
       return 2;
     case "viewer":
       return 1;
-    default:
+    case "submitter":
       return 0;
+    default:
+      return -1;
   }
 }
 
@@ -447,6 +453,10 @@ function normalizeStoredMemberRole(role: unknown): MemberRole | null {
 
   if (role === "viewer") {
     return "viewer";
+  }
+
+  if (role === "submitter") {
+    return "submitter";
   }
 
   return null;
@@ -777,7 +787,7 @@ export class RowWorker {
       action: "row/get",
       rowId,
     });
-    await this.assertMember(rowId, principal, ctx);
+    await this.assertReadableMember(rowId, principal, ctx);
 
     const snapshot = await this.snapshot(rowId, request.url);
     return jsonResponse(200, snapshot);
@@ -796,7 +806,7 @@ export class RowWorker {
       error(400, "BAD_REQUEST", "sinceSequence is required");
     }
     const sinceSequence = parseOptionalNonNegativeInteger(String(payload.sinceSequence), 0);
-    await this.assertMember(rowId, principal, ctx);
+    await this.assertReadableMember(rowId, principal, ctx);
 
     const currentSequence = await this.getMessageSequence(rowId);
     if (sinceSequence >= currentSequence) {
@@ -851,9 +861,14 @@ export class RowWorker {
       } else if (canonicalize(existingKey) !== canonicalize(principal.publicKeyJwk)) {
         error(401, "KEY_MISMATCH", "Public key does not match bound member key");
       }
-      return jsonResponse(200, await this.snapshot(rowId, request.url));
+      const role = await this.getDirectRole(rowId, principal);
+      if (!role) {
+        error(401, "UNAUTHORIZED", "Members only");
+      }
+      return jsonResponse(200, { role });
     }
 
+    let grantedRole: MemberRole = "editor";
     if (!isOwner) {
       if (!body.inviteToken) {
         error(401, "INVITE_REQUIRED", "Invite token is required for non-owner first join");
@@ -863,6 +878,8 @@ export class RowWorker {
       if (!invite || invite.rowId !== rowId) {
         error(401, "INVITE_REQUIRED", "Invite token is invalid");
       }
+
+      grantedRole = normalizeStoredMemberRole(invite.role) ?? error(401, "INVITE_REQUIRED", "Invite token is invalid");
     }
 
     members.push(body.username);
@@ -871,11 +888,11 @@ export class RowWorker {
 
     if (!isOwner) {
       const roles = await this.getMemberRoles(rowId);
-      roles[body.username] = roles[body.username] ?? "editor";
+      roles[body.username] = roles[body.username] ?? grantedRole;
       await this.kv.set(rowMemberRolesKey(rowId), roles);
     }
 
-    return jsonResponse(200, await this.snapshot(rowId, request.url));
+    return jsonResponse(200, { role: isOwner ? "editor" : grantedRole });
   }
 
   private async getInviteToken(
@@ -883,16 +900,25 @@ export class RowWorker {
     rowId: string,
     ctx: WorkerRequestContext,
   ): Promise<Response> {
-    const { principal } = await this.requireProtectedPayload<Record<string, never>>(request, {
+    const { payload, principal } = await this.requireProtectedPayload<GetInviteRequest>(request, {
       action: "invite-token/get",
       rowId,
     });
-    await this.assertMember(rowId, principal, ctx);
+    await this.assertReadableMember(rowId, principal, ctx);
+
+    const requestedRole = normalizeStoredMemberRole(payload.role);
+    if (!requestedRole) {
+      error(400, "BAD_REQUEST", "role must be editor, viewer, or submitter");
+    }
 
     const entries = await this.kv.list(tokenKeyPrefix(rowId));
     const existing = entries
       .map((e) => e.value as InviteToken)
-      .find((t) => t.invitedBy === principal.username && t.rowId === rowId);
+      .find((t) =>
+        t.invitedBy === principal.username
+        && t.rowId === rowId
+        && normalizeStoredMemberRole(t.role) === requestedRole,
+      );
 
     return jsonResponse(200, { inviteToken: existing ?? null });
   }
@@ -906,10 +932,14 @@ export class RowWorker {
       action: "invite-token/create",
       rowId,
     });
-    await this.assertMember(rowId, principal, ctx);
+    await this.assertReadableMember(rowId, principal, ctx);
 
     if (payload.rowId !== rowId) {
       error(400, "BAD_REQUEST", "Payload rowId does not match route rowId");
+    }
+
+    if (!normalizeStoredMemberRole(payload.role)) {
+      error(400, "BAD_REQUEST", "role must be editor, viewer, or submitter");
     }
 
     const inviteToken: InviteToken = {
@@ -917,6 +947,7 @@ export class RowWorker {
       rowId: payload.rowId,
       invitedBy: principal.username,
       createdAt: payload.createdAt,
+      role: payload.role,
     };
 
     await this.kv.set(tokenKey(rowId, inviteToken.token), inviteToken);
@@ -999,7 +1030,7 @@ export class RowWorker {
       action: "fields/get",
       rowId,
     });
-    await this.assertMember(rowId, principal, ctx);
+    await this.assertReadableMember(rowId, principal, ctx);
 
     const response: GetFieldsResponse = {
       fields: await this.getRowFields(rowId),
@@ -1206,7 +1237,7 @@ export class RowWorker {
       rowId,
       requireRequestProof: false,
     });
-    await this.assertMember(rowId, principal, ctx);
+    await this.assertReadableMember(rowId, principal, ctx);
 
     return jsonResponse(200, {
       parentRefs: await this.getParentRefs(rowId),
@@ -1222,7 +1253,7 @@ export class RowWorker {
       action: "db/query",
       rowId: parentRowId,
     });
-    await this.assertMember(parentRowId, principal, ctx);
+    await this.assertReadableMember(parentRowId, principal, ctx);
 
     const collection = payload.collection?.trim();
     if (!collection) {
@@ -1313,7 +1344,7 @@ export class RowWorker {
     await this.assertWriter(rowId, principal, ctx);
     const username = body.username?.trim();
     const role = body.role;
-    if (!username || !role || (role !== "editor" && role !== "viewer")) {
+    if (!username || !role || (role !== "editor" && role !== "viewer" && role !== "submitter")) {
       error(400, "BAD_REQUEST", "username and valid role are required");
     }
 
@@ -1373,7 +1404,7 @@ export class RowWorker {
       action: "members/direct",
       rowId,
     });
-    await this.assertMember(rowId, principal, ctx);
+    await this.assertReadableMember(rowId, principal, ctx);
 
     const members = await this.getMembers(rowId);
     const roles = await this.getMemberRoles(rowId);
@@ -1396,7 +1427,7 @@ export class RowWorker {
       requireRequestProof: false,
     });
     const ttl = parseOptionalNonNegativeInteger(payload.ttl == null ? null : String(payload.ttl), DEFAULT_PARENT_ROW_TTL);
-    await this.assertMember(rowId, principal, ctx, ttl);
+    await this.assertReadableMember(rowId, principal, ctx, ttl);
 
     const members = new Map<string, EffectiveMember>();
     const direct = await this.getMembers(rowId);
@@ -1439,6 +1470,9 @@ export class RowWorker {
           }
 
           for (const member of payload?.members ?? []) {
+            if (member.role === "submitter") {
+              continue;
+            }
             const existing = members.get(member.username);
             if (!existing || roleRank(member.role) > roleRank(existing.role)) {
               members.set(member.username, {
@@ -1468,10 +1502,15 @@ export class RowWorker {
     parentBaseUrl: string;
     principal: VerifiedPrincipal;
   }): Promise<void> {
-    const isParentMember = await this.hasRole(args.parentRowId, args.principal, args.ctx, ["editor", "viewer"]);
+    const parentRole = await this.resolveMemberRole(args.parentRowId, args.principal, args.ctx);
     const canWriteChild = await this.canWriteChildRow(args);
+    const ownsChild = args.principal.username === args.childOwner;
 
-    if (isParentMember && canWriteChild) {
+    if ((parentRole === "editor" || parentRole === "viewer") && canWriteChild) {
+      return;
+    }
+
+    if (parentRole === "submitter" && ownsChild && canWriteChild) {
       return;
     }
 
@@ -1481,11 +1520,12 @@ export class RowWorker {
         id: args.parentRowId,
         baseUrl: args.parentBaseUrl,
       }, args.auth.principal, args.ctx)
+      && (parentRole !== "submitter" || ownsChild)
     ) {
       return;
     }
 
-    error(401, "UNAUTHORIZED", "Must be a parent member or a editor on a linked child row");
+    error(401, "UNAUTHORIZED", "Must be a readable parent member or child owner on a linked child row");
   }
 
   private async canWriteChildRow(args: {
@@ -1783,6 +1823,22 @@ export class RowWorker {
     }
   }
 
+  private async assertReadableMember(
+    rowId: string,
+    principal: VerifiedPrincipal,
+    ctx: WorkerRequestContext,
+    ttl: number = DEFAULT_PARENT_ROW_TTL,
+  ): Promise<void> {
+    const role = await this.resolveMemberRole(rowId, principal, ctx, ttl);
+    if (!role) {
+      error(401, "UNAUTHORIZED", "Members only");
+    }
+
+    if (role === "submitter") {
+      error(401, "UNAUTHORIZED", "Readable members only");
+    }
+  }
+
   private async hasRole(
     rowId: string,
     principal: VerifiedPrincipal,
@@ -1850,7 +1906,7 @@ export class RowWorker {
           }
 
           const role = normalizeStoredMemberRole(payload?.role);
-          if (role) {
+          if (role && role !== "submitter") {
             return role;
           }
 

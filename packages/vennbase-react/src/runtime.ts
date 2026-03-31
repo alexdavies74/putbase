@@ -515,8 +515,8 @@ export function makeMembersKey(kind: "usernames" | "direct" | "effective", row: 
   return `${kind}:${stableJsonStringify(canonicalizeKeyPart(row))}`;
 }
 
-export function makeShareLinkKey(row: RowInput): string {
-  return `share-link:${stableJsonStringify(canonicalizeKeyPart(row))}`;
+export function makeShareLinkKey(row: RowInput, role: MemberRole): string {
+  return `share-link:${stableJsonStringify(canonicalizeKeyPart({ row, role }))}`;
 }
 
 export function makeIncomingInviteKey(inviteInput: string): string {

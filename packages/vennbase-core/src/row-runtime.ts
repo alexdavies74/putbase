@@ -1,12 +1,16 @@
 import type { Identity } from "./identity";
 import type { Provisioning } from "./provisioning";
-import type { RowRef } from "./schema";
+import type { MemberRole, RowRef } from "./schema";
 import type { Transport } from "./transport";
 import { buildRowUrl, normalizeBaseUrl } from "./transport";
 import type { JoinOptions, VennbaseUser, Row, RowSnapshot } from "./types";
 
 interface PostMessageResponse {
   message: { sequence: number };
+}
+
+interface JoinRowResponse {
+  role: MemberRole;
 }
 
 export interface PlannedRowState {
@@ -78,9 +82,7 @@ export class RowRuntime {
       },
     });
 
-    await this.joinRow(plan.ref, {});
-
-    const row = await this.getRow(plan.ref);
+    const row = await this.joinRow(plan.ref, {});
     return {
       id: row.id,
       name: row.name,
@@ -98,14 +100,20 @@ export class RowRuntime {
     return this.commitPlannedRow(this.planRow(name));
   }
 
-  async joinRow(rowRef: Pick<RowRef, "id" | "baseUrl">, options: JoinOptions = {}): Promise<Row> {
+  async joinMembership(rowRef: Pick<RowRef, "id" | "baseUrl">, options: JoinOptions = {}): Promise<MemberRole> {
     const user = await this.identity.whoAmI();
     const row = this.transport.row(rowRef);
 
-    await row.request("row/join", {
+    const response = await row.request<JoinRowResponse>("row/join", {
       username: user.username,
       inviteToken: options.inviteToken,
     });
+
+    return response.role;
+  }
+
+  async joinRow(rowRef: Pick<RowRef, "id" | "baseUrl">, options: JoinOptions = {}): Promise<Row> {
+    await this.joinMembership(rowRef, options);
 
     const snapshot = await this.getRow(rowRef);
     return {

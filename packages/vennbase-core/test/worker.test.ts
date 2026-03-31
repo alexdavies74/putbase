@@ -173,7 +173,7 @@ describe("RowWorker", () => {
       }),
     );
     expect(ownerJoin.status).toBe(200);
-    expect((await jsonBody(ownerJoin)).baseUrl).toBe("https://worker.example");
+    expect((await jsonBody(ownerJoin)).role).toBe("editor");
 
     const guestJoinWithoutInvite = await worker.handle(
       await authedRequest({
@@ -199,6 +199,7 @@ describe("RowWorker", () => {
           rowId: "row_1",
           invitedBy: "tampered",
           createdAt: 10,
+          role: "editor",
         },
       }),
     );
@@ -252,6 +253,242 @@ describe("RowWorker", () => {
 
     expect(outsiderRead.status).toBe(401);
     expect((await jsonBody(outsiderRead)).code).toBe("UNAUTHORIZED");
+  });
+
+  it("grants submitter invites write-only inbox access", async () => {
+    const worker = new RowWorker(
+      {
+        owner: "owner",
+        workerUrl: "https://worker.example",
+      },
+      { kv: new InMemoryKv() },
+    );
+
+    await createRow(worker, "project_submitter", "Inbox");
+
+    await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("project_submitter", "row/join"),
+        action: "row/join",
+        rowId: "project_submitter",
+        username: "owner",
+        body: { username: "owner" },
+      }),
+    );
+
+    const inviteResponse = await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("project_submitter", "invite-token/create"),
+        action: "invite-token/create",
+        rowId: "project_submitter",
+        username: "owner",
+        body: {
+          token: "invite_submitter",
+          rowId: "project_submitter",
+          invitedBy: "owner",
+          createdAt: 10,
+          role: "submitter",
+        },
+      }),
+    );
+
+    expect((await jsonBody(inviteResponse)).inviteToken).toMatchObject({
+      token: "invite_submitter",
+      role: "submitter",
+    });
+
+    const submitterJoin = await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("project_submitter", "row/join"),
+        action: "row/join",
+        rowId: "project_submitter",
+        username: "submitter",
+        body: {
+          username: "submitter",
+          inviteToken: "invite_submitter",
+        },
+      }),
+    );
+
+    expect(submitterJoin.status).toBe(200);
+    expect((await jsonBody(submitterJoin)).role).toBe("submitter");
+
+    const submitterRole = await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("project_submitter", "members/role"),
+        action: "members/role",
+        rowId: "project_submitter",
+        username: "submitter",
+        body: {},
+      }),
+    );
+    expect(submitterRole.status).toBe(200);
+    expect((await jsonBody(submitterRole)).role).toBe("submitter");
+
+    const registerChild = await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("project_submitter", "parents/register-child"),
+        action: "parents/register-child",
+        rowId: "project_submitter",
+        username: "submitter",
+        body: {
+          childRef: {
+            id: "task_submitter",
+            collection: "tasks",
+            baseUrl: "https://worker.example",
+          },
+          childOwner: "submitter",
+          collection: "tasks",
+          fields: {
+            title: "New request",
+          },
+        },
+      }),
+    );
+    expect(registerChild.status).toBe(200);
+
+    for (const endpoint of [
+      { endpoint: "row/get", action: "row/get", body: undefined },
+      { endpoint: "fields/get", action: "fields/get", body: undefined },
+      { endpoint: "sync/poll", action: "sync/poll", body: { sinceSequence: 0 } },
+      { endpoint: "members/direct", action: "members/direct", body: undefined },
+      { endpoint: "parents/list", action: "parents/list", body: {} },
+      { endpoint: "db/query", action: "db/query", body: { collection: "tasks" } },
+      { endpoint: "invite-token/get", action: "invite-token/get", body: {} },
+    ]) {
+      const response = await worker.handle(
+        await authedRequest({
+          url: rowEndpoint("project_submitter", endpoint.endpoint),
+          action: endpoint.action,
+          rowId: "project_submitter",
+          username: "submitter",
+          body: endpoint.body,
+        }),
+      );
+
+      expect(response.status).toBe(401);
+      expect((await jsonBody(response)).code).toBe("UNAUTHORIZED");
+    }
+
+    const ownerQuery = await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("project_submitter", "db/query"),
+        action: "db/query",
+        rowId: "project_submitter",
+        username: "owner",
+        body: { collection: "tasks" },
+      }),
+    );
+
+    expect(ownerQuery.status).toBe(200);
+    expect((await jsonBody(ownerQuery)).rows).toEqual([
+      expect.objectContaining({ rowId: "task_submitter", owner: "submitter" }),
+    ]);
+  });
+
+  it("does not inherit submitter membership onto child rows", async () => {
+    const worker = new RowWorker(
+      {
+        owner: "owner",
+        workerUrl: "https://worker.example",
+      },
+      { kv: new InMemoryKv() },
+    );
+
+    await createRow(worker, "project_parent", "Inbox");
+    await createRow(worker, "task_child", "Task");
+
+    await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("project_parent", "row/join"),
+        action: "row/join",
+        rowId: "project_parent",
+        username: "owner",
+        body: { username: "owner" },
+      }),
+    );
+    await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("task_child", "row/join"),
+        action: "row/join",
+        rowId: "task_child",
+        username: "owner",
+        body: { username: "owner" },
+      }),
+    );
+
+    await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("task_child", "parents/link-parent"),
+        action: "parents/link-parent",
+        rowId: "task_child",
+        username: "owner",
+        body: {
+          parentRef: {
+            id: "project_parent",
+            collection: "projects",
+            baseUrl: "https://worker.example",
+          },
+        },
+      }),
+    );
+
+    await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("project_parent", "invite-token/create"),
+        action: "invite-token/create",
+        rowId: "project_parent",
+        username: "owner",
+        body: {
+          token: "invite_submitter",
+          rowId: "project_parent",
+          invitedBy: "owner",
+          createdAt: 10,
+          role: "submitter",
+        },
+      }),
+    );
+
+    await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("project_parent", "row/join"),
+        action: "row/join",
+        rowId: "project_parent",
+        username: "submitter",
+        body: {
+          username: "submitter",
+          inviteToken: "invite_submitter",
+        },
+      }),
+    );
+
+    const inheritedRole = await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("task_child", "members/role"),
+        action: "members/role",
+        rowId: "task_child",
+        username: "submitter",
+        body: {},
+      }),
+    );
+
+    expect(inheritedRole.status).toBe(401);
+    expect((await jsonBody(inheritedRole)).code).toBe("UNAUTHORIZED");
+
+    const effective = await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("task_child", "members/effective"),
+        action: "members/effective",
+        rowId: "task_child",
+        username: "owner",
+        body: {},
+      }),
+    );
+
+    expect(effective.status).toBe(200);
+    expect((await jsonBody(effective)).members).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ username: "submitter" })]),
+    );
   });
 
   it("requires owner auth for row creation", async () => {
@@ -484,6 +721,7 @@ describe("RowWorker", () => {
           rowId: "row_2",
           invitedBy: "owner",
           createdAt: 10,
+          role: "editor",
         },
       }),
     );
@@ -1020,6 +1258,7 @@ describe("RowWorker", () => {
           rowId: "row_4",
           invitedBy: "owner",
           createdAt: 10,
+          role: "editor",
         },
       }),
     );
@@ -1150,7 +1389,7 @@ describe("RowWorker", () => {
       action: "invite-token/create",
       rowId: "dog_1",
       username: "alice",
-      body: { token: "invite_1", rowId: "dog_1", invitedBy: "alice", createdAt: 1 },
+      body: { token: "invite_1", rowId: "dog_1", invitedBy: "alice", createdAt: 1, role: "editor" },
     })).toMatchObject({ status: 200 });
 
     expect(await run("full", {

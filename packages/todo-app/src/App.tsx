@@ -232,7 +232,7 @@ function BoardView({ board, onLeave }: { board: BoardHandle; onLeave: () => void
       ? "Failed to load cards."
       : "";
 
-  const { shareLink } = useShareLink(db, board.ref);
+  const { shareLink } = useShareLink(db, board.ref, { role: "editor" });
 
   const addCard = useMutation(async (cardText: string) => {
     const cardWrite = db.create("cards", { text: cardText, done: false, createdAt: Date.now() }, { in: board.ref });

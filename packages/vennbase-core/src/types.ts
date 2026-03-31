@@ -1,5 +1,5 @@
 import type { KV, Puter } from "@heyputer/puter.js";
-import type { RowRef } from "./schema";
+import type { MemberRole, RowRef } from "./schema";
 
 export interface BackendKv extends Pick<KV, "get" | "set"> {
   delete(key: string): Promise<unknown>;
@@ -61,6 +61,7 @@ export interface InviteToken {
   rowId: string;
   invitedBy: string;
   createdAt: number;
+  role: MemberRole;
 }
 
 export interface JoinOptions {

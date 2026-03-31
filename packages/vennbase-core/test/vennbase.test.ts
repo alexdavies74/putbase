@@ -479,7 +479,7 @@ describe("Vennbase", () => {
 
       if (url.endsWith("/row/join")) {
         return Promise.resolve(
-          new Response(JSON.stringify({ ok: true }), {
+          new Response(JSON.stringify({ role: "editor" }), {
             status: 200,
             headers: { "content-type": "application/json" },
           }),
@@ -536,6 +536,51 @@ describe("Vennbase", () => {
     expect(row.id).toBe("row_1");
     expect(contexts.length).toBeGreaterThan(0);
     expect(contexts.every((value) => value === undefined)).toBe(true);
+  });
+
+  it("joins submitter invites without fetching the row and rejects acceptInvite", async () => {
+    let rowGetCalls = 0;
+    const rowRef = {
+      id: "row_submitter",
+      collection: "rows",
+      baseUrl: "https://workers.puter.site/owner-federation",
+    } as const;
+
+    const db = new Vennbase({
+      schema: MINIMAL_SCHEMA,
+      identityProvider: async () => ({ username: "guest" }),
+      fetchFn: async (input: RequestInfo | URL): Promise<Response> => {
+        const url = asUrl(input);
+
+        if (url.endsWith("/row/join")) {
+          return new Response(JSON.stringify({ role: "submitter" }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+
+        if (url.endsWith("/row/get")) {
+          rowGetCalls += 1;
+          return new Response(JSON.stringify({ code: "BAD_REQUEST", message: "should not fetch row" }), {
+            status: 400,
+            headers: { "content-type": "application/json" },
+          });
+        }
+
+        return new Response(JSON.stringify({ code: "BAD_REQUEST", message: "Unexpected URL" }), {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    const invite = db.createShareLink(rowRef, "invite_submitter");
+    await expect(db.acceptInvite(invite)).rejects.toThrow("submitter access only");
+    await expect(db.joinInvite(invite)).resolves.toEqual({
+      ref: rowRef,
+      role: "submitter",
+    });
+    expect(rowGetCalls).toBe(0);
   });
 
   it("starts provisioning a host-scoped federation worker from constructor prewarm", async () => {
@@ -692,7 +737,7 @@ describe("Vennbase", () => {
       }
 
       if (rowId && url === `${deployedWorkerBase}/rows/${rowId}/row/join`) {
-        return new Response(JSON.stringify({ ok: true }), {
+        return new Response(JSON.stringify({ role: "editor" }), {
           status: 200,
           headers: { "content-type": "application/json" },
         });
@@ -784,7 +829,7 @@ describe("Vennbase", () => {
       }
 
       if (rowId && url === `${deployedWorkerBase}/rows/${rowId}/row/join`) {
-        return new Response(JSON.stringify({ ok: true }), {
+        return new Response(JSON.stringify({ role: "editor" }), {
           status: 200,
           headers: { "content-type": "application/json" },
         });

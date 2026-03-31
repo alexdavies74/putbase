@@ -21,7 +21,7 @@ const { rows: cards = [] } = useQuery(db, "cards", {
 });
 
 // Share
-const { shareLink } = useShareLink(db, board);
+const { shareLink } = useShareLink(db, board, { role: "editor" });
 ```
 
 Write your frontend. Vennbase handles the rest.
@@ -208,11 +208,11 @@ const { rows: cards = [], status } = useQuery(db, "cards", {
 
 Access to a row is always explicit. There is no rule system to misconfigure — no typo in a policy expression that accidentally exposes everything. A user either holds a valid invite token or they don't.
 
-In React, prefer `useShareLink(db, row)` for the sender and `useAcceptInviteFromUrl(db, ...)` for the recipient. Underneath, the flow is three steps:
+In React, prefer `useShareLink(db, row, { role: "editor" })` for the sender and `useAcceptInviteFromUrl(db, ...)` for the recipient. Underneath, the default editor invite flow is three steps:
 
 ```ts
 // 1. Generate a token for the row you want to share
-const token = db.createInviteToken(board).value;
+const token = db.createInviteToken(board, { role: "editor" }).value;
 
 // 2. Build a link the recipient can open in their browser
 const link = db.createShareLink(board, token.token);
@@ -225,6 +225,16 @@ const sharedBoard = await db.acceptInvite(link);
 `acceptInvite` accepts either a full invite URL or a pre-parsed `{ ref, inviteToken? }` object from `db.parseInvite(input)`. In React, `useAcceptInviteFromUrl(db, ...)` handles the common invite-landing flow for you.
 
 Users who join through an invite token are added as direct `"editor"` members by default. `"viewer"` members can view rows but cannot call `update()` or send CRDT messages.
+
+For blind inbox workflows, create a submitter link instead:
+
+```ts
+const submissionLink = db.createSubmissionLink(board).value;
+const joined = await db.joinInvite(submissionLink);
+// joined.role === "submitter"
+```
+
+`"submitter"` members can create child rows under the shared parent but cannot read the parent row, query its children, inspect members, or use sync. Apps that need a submitter to revisit their own submissions should persist the created child refs separately.
 
 ---
 
@@ -305,18 +315,20 @@ pnpm --filter woof-app dev
 | `getRow(row)` | Fetch a row by typed reference. |
 | `query(collection, options)` | Load rows under a parent, with optional index, order, and limit. For collections declared as `in: ["user"]`, omitting `in` uses the current signed-in user's built-in `user` row. |
 | `watchQuery(collection, options, callbacks)` | Subscribe to repeated query refreshes via `callbacks.onChange`. For collections declared as `in: ["user"]`, omitting `in` uses the current signed-in user's built-in `user` row. Returns a handle with `.disconnect()`. |
-| `createInviteToken(row)` | Generate a new invite token for a row and return a `MutationReceipt<InviteToken>`. Most apps can use `.value` immediately. |
-| `getExistingInviteToken(row)` | Return the existing token if one exists, or `null`. |
+| `createInviteToken(row, options)` | Generate a new invite token for a row and return a `MutationReceipt<InviteToken>`. Pass an explicit role such as `{ role: "editor" }` or `{ role: "submitter" }`. |
+| `createSubmissionLink(row)` | Create a blind-inbox submitter link and return it as a `MutationReceipt<string>`. |
+| `getExistingInviteToken(row, options)` | Return the existing token for the requested role if one exists, or `null`. |
 | `createShareLink(row, token)` | Build a shareable URL containing a serialized row ref and token. |
 | `parseInvite(input)` | Parse an invite URL into `{ ref, inviteToken? }`. |
-| `acceptInvite(input)` | Join a row via invite URL or parsed invite object, and return its handle. Invite joins become direct `"editor"` members by default. |
+| `joinInvite(input)` | Join a row via invite URL or parsed invite object without opening it, and return `{ ref, role }`. |
+| `acceptInvite(input)` | Join a readable invite and return its handle. Invite joins become direct `"editor"` members by default. Submitter invites should use `joinInvite(...)`. |
 | `saveRow(key, row)` | Persist one current row for the signed-in user under your app-defined key. |
 | `openSavedRow(key)` | Re-open the saved row for the signed-in user, or `null`. |
 | `clearSavedRow(key)` | Remove the saved row for the signed-in user. |
 | `listMembers(row)` | Returns `string[]` of all member usernames. |
 | `listDirectMembers(row)` | Returns `{ username, role }[]` for direct members. |
 | `listEffectiveMembers(row)` | Returns resolved membership including grants inherited from parents. |
-| `addMember(row, username, role)` | Grant a user access and return a `MutationReceipt<void>`. Roles: `"editor"` and `"viewer"`. `"editor"` can update fields, manage members, manage parents, and send CRDT messages; `"viewer"` is read-only. |
+| `addMember(row, username, role)` | Grant a user access and return a `MutationReceipt<void>`. Roles: `"editor"`, `"viewer"`, and `"submitter"`. `"editor"` can update fields, manage members, manage parents, and send CRDT messages; `"viewer"` is read-only; `"submitter"` is write-only for child creation under the shared parent. |
 | `removeMember(row, username)` | Revoke a user's access and return a `MutationReceipt<void>`. |
 | `addParent(child, parent)` | Link a row to an additional parent after creation and return a `MutationReceipt<void>`. |
 | `removeParent(child, parent)` | Unlink a row from a parent and return a `MutationReceipt<void>`. |

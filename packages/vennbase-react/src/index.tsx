@@ -78,6 +78,10 @@ export interface UseHookOptions {
   enabled?: boolean;
 }
 
+export interface UseShareLinkOptions extends UseHookOptions {
+  role: MemberRole;
+}
+
 export interface UseAcceptInviteFromUrlOptions<
   Schema extends DbSchema,
   TResult = AnyRowHandle<Schema>,
@@ -593,12 +597,12 @@ export function useEffectiveMembers<Schema extends DbSchema>(
 export function useShareLink<Schema extends DbSchema>(
   db: Vennbase<Schema>,
   row: RowInput | null | undefined,
-  options: UseHookOptions = {},
+  options: UseShareLinkOptions,
 ): UseShareLinkResult {
   const runtime = useRuntime(db);
   const session = useSessionResource(runtime, options.enabled ?? true);
   const rowRef = row ? resolveRowInput(row) : null;
-  const resourceKey = rowRef ? makeShareLinkKey(rowRef) : null;
+  const resourceKey = rowRef ? makeShareLinkKey(rowRef, options.role) : null;
   const blocked = blockedResourceResult<string>(session);
   const resource = useOptionalResource(
     (options.enabled ?? true) && !!rowRef && !blocked,
@@ -607,8 +611,8 @@ export function useShareLink<Schema extends DbSchema>(
     () => runtime.getLoadOnce(
       resourceKey as string,
       async () => {
-        const existing = await runtime.client.getExistingInviteToken(rowRef as RowRef);
-        const invite = existing ?? runtime.client.createInviteToken(rowRef as RowRef).value;
+        const existing = await runtime.client.getExistingInviteToken(rowRef as RowRef, { role: options.role });
+        const invite = existing ?? runtime.client.createInviteToken(rowRef as RowRef, { role: options.role }).value;
         return runtime.client.createShareLink(rowRef as RowRef, invite.token);
       },
     ),

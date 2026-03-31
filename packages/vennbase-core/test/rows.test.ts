@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMutationReceipt } from "../src/mutation-receipt";
 import { OptimisticStore } from "../src/optimistic-store";
 import { loadSavedRow, saveRow } from "../src/saved-rows";
+import { VennbaseError } from "../src/errors";
 import { Vennbase } from "../src/vennbase";
 import { Query } from "../src/query";
 import { collection, defineSchema, field, index } from "../src/schema";
@@ -218,7 +219,7 @@ describe("Vennbase rows", () => {
       where: { status: "done" },
     });
     const members = await db.listMembers(project);
-    const invite = db.createInviteToken(project);
+    const invite = db.createInviteToken(project, { role: "editor" });
     await invite.committed;
     const shareLink = db.createShareLink(project, invite.value.token);
 
@@ -403,7 +404,7 @@ describe("Vennbase rows", () => {
 
     const project = await settle(aliceDb.create("projects", { name: "Roadmap" }));
     const task = await settle(aliceDb.create("tasks", { title: "Review" }, { in: project.ref }));
-    const invite = aliceDb.createInviteToken(task.ref);
+    const invite = aliceDb.createInviteToken(task.ref, { role: "editor" });
     await invite.committed;
     const shareLink = aliceDb.createShareLink(task.ref, invite.value.token);
 
@@ -428,6 +429,46 @@ describe("Vennbase rows", () => {
     const directMembers = await aliceDb.listDirectMembers(task.ref);
     expect(directMembers).toEqual(expect.arrayContaining([
       expect.objectContaining({ username: "bob", role: "editor" }),
+    ]));
+  });
+
+  it("supports write-only submitter invites for blind inboxes", async () => {
+    const network = new TestWorkerNetwork();
+    const aliceDb = await buildReadyDb({ username: "alice", network });
+    const bobDb = await buildReadyDb({ username: "bob", network });
+
+    const project = await settle(aliceDb.create("projects", { name: "Inbox" }));
+    const submissionLink = aliceDb.createSubmissionLink(project.ref);
+    const submissionUrl = await submissionLink.committed;
+
+    await expect(bobDb.acceptInvite(submissionUrl)).rejects.toThrow("submitter access only");
+
+    const joined = await bobDb.joinInvite(submissionUrl);
+    expect(joined).toEqual({
+      ref: project.ref,
+      role: "submitter",
+    });
+
+    const task = await settle(bobDb.create("tasks", { title: "Need review" }, { in: joined.ref }));
+
+    const submitterQuery = bobDb.query("tasks", { in: joined.ref });
+    await expect(submitterQuery).rejects.toBeInstanceOf(VennbaseError);
+    await expect(submitterQuery).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+      status: 401,
+    });
+
+    const ownerRows = await aliceDb.query("tasks", { in: project.ref });
+    expect(ownerRows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: task.id }),
+    ]));
+
+    const memberRole = await bobDb.getRow(task.ref).then((row) => row.members.effective());
+    expect(memberRole).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        username: "bob",
+        via: project.ref,
+      }),
     ]));
   });
 

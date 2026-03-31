@@ -79,7 +79,8 @@ if (firstTag) {
   void firstTag.in.add(tagRef);
 
   void useRow(anyClient, firstTag);
-  void useShareLink(anyClient, firstTag);
+  void useShareLink(anyClient, firstTag, { role: "editor" });
+  void useShareLink(anyClient, firstTag, { role: "submitter" });
 }
 
 export {};

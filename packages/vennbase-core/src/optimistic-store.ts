@@ -19,7 +19,7 @@ export interface OptimisticRowRecord {
   directMembers: Array<{ username: string; role: MemberRole }> | null;
   pendingMemberAdds: Array<{ username: string; role: MemberRole }>;
   pendingMemberRemoves: string[];
-  pendingInviteToken: InviteToken | null;
+  pendingInviteTokens: InviteToken[];
 }
 
 function rowKey(row: Pick<RowRef, "id" | "baseUrl">): RowKey {
@@ -86,7 +86,7 @@ export class OptimisticStore {
       directMembers: null,
       pendingMemberAdds: [],
       pendingMemberRemoves: [],
-      pendingInviteToken: null,
+      pendingInviteTokens: [],
     };
 
     this.rows.set(key, created);
@@ -365,18 +365,28 @@ export class OptimisticStore {
 
   setInviteToken(row: RowRef, inviteToken: InviteToken): void {
     const record = this.ensureRecord({ row, owner: "", collection: row.collection });
-    record.pendingInviteToken = inviteToken;
+    const existingIndex = record.pendingInviteTokens.findIndex((candidate) => candidate.role === inviteToken.role);
+    if (existingIndex >= 0) {
+      record.pendingInviteTokens[existingIndex] = inviteToken;
+      return;
+    }
+
+    record.pendingInviteTokens.push(inviteToken);
   }
 
-  clearInviteToken(row: RowRef): void {
+  clearInviteToken(row: RowRef, role: MemberRole): void {
     const record = this.rows.get(rowKey(row));
     if (!record) {
       return;
     }
-    record.pendingInviteToken = null;
+    record.pendingInviteTokens = record.pendingInviteTokens.filter(
+      (candidate) => candidate.role !== role,
+    );
   }
 
-  getInviteToken(row: RowRef): InviteToken | null {
-    return this.rows.get(rowKey(row))?.pendingInviteToken ?? null;
+  getInviteToken(row: RowRef, role: MemberRole): InviteToken | null {
+    return this.rows.get(rowKey(row))?.pendingInviteTokens.find(
+      (candidate) => candidate.role === role,
+    ) ?? null;
   }
 }

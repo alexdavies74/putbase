@@ -120,6 +120,8 @@ class FakeDb {
   getRowCalls = 0;
   acceptInviteCalls = 0;
   lastInviteInput: string | null = null;
+  getExistingInviteTokenCallRoles: string[] = [];
+  createInviteTokenCallRoles: string[] = [];
   ensureReadyCalls = 0;
   signInCalls = 0;
   failSession = false;
@@ -235,16 +237,20 @@ class FakeDb {
     return [{ username: "alex", role: "editor", via: "direct" }];
   }
 
-  async getExistingInviteToken(): Promise<null> {
+  async getExistingInviteToken(_row?: RowRef, options: { role: "editor" | "viewer" | "submitter" }): Promise<null> {
+    this.getExistingInviteTokenCallRoles.push(options.role);
     return null;
   }
 
-  createInviteToken() {
+  createInviteToken(_row?: RowRef, options: { role: "editor" | "viewer" | "submitter" }) {
+    const role = options.role;
+    this.createInviteTokenCallRoles.push(role);
     const value = {
-      token: "invite_1",
+      token: role === "submitter" ? "invite_submitter" : "invite_1",
       rowId: "dog_1",
       invitedBy: "alex",
       createdAt: 1,
+      role,
     };
     return {
       value,
@@ -642,7 +648,7 @@ describe("@vennbase/react", () => {
     let latest: ReturnType<typeof useShareLink<TestSchema>> | null = null;
 
     function Probe() {
-      latest = useShareLink<TestSchema>(db as unknown as Vennbase<TestSchema>, rowRef);
+      latest = useShareLink<TestSchema>(db as unknown as Vennbase<TestSchema>, rowRef, { role: "editor" });
       return <div>{latest.shareLink ?? latest.status}</div>;
     }
 
@@ -654,6 +660,30 @@ describe("@vennbase/react", () => {
     });
 
     expect(latest && "data" in latest).toBe(false);
+    await app.unmount();
+  });
+
+  it("uses separate share-link cache entries for submitter invites", async () => {
+    const db = new FakeDb();
+    const rowRef = dogRef();
+    let editorLink: ReturnType<typeof useShareLink<TestSchema>> | null = null;
+    let submitterLink: ReturnType<typeof useShareLink<TestSchema>> | null = null;
+
+    function Probe() {
+      editorLink = useShareLink<TestSchema>(db as unknown as Vennbase<TestSchema>, rowRef, { role: "editor" });
+      submitterLink = useShareLink<TestSchema>(db as unknown as Vennbase<TestSchema>, rowRef, { role: "submitter" });
+      return <div>{editorLink.status}:{submitterLink.status}</div>;
+    }
+
+    const app = await renderApp(<Probe />);
+
+    await waitFor(() => {
+      expect(editorLink?.shareLink).toBe(inviteUrl(rowRef, "invite_1"));
+      expect(submitterLink?.shareLink).toBe(inviteUrl(rowRef, "invite_submitter"));
+    });
+
+    expect(db.getExistingInviteTokenCallRoles.sort()).toEqual(["editor", "submitter"]);
+    expect(db.createInviteTokenCallRoles.sort()).toEqual(["editor", "submitter"]);
     await app.unmount();
   });
 

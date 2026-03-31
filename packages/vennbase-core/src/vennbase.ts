@@ -72,6 +72,10 @@ interface ReadyMutationState {
   userScopeRow: RowRef<typeof USER_SCOPE_COLLECTION> | null;
 }
 
+interface InviteTokenOptions {
+  role: MemberRole;
+}
+
 const INTERNAL_USER_SCOPE_ROW_KEY = "__vennbase_user_scope_v1__";
 type LocalMutationListener = () => void;
 
@@ -230,17 +234,19 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
     return this.queryModule.watchQuery(collection, options, callbacks);
   }
 
-  async getExistingInviteToken(row: RowInput): Promise<InviteToken | null> {
+  async getExistingInviteToken(row: RowInput, options: InviteTokenOptions): Promise<InviteToken | null> {
     const rowRef = normalizeRowRef(row);
-    return this.optimisticStore.getInviteToken(rowRef) ?? this.invitesModule.getExistingInviteToken(rowRef);
+    return this.optimisticStore.getInviteToken(rowRef, options.role)
+      ?? this.invitesModule.getExistingInviteToken(rowRef, options);
   }
 
-  createInviteToken(row: RowInput): MutationReceipt<InviteToken> {
+  createInviteToken(row: RowInput, options: InviteTokenOptions): MutationReceipt<InviteToken> {
     const state = this.assertReadyForMutation();
     const rowRef = normalizeRowRef(row);
     const inviteToken = this.writePlanner.planInviteToken({
       rowId: rowRef.id,
       invitedBy: state.user.username,
+      role: options.role,
     });
     const receipt = createMutationReceipt(inviteToken);
     this.optimisticStore.setInviteToken(rowRef, inviteToken);
@@ -249,8 +255,8 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
     this.scheduleConfirmableWrite({
       key: `invite:${rowRefKey(rowRef)}`,
       operation: () => this.invitesModule.createInviteTokenRemote(rowRef, inviteToken),
-      confirm: () => this.optimisticStore.clearInviteToken(rowRef),
-      rollback: () => this.optimisticStore.clearInviteToken(rowRef),
+      confirm: () => this.optimisticStore.clearInviteToken(rowRef, inviteToken.role),
+      rollback: () => this.optimisticStore.clearInviteToken(rowRef, inviteToken.role),
       dependencies: [this.optimisticStore.getPendingCreateDependency(rowRef)].filter((value): value is Promise<unknown> => value !== null),
       receipt,
     });
@@ -262,16 +268,43 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
     return this.invitesModule.createShareLink(row, inviteToken);
   }
 
+  createSubmissionLink(row: RowInput): MutationReceipt<string> {
+    const inviteReceipt = this.createInviteToken(row, { role: "submitter" });
+    const shareLink = this.createShareLink(row, inviteReceipt.value.token);
+    const receipt = createMutationReceipt(shareLink);
+    inviteReceipt.committed
+      .then(() => {
+        receipt.resolve(shareLink);
+      })
+      .catch((error) => {
+        receipt.reject(error);
+      });
+    return receipt;
+  }
+
   parseInvite(input: string): ParsedInvite {
     return this.invitesModule.parseInvite(input);
   }
 
-  async acceptInvite(input: string | ParsedInvite): Promise<AnyRowHandle<Schema>> {
+  async joinInvite(input: string | ParsedInvite): Promise<{ ref: RowRef; role: MemberRole }> {
     const invite = typeof input === "string" ? this.parseInvite(input) : input;
-    await this.rowRuntime.joinRow(invite.ref, {
+    const role = await this.rowRuntime.joinMembership(invite.ref, {
       inviteToken: invite.inviteToken,
     });
-    const row = await this.getRow(invite.ref as RowRef<CollectionName<Schema>>) as AnyRowHandle<Schema>;
+
+    return {
+      ref: invite.ref,
+      role,
+    };
+  }
+
+  async acceptInvite(input: string | ParsedInvite): Promise<AnyRowHandle<Schema>> {
+    const joined = await this.joinInvite(input);
+    if (joined.role === "submitter") {
+      throw new Error("This invite grants submitter access only. Use joinInvite() instead of acceptInvite().");
+    }
+
+    const row = await this.getRow(joined.ref as RowRef<CollectionName<Schema>>) as AnyRowHandle<Schema>;
     this.notifyLocalMutation();
     return row;
   }
