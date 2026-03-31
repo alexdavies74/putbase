@@ -282,7 +282,10 @@ export class AppointmentService {
 
   async rememberRecentSchedule(schedule: ScheduleHandle): Promise<void> {
     const existing = await this.db.query("recentSchedules", {
-      limit: 100,
+      where: { scheduleRef: schedule.ref },
+      orderBy: "openedAt",
+      order: "desc",
+      limit: 1,
     });
     const now = Date.now();
     const current = existing.find((recentSchedule) => sameRef(recentSchedule.fields.scheduleRef, schedule.ref)) ?? null;
@@ -365,10 +368,14 @@ export class AppointmentService {
   }): Promise<BookingHandle> {
     const existing = await this.db.query("bookings", {
       in: args.bookingRootRef,
+      where: {
+        slotStartMs: args.slotStartMs,
+        slotEndMs: args.slotEndMs,
+      },
       select: "keys",
-      limit: 500,
+      limit: 1,
     });
-    if (existing.some((booking) => booking.fields.slotStartMs === args.slotStartMs && booking.fields.slotEndMs === args.slotEndMs)) {
+    if (existing.length > 0) {
       throw new Error("This slot is no longer available.");
     }
 

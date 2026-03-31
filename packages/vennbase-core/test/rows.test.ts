@@ -249,6 +249,21 @@ describe("Vennbase rows", () => {
     ]);
   });
 
+  it("queries empty user-scoped indexed collections without registered child schema", async () => {
+    const network = new TestWorkerNetwork();
+    const db = await buildReadyDb({ username: "alice", network });
+    const project = await settle(db.create("projects", { name: "Game 1" }));
+
+    const records = await db.query("gameRecords", {
+      where: { gameRef: project.ref },
+      orderBy: "role",
+      order: "asc",
+      limit: 5,
+    });
+
+    expect(records).toEqual([]);
+  });
+
   it("reuses and recreates remembered user scope rows as needed", async () => {
     const network = new TestWorkerNetwork();
     const backend = { workers: {}, kv: new InMemoryKv() } as BackendClient;
@@ -553,6 +568,62 @@ describe("Vennbase rows", () => {
       collection: "tasks",
       baseUrl: "https://worker.example",
     });
+  });
+
+  it("rejects non-key where fields locally before sending the query", async () => {
+    const request = vi.fn();
+    const transport = {
+      row: vi.fn(() => ({
+        request,
+      })),
+    };
+    const optimisticStore = new OptimisticStore();
+    const query = new Query(
+      transport as never,
+      { getRow: vi.fn() } as never,
+      optimisticStore,
+      schema,
+    );
+
+    await expect(query.query("tasks", {
+      in: {
+        id: "project_1",
+        collection: "projects",
+        baseUrl: "https://worker.example",
+      },
+      where: { title: "Ship v2" },
+    } as never)).rejects.toThrow("where.title must be a key field");
+
+    expect(transport.row).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-key orderBy locally before sending the query", async () => {
+    const request = vi.fn();
+    const transport = {
+      row: vi.fn(() => ({
+        request,
+      })),
+    };
+    const optimisticStore = new OptimisticStore();
+    const query = new Query(
+      transport as never,
+      { getRow: vi.fn() } as never,
+      optimisticStore,
+      schema,
+    );
+
+    await expect(query.query("tasks", {
+      in: {
+        id: "project_1",
+        collection: "projects",
+        baseUrl: "https://worker.example",
+      },
+      orderBy: "title",
+    } as never)).rejects.toThrow("orderBy must be a key field");
+
+    expect(transport.row).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
   });
 
   it("globally sorts indexed multi-parent queries before applying the final limit", async () => {

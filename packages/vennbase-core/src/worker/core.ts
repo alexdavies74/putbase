@@ -1312,17 +1312,6 @@ export class RowWorker {
     );
     const orderBy = payload.orderBy?.trim() || undefined;
     const where = payload.where ? toFieldRecord(payload.where, "where") : undefined;
-    const schema = await this.getChildSchema(parentRowId, collection);
-    const keyFields = schema?.keyFields ?? [];
-
-    for (const fieldName of Object.keys(where ?? {})) {
-      if (!keyFields.includes(fieldName)) {
-        error(400, "BAD_REQUEST", `where.${fieldName} must be a key field`);
-      }
-    }
-    if (orderBy && !keyFields.includes(orderBy)) {
-      error(400, "BAD_REQUEST", `orderBy must be a key field`);
-    }
 
     const rows = await this.queryByChildren(parentRowId, collection, where, orderBy, order, limit);
 

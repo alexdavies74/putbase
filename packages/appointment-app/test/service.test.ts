@@ -145,6 +145,10 @@ describe("booking state", () => {
 describe("service flows", () => {
   it("creates a booking root, submission link, schedule, and recent record in order", async () => {
     const events: string[] = [];
+    const query = vi.fn(async () => {
+      events.push("query:recentSchedules");
+      return [];
+    });
     const bookingRoot = {
       ref: makeRef("root_1", "bookingRoots"),
       id: "root_1",
@@ -182,10 +186,7 @@ describe("service flows", () => {
       getRow: vi.fn(),
       joinInvite: vi.fn(),
       parseInvite: vi.fn(),
-      query: vi.fn(async () => {
-        events.push("query:recentSchedules");
-        return [];
-      }),
+      query,
       update: vi.fn(),
     } as never);
 
@@ -198,6 +199,12 @@ describe("service flows", () => {
       "query:recentSchedules",
       "create:recentSchedules",
     ]);
+    expect(query).toHaveBeenCalledWith("recentSchedules", {
+      where: { scheduleRef: schedule.ref },
+      orderBy: "openedAt",
+      order: "desc",
+      limit: 1,
+    });
   });
 
   it("creates both shared and private booking records when reserving a slot", async () => {
@@ -243,7 +250,15 @@ describe("service flows", () => {
       slotEndMs: 2,
     });
 
-    expect(query).toHaveBeenCalled();
+    expect(query).toHaveBeenCalledWith("bookings", {
+      in: makeRef("root_1", "bookingRoots"),
+      where: {
+        slotStartMs: 1,
+        slotEndMs: 2,
+      },
+      select: "keys",
+      limit: 1,
+    });
     expect(create).toHaveBeenNthCalledWith(1, "bookings", expect.objectContaining({
       slotStartMs: 1,
       slotEndMs: 2,

@@ -13,7 +13,7 @@ import type {
   DbSchema,
   RowRef,
 } from "./schema";
-import { getCollectionSpec, pickKeyFieldValues } from "./schema";
+import { getCollectionKeyFieldNames, getCollectionSpec, pickKeyFieldValues } from "./schema";
 import { stableJsonStringify } from "./stable-json";
 import type { Transport } from "./transport";
 import { encodeFieldValue } from "./key-encoding";
@@ -101,6 +101,22 @@ function snapshotRows(rows: Array<{
   return stableJsonStringify(snapshot);
 }
 
+function validateIndexedQuery(
+  keyFields: string[],
+  where: Record<string, JsonValue> | undefined,
+  orderBy: string | undefined,
+): void {
+  for (const fieldName of Object.keys(where ?? {})) {
+    if (!keyFields.includes(fieldName)) {
+      throw new Error(`where.${fieldName} must be a key field`);
+    }
+  }
+
+  if (orderBy && !keyFields.includes(orderBy)) {
+    throw new Error("orderBy must be a key field");
+  }
+}
+
 interface QueryRowLoader<Schema extends DbSchema> {
   getRow<TCollection extends CollectionName<Schema>>(
     row: RowRef<TCollection>,
@@ -151,9 +167,16 @@ export class Query<Schema extends DbSchema> {
     }
 
     const collectionSpec = getCollectionSpec(this.schema, collection);
+    const keyFields = getCollectionKeyFieldNames(collectionSpec);
     const orderBy = resolvedOptions.orderBy;
     const limit = Math.max(1, Math.min(200, resolvedOptions.limit ?? 50));
     const select = resolvedOptions.select ?? "full";
+
+    validateIndexedQuery(
+      keyFields,
+      resolvedOptions.where as Record<string, JsonValue> | undefined,
+      orderBy,
+    );
 
     const parentResults = await Promise.all(
       parentRefs.map(async (parent) => {

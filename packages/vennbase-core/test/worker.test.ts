@@ -151,6 +151,37 @@ class WorkerNetwork {
 }
 
 describe("RowWorker", () => {
+  it("allows empty indexed child queries without stored child schema metadata", async () => {
+    const worker = new RowWorker(
+      {
+        owner: "owner",
+        workerUrl: "https://worker.example",
+      },
+      { kv: new InMemoryKv() },
+    );
+
+    expect(await createRow(worker, "project_empty")).toMatchObject({ status: 200 });
+
+    const response = await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("project_empty", "db/query"),
+        action: "db/query",
+        rowId: "project_empty",
+        username: "owner",
+        body: {
+          collection: "tasks",
+          where: { status: "todo" },
+          orderBy: "status",
+          order: "asc",
+          limit: 5,
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect((await jsonBody(response)).rows).toEqual([]);
+  });
+
   it("enforces invite and members-only reads", async () => {
     const worker = new RowWorker(
       {

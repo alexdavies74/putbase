@@ -136,6 +136,8 @@ function LandingView(props: {
     rows: recentSchedules = [],
     error: recentSchedulesError,
   } = useQuery(db, "recentSchedules", {
+    orderBy: "openedAt",
+    order: "desc",
     limit: 100,
   });
   const visibleRecentSchedules = useMemo(() => {
@@ -501,18 +503,17 @@ function CustomerScheduleView(props: {
     rows: savedBookings = [],
     error: savedBookingsError,
   } = useQuery(db, "savedBookings", {
+    where: { scheduleRef: props.schedule.ref },
+    orderBy: "slotStartMs",
+    order: "asc",
     limit: 500,
   });
   const visibleSavedBookings = useMemo(
     () =>
       savedBookings
-        .filter((savedBooking) =>
-          savedBooking.fields.status === "active"
-          && savedBooking.fields.scheduleRef.id === props.schedule.ref.id
-          && savedBooking.fields.scheduleRef.baseUrl === props.schedule.ref.baseUrl
-          && savedBooking.fields.scheduleRef.collection === props.schedule.ref.collection)
+        .filter((savedBooking) => savedBooking.fields.status === "active")
         .sort((left, right) => left.fields.slotStartMs - right.fields.slotStartMs),
-    [props.schedule.ref, savedBookings],
+    [savedBookings],
   );
 
   const reserve = useMutation(async (slot: { key: string; startMs: number; endMs: number }) => {
