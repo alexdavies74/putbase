@@ -526,8 +526,8 @@ export function makeIncomingInviteKey(inviteInput: string): string {
   return `incoming-invite:${inviteInput}`;
 }
 
-export function makeSavedRowKey(username: string, rowKey: string, inviteInput: string | null): string {
-  return `saved-row:${username}:${rowKey}:${inviteInput ?? ""}`;
+export function makeSavedRowKey(username: string, rowKey: string): string {
+  return `saved-row:${username}:${rowKey}`;
 }
 
 export const snapshots = {

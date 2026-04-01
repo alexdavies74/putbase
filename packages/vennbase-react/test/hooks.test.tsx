@@ -999,6 +999,56 @@ describe("@vennbase/react", () => {
     await app.unmount();
   });
 
+  it("lets invite handlers persist rows explicitly for later restore", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      inviteUrl(dogRef("dog_2")),
+    );
+
+    const db = new FakeDb();
+    let latestInvite: ReturnType<typeof useAcceptInviteFromUrl<TestSchema>> | null = null;
+
+    function InviteProbe() {
+      latestInvite = useAcceptInviteFromUrl<TestSchema>(db as unknown as Vennbase<TestSchema>, {
+        onOpen: async (row) => {
+          await db.saveRow("myDog", row.ref);
+        },
+      });
+      return <div>{latestInvite.status}</div>;
+    }
+
+    const inviteApp = await renderApp(<InviteProbe />);
+
+    await waitFor(() => {
+      expect(latestInvite?.hasInvite).toBe(false);
+    });
+
+    expect(db.joinInviteCalls).toBe(1);
+    expect(db.acceptInviteCalls).toBe(0);
+    expect(db.rememberedRows.get("alex:myDog")).toEqual(dogRef());
+    expect(window.location.search).toBe("");
+    await inviteApp.unmount();
+
+    let latestSaved: ReturnType<typeof useSavedRow<TestSchema>> | null = null;
+
+    function SavedProbe() {
+      latestSaved = useSavedRow<TestSchema>(db as unknown as Vennbase<TestSchema>, {
+        key: "myDog",
+      });
+      return <div>{latestSaved.data?.fields.name ?? latestSaved.status}</div>;
+    }
+
+    const savedApp = await renderApp(<SavedProbe />);
+
+    await waitFor(() => {
+      expect(latestSaved?.status).toBe("success");
+      expect(latestSaved?.data?.fields.name).toBe("Rex");
+    });
+
+    await savedApp.unmount();
+  });
+
   it("keeps per-user rows idle while signed out", async () => {
     const db = new FakeDb();
     db.signedIn = false;
@@ -1048,38 +1098,6 @@ describe("@vennbase/react", () => {
     expect(latest?.data?.fields.name).toBe("Rex");
     expect(db.getRowCalls).toBe(1);
     expect(db.lastOpenedRow).toEqual(dogRef());
-    await app.unmount();
-  });
-
-  it("prefers invite input over remembered per-user rows and rewrites storage", async () => {
-    window.history.replaceState(
-      {},
-      "",
-      inviteUrl(dogRef("dog_2")),
-    );
-
-    const db = new FakeDb();
-    db.rememberedRows.set("alex:myDog", dogRef("old_dog"));
-    let latest: ReturnType<typeof useSavedRow<TestSchema>> | null = null;
-
-    function Probe() {
-      latest = useSavedRow<TestSchema>(db as unknown as Vennbase<TestSchema>, {
-        key: "myDog",
-      });
-      return <div>{latest.data?.fields.name ?? latest.status}</div>;
-    }
-
-    const app = await renderApp(<Probe />);
-
-    await waitFor(() => {
-      expect(latest?.status).toBe("success");
-      expect(latest?.data?.fields.name).toBe("Buddy");
-    });
-
-    expect(db.acceptInviteCalls).toBe(1);
-    expect(db.getRowCalls).toBe(0);
-    expect(db.rememberedRows.get("alex:myDog")).toEqual(dogRef());
-    expect(window.location.search).toBe("");
     await app.unmount();
   });
 

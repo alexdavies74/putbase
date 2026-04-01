@@ -131,16 +131,11 @@ export interface UseSavedRowOptions<
   TResult = AnyRowHandle<Schema>,
 > extends UseHookOptions {
   key: string;
-  url?: string | null;
-  clearInviteParams?: boolean | ((url: URL) => string);
   loadSavedRow?: (row: AnyRowHandle<Schema>, db: Vennbase<Schema>) => Promise<TResult> | TResult;
-  acceptInvite?: (inviteInput: string, db: Vennbase<Schema>) => Promise<TResult>;
   getRow?: (result: TResult) => RowRef;
 }
 
 export interface UseSavedRowResult<TResult> extends UseResourceResult<TResult | null> {
-  hasInvite: boolean;
-  inviteInput: string | null;
   save(result: TResult): Promise<void>;
   clear(): Promise<void>;
 }
@@ -984,18 +979,15 @@ export function useSavedRow<
 ): UseSavedRowResult<TResult> {
   const runtime = useRuntime(db);
   const session = useSessionResource(runtime, options.enabled ?? true);
-  const inviteInput = options.url ?? getInviteInputFromUrl();
-  const clearInviteParamsOption = options.clearInviteParams ?? true;
   const sessionUser =
     session.status === "success" && session.data?.signedIn
       ? session.data.user
       : null;
   const scopeKey = sessionUser ? `${sessionUser.username}:${options.key}` : null;
   const resourceKey = sessionUser
-    ? makeSavedRowKey(sessionUser.username, options.key, inviteInput)
+    ? makeSavedRowKey(sessionUser.username, options.key)
     : null;
   const [localData, setLocalData] = useState<{ scopeKey: string; data: TResult | null } | null>(null);
-  const clearedInviteRef = useRef<string | null>(null);
 
   const resource = useOptionalResource(
     (options.enabled ?? true)
@@ -1007,17 +999,6 @@ export function useSavedRow<
     () => runtime.getLoadOnce(
       resourceKey as string,
       async () => {
-        if (inviteInput) {
-          const opened = options.acceptInvite
-            ? await options.acceptInvite(inviteInput, runtime.client)
-            : await runtime.client.acceptInvite(inviteInput) as TResult;
-          await runtime.client.saveRow(
-            options.key,
-            getRowFromResult(opened, options.getRow),
-          );
-          return opened;
-        }
-
         try {
           const savedRow = await runtime.client.openSavedRow(options.key);
           if (!savedRow) {
@@ -1034,17 +1015,6 @@ export function useSavedRow<
       },
     ),
   );
-
-  useEffect(() => {
-    if (!inviteInput || resource.status !== "success") {
-      return;
-    }
-
-    if (clearInviteParamsOption && clearedInviteRef.current !== inviteInput) {
-      clearedInviteRef.current = inviteInput;
-      clearInviteUrl(clearInviteParamsOption, inviteInput);
-    }
-  }, [clearInviteParamsOption, inviteInput, resource.status]);
 
   const localOverride = localData && localData.scopeKey === scopeKey
     ? localData
@@ -1099,8 +1069,6 @@ export function useSavedRow<
         status: "idle",
       }, refresh),
       clear,
-      hasInvite: !!inviteInput,
-      inviteInput,
       save,
       refresh,
     };
@@ -1113,8 +1081,6 @@ export function useSavedRow<
         status: "error",
       }, refresh),
       clear,
-      hasInvite: !!inviteInput,
-      inviteInput,
       save,
       refresh,
     };
@@ -1126,8 +1092,6 @@ export function useSavedRow<
         status: "loading",
       }, refresh),
       clear,
-      hasInvite: !!inviteInput,
-      inviteInput,
       save,
       refresh,
     };
@@ -1139,8 +1103,6 @@ export function useSavedRow<
         status: "idle",
       }, refresh),
       clear,
-      hasInvite: !!inviteInput,
-      inviteInput,
       save,
       refresh,
     };
@@ -1149,8 +1111,6 @@ export function useSavedRow<
   return {
     ...effective,
     clear,
-    hasInvite: !!inviteInput,
-    inviteInput,
     save,
     refresh,
   };

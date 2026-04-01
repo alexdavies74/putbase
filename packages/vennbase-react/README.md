@@ -172,7 +172,7 @@ function Room({ row }: { row: BoardHandle | null }) {
 
 ## Invite links
 
-`useShareLink` lazily generates (or reuses) a share link for a row. Always pass an explicit role such as `{ role: "editor" }`, `{ role: "contributor" }`, or `{ role: "submitter" }`. `useAcceptInviteFromUrl` handles the recipient side: it detects Vennbase invite URLs in the current URL, waits for the session, joins the invite, resolves either an opened row or a submitter-only membership result, runs `onOpen` for readable invites, runs `onResolve` for either branch, and then clears the invite params.
+`useShareLink` lazily generates (or reuses) a share link for a row. Always pass an explicit role such as `{ role: "editor" }`, `{ role: "contributor" }`, or `{ role: "submitter" }`. `useAcceptInviteFromUrl` handles the recipient side: it detects Vennbase invite URLs in the current URL, waits for the session, joins the invite, resolves either an opened row or a submitter-only membership result, runs `onOpen` for readable invites, runs `onResolve` for either branch, and then clears the invite params. If you also want to remember the opened row for restore-on-launch, persist it from those callbacks with `db.saveRow(...)`.
 
 ```tsx
 import { useShareLink, useAcceptInviteFromUrl } from "@vennbase/react";
@@ -207,6 +207,27 @@ function SubmissionHandler() {
     },
   });
   return null;
+}
+```
+
+## Saved rows
+
+`useSavedRow` is a narrow wrapper around `db.openSavedRow(...)`, `db.saveRow(...)`, and `db.clearSavedRow(...)`. It does not inspect the current URL or accept invites. Use it to restore one per-user row under an app-defined key, and compose it with `useAcceptInviteFromUrl` when invite acceptance should also update that saved slot.
+
+```tsx
+import { useAcceptInviteFromUrl, useSavedRow } from "@vennbase/react";
+import { db } from "./db";
+
+function AppRoot() {
+  const savedBoard = useSavedRow(db, { key: "current-board" });
+
+  useAcceptInviteFromUrl(db, {
+    onOpen: async (board) => {
+      await db.saveRow("current-board", board.ref);
+    },
+  });
+
+  return <pre>{savedBoard.data?.id ?? "No saved board yet."}</pre>;
 }
 ```
 
@@ -263,7 +284,7 @@ function AddCard({ board }: { board: BoardHandle }) {
 | `useEffectiveMembers(db, row)` | db, row handle or row ref | `{ data: DbMemberInfo[], status, isRefreshing, error, refreshError, refresh }` |
 | `useShareLink(db, row, options)` | db, row handle or row ref, `{ role: "editor" \| "contributor" \| "viewer" \| "submitter" }` | `{ shareLink: string, status, isRefreshing, error, refreshError, refresh }` |
 | `useAcceptInviteFromUrl(db, options?)` | db, `{ url?, clearInviteParams?, onOpen?, onResolve? }` | `{ hasInvite, inviteInput, data, status, isRefreshing, error, refreshError, refresh }` |
-| `useSavedRow(db, options)` | db, `{ key, url?, clearInviteParams?, loadSavedRow?, acceptInvite?, getRow? }` | `{ hasInvite, inviteInput, data, status, isRefreshing, error, refreshError, refresh, save, clear }` |
+| `useSavedRow(db, options)` | db, `{ key, loadSavedRow?, getRow? }` | `{ data, status, isRefreshing, error, refreshError, refresh, save, clear }` |
 | `useMutation(fn)` | async function | `{ mutate, data, status, error, reset }` |
 
 All data-fetching hooks return `status: "idle" | "loading" | "success" | "error"`. `loading` means there is no usable data yet. Once a hook has usable data, it stays `success` during background reloads and exposes that work through `isRefreshing` / `refreshError`.
