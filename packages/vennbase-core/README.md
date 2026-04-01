@@ -232,6 +232,8 @@ const joined = await db.joinInvite(submissionLink);
 // joined.role === "submitter"
 ```
 
+`joinInvite` is idempotent, so call it whenever you need it.
+
 `"submitter"` members can create child rows under the shared parent and can run `db.query(..., { select: "keys" })` to see only anonymous key-field projections from sibling rows. Key-query results expose `id`, `collection`, and key fields only; they do not include row refs, base URLs, owners, or other locator metadata. Submitters still cannot read the parent row, fetch full sibling rows, inspect members, or use sync. Apps that need a submitter to revisit their own submissions should persist the created child refs separately.
 
 ---
@@ -324,7 +326,7 @@ pnpm --filter appointment-app dev
 | `createShareLink(row, shareToken)` | Build a shareable URL containing a serialized row ref and token. |
 | `createShareLink(row, role)` | Generate a new share token for that role and return the resulting share link as a `MutationReceipt<string>`. |
 | `parseInvite(input)` | Parse an invite URL into `{ ref, shareToken? }`. |
-| `joinInvite(input)` | Join a row via invite URL or parsed invite object without opening it, and return `{ ref, role }`. |
+| `joinInvite(input)` | Idempotently join a row via invite URL or parsed invite object without opening it, and return `{ ref, role }`. |
 | `acceptInvite(input)` | Join a readable invite and return its handle. Use it for `"editor"`, `"contributor"`, or `"viewer"` invites; `"submitter"` invites should use `joinInvite(...)`. |
 | `saveRow(key, row)` | Persist one current row for the signed-in user under your app-defined key. |
 | `openSavedRow(key)` | Re-open the saved row for the signed-in user, or `null`. |

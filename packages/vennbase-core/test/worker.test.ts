@@ -256,6 +256,23 @@ describe("RowWorker", () => {
     );
 
     expect(guestJoin.status).toBe(200);
+    expect((await jsonBody(guestJoin)).role).toBe("editor");
+
+    const guestRejoin = await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("row_1", "row/join"),
+        action: "row/join",
+        rowId: "row_1",
+        username: "guest",
+        body: {
+          username: "guest",
+          inviteToken: "invite_1",
+        },
+      }),
+    );
+
+    expect(guestRejoin.status).toBe(200);
+    expect((await jsonBody(guestRejoin)).role).toBe("editor");
 
     const directMembers = await worker.handle(
       await authedRequest({
@@ -267,10 +284,14 @@ describe("RowWorker", () => {
     );
 
     expect(directMembers.status).toBe(200);
-    expect((await jsonBody(directMembers)).members).toEqual(expect.arrayContaining([
+    const directMemberPayload = await jsonBody(directMembers);
+    expect(directMemberPayload.members).toEqual(expect.arrayContaining([
       expect.objectContaining({ username: "owner", role: "editor" }),
       expect.objectContaining({ username: "guest", role: "editor" }),
     ]));
+    expect(
+      (directMemberPayload.members as Array<{ username: string }>).filter((member) => member.username === "guest"),
+    ).toHaveLength(1);
 
     const outsiderRead = await worker.handle(
       await authedRequest({

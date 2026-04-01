@@ -545,6 +545,7 @@ describe("Vennbase", () => {
   });
 
   it("joins submitter invites without fetching the row and rejects acceptInvite", async () => {
+    let joinCalls = 0;
     let rowGetCalls = 0;
     const rowRef = {
       id: "row_submitter",
@@ -559,6 +560,7 @@ describe("Vennbase", () => {
         const url = asUrl(input);
 
         if (url.endsWith("/row/join")) {
+          joinCalls += 1;
           return new Response(JSON.stringify({ role: "submitter" }), {
             status: 200,
             headers: { "content-type": "application/json" },
@@ -588,10 +590,16 @@ describe("Vennbase", () => {
       role: "submitter",
     });
     await expect(db.acceptInvite(invite)).rejects.toThrow("submitter access only");
+    joinCalls = 0;
     await expect(db.joinInvite(invite)).resolves.toEqual({
       ref: rowRef,
       role: "submitter",
     });
+    await expect(db.joinInvite(invite)).resolves.toEqual({
+      ref: rowRef,
+      role: "submitter",
+    });
+    expect(joinCalls).toBe(2);
     expect(rowGetCalls).toBe(0);
   });
 
