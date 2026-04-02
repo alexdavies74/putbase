@@ -387,16 +387,25 @@ export class AppointmentService {
 
     const bookingRootWrite = this.db.create("bookingRoots", { createdAt: Date.now() });
     const bookingRoot = bookingRootWrite.value;
-    await bookingRootWrite.committed;
-
-    const bookingSubmitterLink = await this.db.createShareLink(bookingRoot.ref, "submitter").committed;
+    const bookingSubmitterLinkWrite = this.db.createShareLink(bookingRoot.ref, "submitter");
+    const bookingSubmitterLink = bookingSubmitterLinkWrite.value;
     const scheduleWrite = this.db.create("schedules", {
       ...draftToScheduleFields(draft),
       bookingSubmitterLink,
     });
     const schedule = scheduleWrite.value;
-    await scheduleWrite.committed;
-    await this.rememberRecentSchedule(schedule);
+
+    void (async () => {
+      try {
+        await bookingRootWrite.committed;
+        await bookingSubmitterLinkWrite.committed;
+        await scheduleWrite.committed;
+        await this.rememberRecentSchedule(schedule);
+      } catch (error) {
+        console.error(error);
+      }
+    })();
+
     return schedule;
   }
 
