@@ -166,6 +166,7 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
     this.resetSessionState();
     const user = await this.identity.signIn();
     await this.awaitSharedReadiness();
+    this.notifyLocalMutation();
     return user;
   }
 
@@ -176,6 +177,7 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
   async saveRow(rowKey: string, row: RowInput): Promise<void> {
     await this.identity.whoAmI();
     await saveRow(resolveBackend(this.options.backend), rowKey, row);
+    this.notifyLocalMutation();
   }
 
   async openSavedRow(rowKey: string): Promise<AnyRowHandle<Schema> | null> {
@@ -191,6 +193,7 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
   async clearSavedRow(rowKey: string): Promise<void> {
     await this.identity.whoAmI();
     await clearSavedRow(resolveBackend(this.options.backend), rowKey);
+    this.notifyLocalMutation();
   }
 
   /**

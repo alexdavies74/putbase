@@ -225,7 +225,7 @@ function useSessionResource<Schema extends DbSchema>(
     enabled,
     "session",
     runtime,
-    () => runtime.getLoadOnce("session", () => runtime.client.getSession(), snapshots.session),
+    () => runtime.getLoadOnce("session", () => runtime.client.getSession(), snapshots.session, "refresh"),
   );
 }
 
@@ -684,6 +684,8 @@ export function useShareLink<Schema extends DbSchema>(
         const shareToken = existing ?? runtime.client.createShareToken(rowRef as RowRef, options.role).value;
         return runtime.client.createShareLink(rowRef as RowRef, shareToken);
       },
+      undefined,
+      "refresh",
     ),
   );
   const result = blocked ?? resource;
@@ -768,6 +770,8 @@ export function useAcceptInviteFromUrl<
     () => runtime.getLoadOnce(
       resourceKey as string,
       () => resolveInviteFromUrl<Schema, TOpened>(inviteInput as string, runtime.client),
+      undefined,
+      "ignore",
     ),
   );
 
@@ -978,11 +982,9 @@ export function useSavedRow<
     session.status === "success" && session.data?.signedIn
       ? session.data.user
       : null;
-  const scopeKey = sessionUser ? `${sessionUser.username}:${options.key}` : null;
   const resourceKey = sessionUser
     ? makeSavedRowKey(sessionUser.username, options.key)
     : null;
-  const [localData, setLocalData] = useState<{ scopeKey: string; data: TResult | null } | null>(null);
 
   const resource = useOptionalResource(
     (options.enabled ?? true)
@@ -1008,24 +1010,12 @@ export function useSavedRow<
           throw error;
         }
       },
+      undefined,
+      "refresh",
     ),
   );
 
-  const localOverride = localData && localData.scopeKey === scopeKey
-    ? localData
-    : null;
-  const effective = localOverride
-    ? makeResourceResult({
-      data: localOverride.data,
-      status: "success" as const,
-    })
-    : resource;
-
   const refresh = async (): Promise<void> => {
-    if (localOverride) {
-      setLocalData(null);
-    }
-
     if (!(options.enabled ?? true)) {
       return;
     }
@@ -1043,19 +1033,12 @@ export function useSavedRow<
       options.key,
       getRowFromResult(result, options.getRow),
     );
-    if (scopeKey) {
-      setLocalData({ scopeKey, data: result });
-    }
+    await refresh();
   };
 
   const clear = async (): Promise<void> => {
     await runtime.client.clearSavedRow(options.key);
-    if (scopeKey) {
-      setLocalData({ scopeKey, data: null });
-      return;
-    }
-
-    setLocalData(null);
+    await refresh();
   };
 
   if (!(options.enabled ?? true)) {
@@ -1104,7 +1087,7 @@ export function useSavedRow<
   }
 
   return {
-    ...effective,
+    ...resource,
     clear,
     save,
     refresh,

@@ -132,6 +132,7 @@ class FakeDb {
   getExistingShareTokenCallRoles: string[] = [];
   createShareTokenCallRoles: string[] = [];
   signInCalls = 0;
+  openSavedRowCalls = 0;
   failSession = false;
   dogName = "Rex";
   inviteDogName = "Buddy";
@@ -142,6 +143,13 @@ class FakeDb {
   activitySubscriber: (() => void) | null = null;
   localMutationListener: (() => void) | null = null;
   rememberedRows = new Map<string, RowRef>();
+  shareTokens = new Map<string, {
+    token: string;
+    rowId: string;
+    invitedBy: string;
+    createdAt: number;
+    role: "editor" | "contributor" | "viewer" | "submitter";
+  }>();
   failRememberedOpen = false;
   lastOpenedRow: RowRef | null = null;
   dogHandle: ReturnType<typeof makeDogRow> | null = null;
@@ -168,6 +176,10 @@ class FakeDb {
     return this.inviteDogHandle;
   }
 
+  private shareTokenKey(row: RowRef, role: "editor" | "contributor" | "viewer" | "submitter"): string {
+    return `${row.baseUrl}:${row.collection}:${row.id}:${role}`;
+  }
+
   async getSession(): Promise<{ signedIn: false } | { signedIn: true; user: { username: string } }> {
     if (this.failSession) {
       throw new Error("session failed");
@@ -190,6 +202,7 @@ class FakeDb {
   async signIn(): Promise<{ username: string }> {
     this.signInCalls += 1;
     this.signedIn = true;
+    this.emitLocalMutation();
     return { username: this.username };
   }
 
@@ -271,20 +284,30 @@ class FakeDb {
     return [{ username: "alex", role: "editor", via: "direct" }];
   }
 
-  async getExistingShareToken(_row?: RowRef, role: "editor" | "contributor" | "viewer" | "submitter" = "editor"): Promise<null> {
+  async getExistingShareToken(row: RowRef = dogRef(), role: "editor" | "contributor" | "viewer" | "submitter" = "editor") {
     this.getExistingShareTokenCallRoles.push(role);
-    return null;
+    return this.shareTokens.get(this.shareTokenKey(row, role)) ?? null;
   }
 
-  createShareToken(_row?: RowRef, role: "editor" | "contributor" | "viewer" | "submitter") {
+  createShareToken(row: RowRef = dogRef(), role: "editor" | "contributor" | "viewer" | "submitter") {
     this.createShareTokenCallRoles.push(role);
+    const existingTokenCount = this.shareTokens.has(this.shareTokenKey(row, role)) ? 1 : 0;
+    const countForRole = this.createShareTokenCallRoles.filter((entry) => entry === role).length + existingTokenCount;
     const value = {
-      token: role === "submitter" ? "invite_submitter" : role === "contributor" ? "invite_contributor" : "invite_1",
-      rowId: "dog_1",
+      token: role === "submitter"
+        ? "invite_submitter"
+        : role === "contributor"
+          ? countForRole === 1 ? "invite_contributor" : `invite_contributor_${countForRole}`
+          : role === "viewer"
+            ? countForRole === 1 ? "invite_viewer" : `invite_viewer_${countForRole}`
+            : countForRole === 1 ? "invite_1" : `invite_editor_${countForRole}`,
+      rowId: row.id,
       invitedBy: "alex",
-      createdAt: 1,
+      createdAt: this.createShareTokenCallRoles.length,
       role,
     };
+    this.shareTokens.set(this.shareTokenKey(row, role), value);
+    this.emitLocalMutation();
     return {
       value,
       committed: Promise.resolve(value),
@@ -299,9 +322,11 @@ class FakeDb {
 
   async saveRow(key: string, row: RowRef): Promise<void> {
     this.rememberedRows.set(`${this.username}:${key}`, row);
+    this.emitLocalMutation();
   }
 
   async openSavedRow(key: string): Promise<ReturnType<typeof makeDogRow> | null> {
+    this.openSavedRowCalls += 1;
     const remembered = this.rememberedRows.get(`${this.username}:${key}`);
     if (!remembered) {
       return null;
@@ -315,6 +340,7 @@ class FakeDb {
 
   async clearSavedRow(key: string): Promise<void> {
     this.rememberedRows.delete(`${this.username}:${key}`);
+    this.emitLocalMutation();
   }
 
   subscribeToLocalMutations(listener: () => void): () => void {
@@ -626,6 +652,35 @@ describe("@vennbase/react", () => {
     await app.unmount();
   });
 
+  it("updates mounted session and current-user hooks after imperative db.signIn", async () => {
+    const db = new FakeDb();
+    db.signedIn = false;
+    let latestSession: ReturnType<typeof useSession<TestSchema>> | null = null;
+    let latestUser: ReturnType<typeof useCurrentUser<TestSchema>> | null = null;
+
+    function Probe() {
+      latestSession = useSession<TestSchema>(db as unknown as Vennbase<TestSchema>);
+      latestUser = useCurrentUser<TestSchema>(db as unknown as Vennbase<TestSchema>);
+      return <div>{latestUser.data?.username ?? latestSession.status}</div>;
+    }
+
+    const app = await renderApp(<Probe />);
+
+    expect(latestSession?.session).toEqual({ signedIn: false });
+    expect(latestUser?.status).toBe("idle");
+
+    await act(async () => {
+      await db.signIn();
+      await flushMicrotasks();
+    });
+
+    await waitFor(() => {
+      expect(latestSession?.session).toEqual({ signedIn: true, user: { username: "alex" } });
+      expect(latestUser?.data?.username).toBe("alex");
+    });
+    await app.unmount();
+  });
+
   it("keeps the session convenience field undefined while loading", async () => {
     const db = new FakeDb();
     const session = deferred<{ signedIn: true; user: { username: string } }>();
@@ -717,6 +772,40 @@ describe("@vennbase/react", () => {
 
     expect(db.getExistingShareTokenCallRoles.sort()).toEqual(["contributor", "submitter"]);
     expect(db.createShareTokenCallRoles.sort()).toEqual(["contributor", "submitter"]);
+    await app.unmount();
+  });
+
+  it("refreshes mounted share links after imperative share-token creation", async () => {
+    const db = new FakeDb();
+    const rowRef = dogRef();
+    db.shareTokens.set("https://worker.example:dogs:dog_1:editor", {
+      token: "invite_1",
+      rowId: "dog_1",
+      invitedBy: "alex",
+      createdAt: 1,
+      role: "editor",
+    });
+    let latest: ReturnType<typeof useShareLink<TestSchema>> | null = null;
+
+    function Probe() {
+      latest = useShareLink<TestSchema>(db as unknown as Vennbase<TestSchema>, rowRef, { role: "editor" });
+      return <div>{latest.shareLink ?? latest.status}</div>;
+    }
+
+    const app = await renderApp(<Probe />);
+
+    await waitFor(() => {
+      expect(latest?.shareLink).toBe(inviteUrl(rowRef, "invite_1"));
+    });
+
+    await act(async () => {
+      db.createShareToken(rowRef, "editor");
+      await flushMicrotasks();
+    });
+
+    await waitFor(() => {
+      expect(latest?.shareLink).toBe(inviteUrl(rowRef, "invite_editor_2"));
+    });
     await app.unmount();
   });
 
@@ -821,6 +910,43 @@ describe("@vennbase/react", () => {
       expect(latest?.status).toBe("idle");
       expect(latest?.data).toBeUndefined();
     });
+    await app.unmount();
+  });
+
+  it("does not re-run invite acceptance side effects after unrelated local mutations", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      inviteUrl(dogRef()),
+    );
+
+    const db = new FakeDb();
+    let latest: ReturnType<typeof useAcceptInviteFromUrl<TestSchema>> | null = null;
+    let onOpenCalls = 0;
+
+    function Probe() {
+      latest = useAcceptInviteFromUrl<TestSchema>(db as unknown as Vennbase<TestSchema>, {
+        clearInviteParams: false,
+        onOpen: () => {
+          onOpenCalls += 1;
+        },
+      });
+      return <div>{latest.status}</div>;
+    }
+
+    const app = await renderApp(<Probe />);
+
+    await waitFor(() => {
+      expect(latest?.status).toBe("success");
+    });
+
+    await act(async () => {
+      db.emitLocalMutation();
+      await flushMicrotasks();
+    });
+
+    expect(db.joinInviteCalls).toBe(1);
+    expect(onOpenCalls).toBe(1);
     await app.unmount();
   });
 
@@ -1105,7 +1231,7 @@ describe("@vennbase/react", () => {
     await app.unmount();
   });
 
-  it("remembers and clears per-user rows locally without reopening", async () => {
+  it("remembers and clears per-user rows through the shared saved-row resource", async () => {
     const db = new FakeDb();
     let latest: ReturnType<typeof useSavedRow<TestSchema>> | null = null;
 
@@ -1128,18 +1254,155 @@ describe("@vennbase/react", () => {
       await flushMicrotasks();
     });
 
-    expect(latest?.data?.fields.name).toBe("Buddy");
+    await waitFor(() => {
+      expect(latest?.data?.fields.name).toBe("Rex");
+    });
     expect(db.rememberedRows.get("alex:myDog")).toEqual(dogRef());
-    expect(db.getRowCalls).toBe(0);
+    expect(db.openSavedRowCalls).toBeGreaterThan(1);
+    expect(db.getRowCalls).toBeGreaterThan(0);
 
     await act(async () => {
       await latest?.clear();
       await flushMicrotasks();
     });
 
-    expect(latest?.data).toBeNull();
+    await waitFor(() => {
+      expect(latest?.data).toBeNull();
+    });
     expect(db.rememberedRows.get("alex:myDog")).toBeUndefined();
-    expect(db.getRowCalls).toBe(0);
+    await app.unmount();
+  });
+
+  it("updates mounted saved rows after imperative db.saveRow", async () => {
+    const db = new FakeDb();
+    let latest: ReturnType<typeof useSavedRow<TestSchema>> | null = null;
+
+    function Probe() {
+      latest = useSavedRow<TestSchema>(db as unknown as Vennbase<TestSchema>, {
+        key: "myDog",
+      });
+      return <div>{latest.data?.fields.name ?? "empty"}</div>;
+    }
+
+    const app = await renderApp(<Probe />);
+
+    await waitFor(() => {
+      expect(latest?.data).toBeNull();
+    });
+
+    db.dogName = "Buddy";
+    await act(async () => {
+      await db.saveRow("myDog", dogRef("dog_2"));
+      await flushMicrotasks();
+    });
+
+    await waitFor(() => {
+      expect(latest?.data?.fields.name).toBe("Buddy");
+    });
+    expect(db.lastOpenedRow).toEqual(dogRef("dog_2"));
+    await app.unmount();
+  });
+
+  it("clears mounted saved rows after imperative db.clearSavedRow", async () => {
+    const db = new FakeDb();
+    db.rememberedRows.set("alex:myDog", dogRef());
+    let latest: ReturnType<typeof useSavedRow<TestSchema>> | null = null;
+
+    function Probe() {
+      latest = useSavedRow<TestSchema>(db as unknown as Vennbase<TestSchema>, {
+        key: "myDog",
+      });
+      return <div>{latest.data?.fields.name ?? "empty"}</div>;
+    }
+
+    const app = await renderApp(<Probe />);
+
+    await waitFor(() => {
+      expect(latest?.data?.fields.name).toBe("Rex");
+    });
+
+    await act(async () => {
+      await db.clearSavedRow("myDog");
+      await flushMicrotasks();
+    });
+
+    await waitFor(() => {
+      expect(latest?.data).toBeNull();
+    });
+    await app.unmount();
+  });
+
+  it("does not pin saved rows to stale hook-local state after a later imperative save", async () => {
+    const db = new FakeDb();
+    let latest: ReturnType<typeof useSavedRow<TestSchema>> | null = null;
+
+    function Probe() {
+      latest = useSavedRow<TestSchema>(db as unknown as Vennbase<TestSchema>, {
+        key: "myDog",
+      });
+      return <div>{latest.data?.fields.name ?? "empty"}</div>;
+    }
+
+    const app = await renderApp(<Probe />);
+
+    await waitFor(() => {
+      expect(latest?.data).toBeNull();
+    });
+
+    db.dogName = "Buddy";
+    await act(async () => {
+      await latest?.save(makeDogRow("Buddy"));
+      await flushMicrotasks();
+    });
+
+    await waitFor(() => {
+      expect(latest?.data?.fields.name).toBe("Buddy");
+    });
+
+    db.dogName = "Scout";
+    await act(async () => {
+      await db.saveRow("myDog", dogRef("dog_2"));
+      await flushMicrotasks();
+    });
+
+    await waitFor(() => {
+      expect(latest?.data?.fields.name).toBe("Scout");
+    });
+    expect(db.lastOpenedRow).toEqual(dogRef("dog_2"));
+    await app.unmount();
+  });
+
+  it("batches refresh-only saved-row updates within the same tick", async () => {
+    const db = new FakeDb();
+    let latest: ReturnType<typeof useSavedRow<TestSchema>> | null = null;
+
+    function Probe() {
+      latest = useSavedRow<TestSchema>(db as unknown as Vennbase<TestSchema>, {
+        key: "myDog",
+      });
+      return <div>{latest.data?.fields.name ?? "empty"}</div>;
+    }
+
+    const app = await renderApp(<Probe />);
+
+    await waitFor(() => {
+      expect(latest?.data).toBeNull();
+    });
+
+    const initialOpenSavedRowCalls = db.openSavedRowCalls;
+    db.rememberedRows.set("alex:myDog", dogRef("dog_2"));
+    db.dogName = "Buddy";
+
+    await act(async () => {
+      db.emitLocalMutation();
+      db.emitLocalMutation();
+      await flushMicrotasks();
+    });
+
+    await waitFor(() => {
+      expect(latest?.data?.fields.name).toBe("Buddy");
+    });
+    expect(db.openSavedRowCalls - initialOpenSavedRowCalls).toBe(1);
     await app.unmount();
   });
 

@@ -65,6 +65,7 @@ export interface ResourceController<TData> {
 interface ResourceOptions<TData> {
   load: () => Promise<TData>;
   live: boolean;
+  localMutationBehavior: "live" | "refresh" | "ignore";
   snapshotOf?: (data: TData) => string;
   peek?: () => TData;
 }
@@ -246,6 +247,7 @@ class Resource<TData> implements ResourceController<TData> {
 
   constructor(
     readonly live: boolean,
+    readonly localMutationBehavior: ResourceOptions<TData>["localMutationBehavior"],
     private readonly options: ResourceOptions<TData>,
     private readonly onEmpty: () => void,
     private readonly subscribeToActivity?: ActivitySubscriber,
@@ -486,6 +488,9 @@ export class VennbaseReactRuntime<Schema extends DbSchema = DbSchema> {
   readonly resources = new Map<string, Resource<unknown>>();
   readonly externalSubscribeToActivity?: ActivitySubscriber;
   readonly subscribeToActivity?: ActivitySubscriber;
+  private localMutationFlushScheduled = false;
+  private localMutationFlushInFlight = false;
+  private localMutationFlushPending = false;
 
   constructor(
     readonly client: Vennbase<Schema>,
@@ -495,16 +500,22 @@ export class VennbaseReactRuntime<Schema extends DbSchema = DbSchema> {
     this.subscribeToActivity = composeActivitySubscribers(
       browserActivitySubscriber,
       subscribeToActivity,
-      this.subscribeToCoreMutations(),
     );
+    this.subscribeToCoreMutations();
   }
 
   getLoadOnce<TData>(
     key: string,
     load: () => Promise<TData>,
     snapshotOf?: (data: TData) => string,
+    localMutationBehavior: ResourceOptions<TData>["localMutationBehavior"] = "ignore",
   ): ResourceController<TData> {
-    return this.getResource(key, { live: false, load, snapshotOf });
+    return this.getResource(key, {
+      live: false,
+      load,
+      localMutationBehavior,
+      snapshotOf,
+    });
   }
 
   getLive<TData>(
@@ -513,7 +524,13 @@ export class VennbaseReactRuntime<Schema extends DbSchema = DbSchema> {
     snapshotOf?: (data: TData) => string,
     peek?: () => TData,
   ): ResourceController<TData> {
-    return this.getResource(key, { live: true, load, snapshotOf, peek });
+    return this.getResource(key, {
+      live: true,
+      load,
+      localMutationBehavior: "live",
+      snapshotOf,
+      peek,
+    });
   }
 
   async refreshLiveResources(): Promise<void> {
@@ -531,6 +548,7 @@ export class VennbaseReactRuntime<Schema extends DbSchema = DbSchema> {
 
     const resource = new Resource<TData>(
       options.live,
+      options.localMutationBehavior,
       options,
       () => {
         this.resources.delete(key);
@@ -543,22 +561,63 @@ export class VennbaseReactRuntime<Schema extends DbSchema = DbSchema> {
 
   private applyLocalPeeks(): void {
     for (const resource of this.resources.values()) {
-      if (resource.live) {
+      if (resource.localMutationBehavior === "live") {
         resource.applyPeek();
       }
     }
   }
 
-  private subscribeToCoreMutations(): ActivitySubscriber | undefined {
-    const client = this.client as MutationSubscribedClient<Schema>;
-    if (typeof client.subscribeToLocalMutations !== "function") {
-      return undefined;
+  private collectLocalMutationRefreshes(): Promise<void[]> {
+    this.applyLocalPeeks();
+    const refreshes = Array.from(this.resources.values())
+      .filter((resource) => resource.localMutationBehavior !== "ignore")
+      .map((resource) => resource.refresh());
+    return Promise.all(refreshes);
+  }
+
+  private scheduleLocalMutationFlush(): void {
+    if (this.localMutationFlushInFlight) {
+      this.localMutationFlushPending = true;
+      return;
     }
 
-    return (notify) => client.subscribeToLocalMutations?.(() => {
-      notify();
-      this.applyLocalPeeks();
-      void this.refreshLiveResources();
+    if (this.localMutationFlushScheduled) {
+      return;
+    }
+
+    this.localMutationFlushScheduled = true;
+    queueMicrotask(() => {
+      this.localMutationFlushScheduled = false;
+      void this.flushLocalMutations();
+    });
+  }
+
+  private async flushLocalMutations(): Promise<void> {
+    if (this.localMutationFlushInFlight) {
+      this.localMutationFlushPending = true;
+      return;
+    }
+
+    this.localMutationFlushInFlight = true;
+    try {
+      await this.collectLocalMutationRefreshes();
+    } finally {
+      this.localMutationFlushInFlight = false;
+      if (this.localMutationFlushPending) {
+        this.localMutationFlushPending = false;
+        this.scheduleLocalMutationFlush();
+      }
+    }
+  }
+
+  private subscribeToCoreMutations(): void {
+    const client = this.client as MutationSubscribedClient<Schema>;
+    if (typeof client.subscribeToLocalMutations !== "function") {
+      return;
+    }
+
+    client.subscribeToLocalMutations?.(() => {
+      this.scheduleLocalMutationFlush();
     });
   }
 }

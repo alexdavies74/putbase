@@ -252,6 +252,7 @@ describe("Vennbase", () => {
   it("signs in explicitly and resolves the authenticated user", async () => {
     let signedIn = false;
     let signInCalls = 0;
+    let mutationCalls = 0;
     const deployedWorkerBase = "https://workers.example/owner-1234abcd-federation";
     const db = new Vennbase({
       schema: MINIMAL_SCHEMA,
@@ -275,6 +276,9 @@ describe("Vennbase", () => {
         kv: new MapKv(),
       } as BackendClient,
     });
+    const unsubscribe = db.subscribeToLocalMutations(() => {
+      mutationCalls += 1;
+    });
 
     await expect(db.signIn()).resolves.toEqual({ username: "owner" });
     await expect(db.getSession()).resolves.toEqual({
@@ -282,10 +286,13 @@ describe("Vennbase", () => {
       user: { username: "owner" },
     });
     expect(signInCalls).toBe(1);
+    expect(mutationCalls).toBe(1);
+    unsubscribe();
   });
 
   it("remembers, reopens, and clears per-user rows", async () => {
     const kv = new MapKv();
+    let mutationCalls = 0;
     const db = new Vennbase({
       schema: MINIMAL_SCHEMA,
       identityProvider: async () => ({ username: "owner" }),
@@ -321,6 +328,9 @@ describe("Vennbase", () => {
         });
       },
     });
+    const unsubscribe = db.subscribeToLocalMutations(() => {
+      mutationCalls += 1;
+    });
 
     await expect(db.openSavedRow("current-row")).resolves.toBeNull();
 
@@ -340,6 +350,8 @@ describe("Vennbase", () => {
 
     await db.clearSavedRow("current-row");
     await expect(db.openSavedRow("current-row")).resolves.toBeNull();
+    expect(mutationCalls).toBe(2);
+    unsubscribe();
   });
 
   it("ignores legacy username-prefixed remembered rows", async () => {
