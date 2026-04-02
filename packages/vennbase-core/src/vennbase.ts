@@ -136,10 +136,14 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
     );
     this.queryModule = new Query(
       this.transport,
-      { getRow: (row) => this.rowsModule.getRow(row) },
+      {
+        getRow: (row) => this.rowsModule.getRow(row),
+        peekRow: (row) => this.peekCachedRow(row),
+      },
       this.optimisticStore,
       options.schema,
       (collection, queryOptions) => this.resolveCurrentUserQueryOptions(collection, queryOptions),
+      (collection, queryOptions) => this.resolveCurrentUserQueryOptionsSync(collection, queryOptions),
     );
     this.startPrewarmIfSignedIn();
   }
@@ -193,9 +197,7 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
     ...args: DbCreateArgs<Schema, TCollection>
   ): MutationReceipt<RowHandle<Schema, TCollection>> {
     const options = args[0];
-    const row = this.rowsModule.create(collection, fields, this.resolveCurrentUserCreateOptionsSync(collection, options));
-    this.notifyLocalMutation();
-    return row;
+    return this.rowsModule.create(collection, fields, this.resolveCurrentUserCreateOptionsSync(collection, options));
   }
 
   /**
@@ -207,9 +209,7 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
     row: RowInput<TCollection>,
     fields: Partial<RowFields<Schema, TCollection>>,
   ): MutationReceipt<RowHandle<Schema, TCollection>> {
-    const updated = this.rowsModule.update(collection, row, fields);
-    this.notifyLocalMutation();
-    return updated;
+    return this.rowsModule.update(collection, row, fields);
   }
 
   async getRow<TCollection extends CollectionName<Schema>>(
@@ -235,6 +235,14 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
     options: DbQueryOptions<Schema, TCollection>,
   ): Promise<Array<RowHandle<Schema, TCollection>> | Array<DbAnonymousProjection<Schema, TCollection>>> {
     return this.queryModule.query(collection, options);
+  }
+
+  /** @internal Use peekQuery only via the React runtime. Returns local optimistic state only — no transport call. */
+  peekQuery<TCollection extends CollectionName<Schema>>(
+    collection: TCollection,
+    options: DbFullQueryOptions<Schema, TCollection>,
+  ): Array<RowHandle<Schema, TCollection>> {
+    return this.queryModule.peekQuery(collection, options);
   }
 
   watchQuery<TCollection extends CollectionName<Schema>>(
@@ -632,6 +640,53 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
     return handle;
   }
 
+  private peekCachedRow<TCollection extends CollectionName<Schema>>(
+    row: RowRef<TCollection>,
+  ): RowHandle<Schema, TCollection> | null {
+    const rowRef = normalizeRowRef(row);
+    const fields = this.optimisticStore.getLogicalFields(rowRef);
+    const owner = this.optimisticStore.getOwner(rowRef);
+    if (!fields || !owner) {
+      return null;
+    }
+
+    const collection = rowRef.collection as TCollection;
+    const cacheKey = `${collection}:${rowRefKey(rowRef)}`;
+    const snapshot = stableJsonStringify({
+      id: rowRef.id,
+      collection,
+      owner,
+      ref: rowRef,
+      fields,
+    });
+    const cached = this.rowHandleCache.get(cacheKey);
+    if (cached) {
+      const handle = cached.handle as unknown as RowHandle<Schema, TCollection>;
+      if (cached.snapshot !== snapshot) {
+        handle.fields = fields as RowFields<Schema, TCollection>;
+        cached.snapshot = snapshot;
+      }
+      return handle;
+    }
+
+    const handle = new RowHandle<
+      Schema,
+      TCollection,
+      RowFields<Schema, TCollection>,
+      AllowedParentCollections<Schema, TCollection>
+    >(
+      this,
+      rowRef,
+      owner,
+      fields as RowFields<Schema, TCollection>,
+    );
+    this.rowHandleCache.set(cacheKey, {
+      handle: handle as unknown as AnyRowHandle<Schema>,
+      snapshot,
+    });
+    return handle;
+  }
+
   private notifyLocalMutation(): void {
     for (const listener of this.localMutationListeners) {
       try {
@@ -695,6 +750,20 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
     return {
       ...options,
       in: await this.resolveCurrentUserParentInput(options.in),
+    } as DbQueryOptions<Schema, TCollection>;
+  }
+
+  private resolveCurrentUserQueryOptionsSync<TCollection extends CollectionName<Schema>>(
+    _collection: TCollection,
+    options: DbQueryOptions<Schema, TCollection>,
+  ): DbQueryOptions<Schema, TCollection> {
+    if (options.in === undefined) {
+      return options;
+    }
+
+    return {
+      ...options,
+      in: this.resolveCurrentUserParentInputSync(options.in),
     } as DbQueryOptions<Schema, TCollection>;
   }
 

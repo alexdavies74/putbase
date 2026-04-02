@@ -154,6 +154,9 @@ interface QueryRowLoader<Schema extends DbSchema> {
   getRow<TCollection extends CollectionName<Schema>>(
     row: RowRef<TCollection>,
   ): Promise<RowHandle<Schema, TCollection>>;
+  peekRow?<TCollection extends CollectionName<Schema>>(
+    row: RowRef<TCollection>,
+  ): RowHandle<Schema, TCollection> | null;
 }
 
 export class Query<Schema extends DbSchema> {
@@ -166,6 +169,10 @@ export class Query<Schema extends DbSchema> {
       collection: TCollection,
       options: DbQueryOptions<Schema, TCollection>,
     ) => Promise<DbQueryOptions<Schema, TCollection>>,
+    private readonly resolveOptionsSync?: <TCollection extends CollectionName<Schema>>(
+      collection: TCollection,
+      options: DbQueryOptions<Schema, TCollection>,
+    ) => DbQueryOptions<Schema, TCollection>,
   ) {}
 
   async query<TCollection extends CollectionName<Schema>>(
@@ -185,6 +192,39 @@ export class Query<Schema extends DbSchema> {
     options: DbQueryOptions<Schema, TCollection>,
   ): Promise<Array<RowHandle<Schema, TCollection>> | Array<DbAnonymousProjection<Schema, TCollection>>> {
     return this.runQuery(collection, options);
+  }
+
+  peekQuery<TCollection extends CollectionName<Schema>>(
+    collection: TCollection,
+    options: DbFullQueryOptions<Schema, TCollection>,
+  ): Array<RowHandle<Schema, TCollection>> {
+    const collectionSpec = getCollectionSpec(this.schema, collection);
+    const resolvedOptions = this.resolveOptionsSync
+      ? this.resolveOptionsSync(collection, options)
+      : options;
+    const parentRefs = normalizeParentRefs(resolvedOptions.in);
+    if (parentRefs.length === 0) {
+      throw new Error(
+        (collectionSpec.in ?? []).length === 0
+          ? `Collection ${String(collection)} cannot be queried because queries always require in and this collection has no parent scope.`
+          : `Collection ${String(collection)} query requires in.`,
+      );
+    }
+
+    const keyFields = getCollectionKeyFieldNames(collectionSpec);
+    const orderBy = resolvedOptions.orderBy;
+    validateIndexedQuery(
+      keyFields,
+      resolvedOptions.where as Record<string, JsonValue> | undefined,
+      orderBy,
+    );
+
+    return this.peekFullQuery(collection, parentRefs, {
+      orderBy,
+      order: resolvedOptions.order ?? "asc",
+      limit: Math.max(1, Math.min(200, resolvedOptions.limit ?? 50)),
+      where: resolvedOptions.where as Record<string, JsonValue> | undefined,
+    });
   }
 
   private async runQuery<TCollection extends CollectionName<Schema>>(
@@ -263,6 +303,13 @@ export class Query<Schema extends DbSchema> {
             collection,
             baseUrl: row.baseUrl,
           }, parent);
+        }).map((row) => {
+          this.optimisticStore.recordParent({
+            id: row.rowId,
+            collection,
+            baseUrl: row.baseUrl,
+          }, parent);
+          return row;
         });
       }),
     );
@@ -299,7 +346,14 @@ export class Query<Schema extends DbSchema> {
         id: row.rowId,
         baseUrl: row.baseUrl,
       });
-      return matchesWhere(localFields ?? row.fields, options.where);
+      const hasLocalMaterialization = this.optimisticStore.hasPendingCreate({
+        id: row.rowId,
+        baseUrl: row.baseUrl,
+      }) || this.optimisticStore.getOwner({
+        id: row.rowId,
+        baseUrl: row.baseUrl,
+      }) !== null;
+      return matchesWhere(hasLocalMaterialization ? (localFields ?? row.fields) : row.fields, options.where);
     });
 
     if (options.orderBy) {
@@ -326,6 +380,61 @@ export class Query<Schema extends DbSchema> {
     );
 
     return hydrated;
+  }
+
+  private peekFullQuery<TCollection extends CollectionName<Schema>>(
+    collection: TCollection,
+    parentRefs: RowRef[],
+    options: {
+      orderBy: string | undefined;
+      order: "asc" | "desc";
+      limit: number;
+      where: Record<string, JsonValue> | undefined;
+    },
+  ): Array<RowHandle<Schema, TCollection>> {
+    if (!this.rowLoader.peekRow) {
+      return [];
+    }
+
+    const deduped = new Map<string, DbFullQueryRow>();
+    for (const record of this.optimisticStore.getOptimisticQueryRows(collection, parentRefs)) {
+      const fields = this.optimisticStore.getLogicalFields(record.row);
+      const owner = this.optimisticStore.getOwner(record.row);
+      if (!fields || !owner) {
+        continue;
+      }
+
+      if (!matchesWhere(fields, options.where)) {
+        continue;
+      }
+
+      deduped.set(`${record.row.baseUrl}:${record.row.id}`, {
+        rowId: record.row.id,
+        owner,
+        baseUrl: record.row.baseUrl,
+        collection,
+        fields,
+      });
+    }
+
+    const rows = Array.from(deduped.values());
+    if (options.orderBy) {
+      rows.sort((left, right) => compareQueriedRows(
+        left,
+        right,
+        options.orderBy,
+        options.order,
+      ));
+    }
+
+    return rows
+      .slice(0, options.limit)
+      .map((row) => this.rowLoader.peekRow?.(normalizeRowRef({
+        id: row.rowId,
+        collection,
+        baseUrl: row.baseUrl,
+      })))
+      .filter((row): row is RowHandle<Schema, TCollection> => row !== null);
   }
 
   private async runAnonymousQuery<TCollection extends CollectionName<Schema>>(

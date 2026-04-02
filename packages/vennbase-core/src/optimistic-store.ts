@@ -213,6 +213,11 @@ export class OptimisticStore {
     record.knownParents = [...parents];
   }
 
+  recordParent(row: RowRef, parent: RowRef): void {
+    const record = this.ensureRecord({ row, owner: "", collection: row.collection });
+    record.knownParents = mergeUniqueRows(record.knownParents ?? [], [parent]);
+  }
+
   addParent(row: RowRef, parent: RowRef): void {
     const record = this.ensureRecord({ row, owner: "", collection: row.collection });
     record.pendingParentRemoves = record.pendingParentRemoves.filter((candidate) => !sameRowRef(candidate, parent));

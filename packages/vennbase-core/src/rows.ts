@@ -178,7 +178,12 @@ export class Rows<Schema extends DbSchema> {
   ): Promise<RowHandle<Schema, TCollection>> {
     const rowRef = normalizeRowRef(row);
     const fields = await this.refreshFields(rowRef);
-    const owner = this.optimisticStore.getOwner(rowRef) ?? (await this.rowRuntime.getRow(rowRef)).owner;
+    let owner = this.optimisticStore.getOwner(rowRef);
+    if (!owner) {
+      const snapshot = await this.rowRuntime.getRow(rowRef);
+      owner = snapshot.owner;
+      this.optimisticStore.recordParents(rowRef, snapshot.parentRefs);
+    }
     this.optimisticStore.upsertBaseRow(rowRef, owner, rowRef.collection, fields);
     return this.createRowHandle(rowRef.collection as TCollection, rowRef, owner, fields as RowFields<Schema, TCollection>);
   }

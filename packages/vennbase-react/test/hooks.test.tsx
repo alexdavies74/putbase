@@ -123,6 +123,7 @@ class FakeDb {
     | Promise<{ signedIn: false } | { signedIn: true; user: { username: string } }>
     | null = null;
   queryCalls = 0;
+  peekQueryCalls = 0;
   getRowCalls = 0;
   joinInviteCalls = 0;
   acceptInviteCalls = 0;
@@ -135,6 +136,7 @@ class FakeDb {
   dogName = "Rex";
   inviteDogName = "Buddy";
   queryRows: Array<ReturnType<typeof makeTagRow> | DbAnonymousProjection<TestSchema, "tags">> = [makeTagRow("tag_1", "friendly")];
+  peekQueryRows: Array<ReturnType<typeof makeTagRow> | DbAnonymousProjection<TestSchema, "tags">> | null = null;
   nextQueryError: Error | null = null;
   nextQueryPromise: Promise<typeof this.queryRows> | null = null;
   activitySubscriber: (() => void) | null = null;
@@ -215,6 +217,11 @@ class FakeDb {
       throw error;
     }
     return this.queryRows;
+  }
+
+  peekQuery(): typeof this.queryRows {
+    this.peekQueryCalls += 1;
+    return this.peekQueryRows ?? this.queryRows;
   }
 
   async getRow(row?: RowRef): Promise<ReturnType<typeof makeDogRow>> {
@@ -1227,6 +1234,46 @@ describe("@vennbase/react", () => {
 
     expect(db.queryCalls).toBe(2);
     expect(app.container.textContent).toContain("friendly,sleepy");
+    await app.unmount();
+  });
+
+  it("applies synchronous peek results before the background refresh resolves", async () => {
+    const db = new FakeDb();
+    const queryOptions = {
+      in: dogRef(),
+      orderBy: "createdAt" as const,
+      order: "asc" as const,
+      limit: 100,
+    };
+    const refreshQuery = deferred<typeof db.queryRows>();
+    let latest: ReturnType<typeof useQuery<TestSchema, "tags">> | null = null;
+
+    function Probe() {
+      latest = useQuery(db as unknown as Vennbase<TestSchema>, "tags", queryOptions);
+      return <div>{(latest.rows ?? []).map((row) => row.fields.label).join(",")}</div>;
+    }
+
+    const app = await renderApp(<Probe />);
+
+    db.peekQueryRows = [makeTagRow("tag_1", "friendly"), makeTagRow("tag_2", "sleepy")];
+    db.nextQueryPromise = refreshQuery.promise;
+
+    await act(async () => {
+      db.emitLocalMutation();
+    });
+
+    expect(db.peekQueryCalls).toBe(1);
+    expect(db.queryCalls).toBe(2);
+    expect(latest?.rows?.map((row) => row.fields.label)).toEqual(["friendly", "sleepy"]);
+    expect(latest?.isRefreshing).toBe(true);
+
+    await act(async () => {
+      refreshQuery.resolve(db.peekQueryRows!);
+      await flushMicrotasks();
+    });
+
+    expect(latest?.rows?.map((row) => row.fields.label)).toEqual(["friendly", "sleepy"]);
+    expect(latest?.isRefreshing).toBe(false);
     await app.unmount();
   });
 

@@ -526,6 +526,7 @@ export function useQuery<
   const session = useSessionResource(runtime, hookOptions.enabled ?? true);
   const resourceKey = options ? makeQueryKey(collection, options) : null;
   const blocked = blockedResourceResult<Array<RowHandle<Schema, TCollection> | DbAnonymousProjection<Schema, TCollection>>>(session);
+  const isFullQuery = options?.select !== "anonymous";
   const resource = useOptionalResource(
     (hookOptions.enabled ?? true) && !!options && !blocked,
     resourceKey,
@@ -537,6 +538,12 @@ export function useQuery<
         options as DbFullQueryOptions<Schema, TCollection> | DbAnonymousQueryOptions<Schema, TCollection>,
       ) as Promise<Array<RowHandle<Schema, TCollection> | DbAnonymousProjection<Schema, TCollection>>>,
       snapshots.queryRows,
+      isFullQuery
+        ? () => runtime.client.peekQuery(
+            collection,
+            options as DbFullQueryOptions<Schema, TCollection>,
+          ) as Array<RowHandle<Schema, TCollection> | DbAnonymousProjection<Schema, TCollection>>
+        : undefined,
     ),
   );
 

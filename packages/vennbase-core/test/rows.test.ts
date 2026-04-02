@@ -953,6 +953,141 @@ describe("Vennbase rows", () => {
     expect(getRow).not.toHaveBeenCalled();
   });
 
+  it("records remote query membership so later synchronous peeks can reuse cached rows", async () => {
+    const parent = {
+      id: "project_1",
+      collection: "projects",
+      baseUrl: "https://worker.example",
+    } as const;
+    const taskRef = {
+      id: "task_1",
+      collection: "tasks",
+      baseUrl: "https://worker.example",
+    } as const;
+    const transport = {
+      row: vi.fn(() => ({
+        request: vi.fn().mockResolvedValue({
+          rows: [{
+            rowId: taskRef.id,
+            owner: "alice",
+            baseUrl: taskRef.baseUrl,
+            collection: "tasks",
+            fields: { status: "todo" },
+          }],
+        }),
+      })),
+    };
+    const optimisticStore = new OptimisticStore();
+    const getRow = vi.fn(async (row: typeof taskRef) => {
+      optimisticStore.upsertBaseRow(row, "alice", "tasks", {
+        title: "Ship v2",
+        status: "todo",
+      });
+      return {
+        id: row.id,
+        collection: row.collection,
+        owner: "alice",
+        ref: row,
+        fields: {
+          title: "Ship v2",
+          status: "todo",
+        },
+      };
+    });
+    const peekRow = vi.fn((row: typeof taskRef) => {
+      const fields = optimisticStore.getLogicalFields(row);
+      const owner = optimisticStore.getOwner(row);
+      if (!fields || !owner) {
+        return null;
+      }
+      return {
+        id: row.id,
+        collection: row.collection,
+        owner,
+        ref: row,
+        fields,
+      };
+    });
+    const query = new Query(
+      transport as never,
+      { getRow, peekRow } as never,
+      optimisticStore,
+      schema,
+    );
+
+    const initial = await query.query("tasks", { in: parent });
+    expect(initial).toHaveLength(1);
+
+    transport.row.mockClear();
+    getRow.mockClear();
+    optimisticStore.applyOverlay(taskRef, "tasks", { title: "Ship v3" });
+
+    const rows = query.peekQuery("tasks", { in: parent });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].fields.title).toBe("Ship v3");
+    expect(transport.row).not.toHaveBeenCalled();
+    expect(getRow).not.toHaveBeenCalled();
+    expect(peekRow).toHaveBeenCalledWith(taskRef);
+  });
+
+  it("skips unresolved rows during synchronous peeks instead of fetching them", () => {
+    const parent = {
+      id: "project_1",
+      collection: "projects",
+      baseUrl: "https://worker.example",
+    } as const;
+    const taskRef = {
+      id: "task_1",
+      collection: "tasks",
+      baseUrl: "https://worker.example",
+    } as const;
+    const transport = {
+      row: vi.fn(() => ({
+        request: vi.fn(),
+      })),
+    };
+    const optimisticStore = new OptimisticStore();
+    optimisticStore.recordParent(taskRef, parent);
+    const getRow = vi.fn();
+    const peekRow = vi.fn(() => null);
+    const query = new Query(
+      transport as never,
+      { getRow, peekRow } as never,
+      optimisticStore,
+      schema,
+    );
+
+    const rows = query.peekQuery("tasks", { in: parent });
+
+    expect(rows).toEqual([]);
+    expect(transport.row).not.toHaveBeenCalled();
+    expect(getRow).not.toHaveBeenCalled();
+    expect(peekRow).not.toHaveBeenCalled();
+  });
+
+  it("emits one immediate local mutation notification for create and update", async () => {
+    const network = new TestWorkerNetwork();
+    const db = await buildReadyDb({ username: "alice", network });
+    const project = await settle(db.create("projects", { name: "Website" }));
+    const events: number[] = [];
+    const unsubscribe = db.subscribeToLocalMutations(() => {
+      events.push(Date.now());
+    });
+
+    const createReceipt = db.create("tasks", { title: "Ship v2" }, { in: project.ref });
+    expect(events).toHaveLength(1);
+
+    const task = await settle(createReceipt);
+    events.length = 0;
+
+    const updateReceipt = db.update("tasks", task.ref, { title: "Ship v3" });
+    expect(events).toHaveLength(1);
+
+    await settle(updateReceipt);
+    unsubscribe();
+  });
+
   it("watchQuery emits rows end-to-end through Vennbase", async () => {
     const network = new TestWorkerNetwork();
     const db = await buildReadyDb({ username: "alice", network });

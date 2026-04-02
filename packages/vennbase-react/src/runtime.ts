@@ -22,6 +22,7 @@ type MutationSubscribedClient<Schema extends DbSchema> = Vennbase<Schema> & {
   subscribeToLocalMutations?: (listener: () => void) => (() => void) | void;
 };
 
+
 const browserActivitySubscriber: ActivitySubscriber = (notify) => {
   return subscribeToBrowserActivity(notify) ?? undefined;
 };
@@ -65,6 +66,7 @@ interface ResourceOptions<TData> {
   load: () => Promise<TData>;
   live: boolean;
   snapshotOf?: (data: TData) => string;
+  peek?: () => TData;
 }
 
 const idleSnapshot: ResourceSnapshot<never> = {
@@ -275,6 +277,29 @@ class Resource<TData> implements ResourceController<TData> {
     await this.runLoad({ markActivity: false, isRefresh: true });
   };
 
+  applyPeek = (): void => {
+    if (!this.options.peek || this.snapshot.status !== "success") {
+      return;
+    }
+
+    try {
+      const data = this.options.peek();
+      const nextValueSnapshot = this.options.snapshotOf?.(data) ?? snapshotValue(data);
+      if (this.lastValueSnapshot !== nextValueSnapshot) {
+        this.lastValueSnapshot = nextValueSnapshot;
+        this.setSnapshot({
+          data,
+          error: undefined,
+          refreshError: undefined,
+          isRefreshing: true,
+          status: "success",
+        });
+      }
+    } catch {
+      // ignore peek errors — the async refresh will handle failures
+    }
+  };
+
   private start(): void {
     if (this.options.live) {
       this.poller = createAdaptivePoller({
@@ -438,8 +463,9 @@ export class VennbaseReactRuntime<Schema extends DbSchema = DbSchema> {
     key: string,
     load: () => Promise<TData>,
     snapshotOf?: (data: TData) => string,
+    peek?: () => TData,
   ): ResourceController<TData> {
-    return this.getResource(key, { live: true, load, snapshotOf });
+    return this.getResource(key, { live: true, load, snapshotOf, peek });
   }
 
   async refreshLiveResources(): Promise<void> {
@@ -467,6 +493,14 @@ export class VennbaseReactRuntime<Schema extends DbSchema = DbSchema> {
     return resource;
   }
 
+  private applyLocalPeeks(): void {
+    for (const resource of this.resources.values()) {
+      if (resource.live) {
+        resource.applyPeek();
+      }
+    }
+  }
+
   private subscribeToCoreMutations(): ActivitySubscriber | undefined {
     const client = this.client as MutationSubscribedClient<Schema>;
     if (typeof client.subscribeToLocalMutations !== "function") {
@@ -475,6 +509,7 @@ export class VennbaseReactRuntime<Schema extends DbSchema = DbSchema> {
 
     return (notify) => client.subscribeToLocalMutations?.(() => {
       notify();
+      this.applyLocalPeeks();
       void this.refreshLiveResources();
     });
   }
