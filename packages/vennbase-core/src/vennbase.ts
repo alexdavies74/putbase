@@ -1,4 +1,5 @@
 import { AuthManager } from "./auth.js";
+import { SavedRowCollectionMismatchError } from "./errors.js";
 import { Identity } from "./identity.js";
 import { Invites } from "./invites.js";
 import { Members } from "./members.js";
@@ -180,14 +181,21 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
     this.notifyLocalMutation();
   }
 
-  async openSavedRow(rowKey: string): Promise<AnyRowHandle<Schema> | null> {
+  async openSavedRow<TCollection extends CollectionName<Schema>>(
+    rowKey: string,
+    collection: TCollection,
+  ): Promise<RowHandle<Schema, TCollection> | null> {
     await this.identity.whoAmI();
     const savedRow = await loadSavedRow(resolveBackend(this.options.backend), rowKey);
     if (!savedRow) {
       return null;
     }
 
-    return this.getRow(savedRow as RowRef<CollectionName<Schema>>);
+    if (savedRow.collection !== collection) {
+      throw new SavedRowCollectionMismatchError(rowKey, collection, savedRow.collection);
+    }
+
+    return this.getRow(savedRow as RowRef<TCollection>);
   }
 
   async clearSavedRow(rowKey: string): Promise<void> {

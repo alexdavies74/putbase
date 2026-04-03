@@ -356,7 +356,7 @@ pnpm --filter appointment-app dev
 | `joinInvite(input)` | Idempotently join a row via invite URL or parsed invite object without opening it, and return `{ ref, role }`. |
 | `acceptInvite(input)` | Join a readable invite and return its handle. Use it for `"editor"`, `"contributor"`, or `"viewer"` invites; `"submitter"` invites should use `joinInvite(...)`. |
 | `saveRow(key, row)` | Persist one current row for the signed-in user under your app-defined key. |
-| `openSavedRow(key)` | Re-open the saved row for the signed-in user, or `null`. |
+| `openSavedRow(key, collection)` | Re-open the saved row for the signed-in user as the expected collection, or `null`. Throws if the stored row belongs to a different collection. |
 | `clearSavedRow(key)` | Remove the saved row for the signed-in user. |
 | `listMembers(row)` | Returns `string[]` of all member usernames. |
 | `listDirectMembers(row)` | Returns `{ username, role }[]` for direct members. |

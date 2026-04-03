@@ -2,7 +2,7 @@ export { Vennbase } from "./vennbase.js";
 export { VennbaseInspector } from "./inspector.js";
 export { RowHandle } from "./row-handle.js";
 export type { AnyRowHandle } from "./row-handle.js";
-export { VennbaseError } from "./errors.js";
+export { SavedRowCollectionMismatchError, VennbaseError } from "./errors.js";
 export { VENNBASE_INVITE_TARGET_PARAM } from "./invites.js";
 export {
   CURRENT_USER,

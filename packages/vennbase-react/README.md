@@ -227,7 +227,10 @@ import { useAcceptInviteFromUrl, useSavedRow } from "@vennbase/react";
 import { db } from "./db";
 
 function AppRoot() {
-  const savedBoard = useSavedRow(db, { key: "current-board" });
+  const savedBoard = useSavedRow(db, {
+    key: "current-board",
+    collection: "boards",
+  });
 
   useAcceptInviteFromUrl(db, {
     onOpen: async (board) => {
@@ -291,7 +294,7 @@ function AddCard({ board }: { board: BoardHandle }) {
 | `useEffectiveMembers(db, row)` | db, row handle or row ref | `{ data: DbMemberInfo[], status, isLoading, isIdle, isSuccess, isError, isRefreshing, error, refreshError, refresh }` |
 | `useShareLink(db, row, role, options?)` | db, row handle or row ref, role `"editor" \| "contributor" \| "viewer" \| "submitter"`, optional `{ enabled }` | `{ shareLink: string, status, isLoading, isIdle, isSuccess, isError, isRefreshing, error, refreshError, refresh }` |
 | `useAcceptInviteFromUrl(db, options?)` | db, `{ enabled?, url?, clearInviteParams?, onOpen?, onResolve? }` | `{ hasInvite, inviteInput, data, status, isLoading, isIdle, isSuccess, isError, isRefreshing, error, refreshError, refresh }` |
-| `useSavedRow(db, options)` | db, `{ key, loadSavedRow?, getRow? }` | `{ row, data, status, isLoading, isIdle, isSuccess, isError, isRefreshing, error, refreshError, refresh, save, clear }` |
+| `useSavedRow(db, options)` | db, `{ key, collection, loadSavedRow?, getRow? }` | `{ row, data, status, isLoading, isIdle, isSuccess, isError, isRefreshing, error, refreshError, refresh, save, clear }` |
 | `useMutation(fn)` | async function | `{ mutate, data, status, error, reset }` |
 
 All data-fetching hooks return `status: "idle" | "loading" | "success" | "error"`. `loading` means there is no usable data yet. Once a hook has usable data, it stays `success` during background reloads and exposes that work through `isRefreshing` / `refreshError`.

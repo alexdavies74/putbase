@@ -191,6 +191,10 @@ void db.createShareLink(project, "submitter");
 void db.joinInvite("https://example.com/?db=%7B%7D");
 void db.listMembers(project);
 void db.saveRow("recent-project", project);
+void db.openSavedRow("recent-project", "projects").then((saved) => {
+  const collection: "projects" | undefined = saved?.collection;
+  void collection;
+});
 void project.members.add("alice", "editor");
 const projectRowRef = toRowRef(project);
 const projectRefStillTyped: RowRef<"projects"> = projectRowRef;

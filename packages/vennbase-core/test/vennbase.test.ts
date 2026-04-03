@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { VennbaseError } from "../src/errors";
+import { SavedRowCollectionMismatchError, VennbaseError } from "../src/errors";
+import { loadSavedRow } from "../src/saved-rows";
 import { Vennbase } from "../src/vennbase";
 import { RowHandle } from "../src/row-handle";
 import { collection, defineSchema, field, isAnonymousProjection, isRowRef, toRowRef } from "../src/schema";
@@ -81,6 +82,15 @@ const MINIMAL_SCHEMA = defineSchema({
     fields: {
       name: field.string().optional(),
     },
+  }),
+});
+
+const MULTI_COLLECTION_SCHEMA = defineSchema({
+  rows: collection({
+    fields: {},
+  }),
+  tags: collection({
+    fields: {},
   }),
 });
 
@@ -386,14 +396,14 @@ describe("Vennbase", () => {
       mutationCalls += 1;
     });
 
-    await expect(db.openSavedRow("current-row")).resolves.toBeNull();
+    await expect(db.openSavedRow("current-row", "rows")).resolves.toBeNull();
 
     await db.saveRow("current-row", {
       id: "row_1",
       collection: "rows",
       baseUrl: "https://worker.example",
     });
-    await expect(db.openSavedRow("current-row")).resolves.toMatchObject({
+    await expect(db.openSavedRow("current-row", "rows")).resolves.toMatchObject({
       id: "row_1",
       ref: {
         id: "row_1",
@@ -403,9 +413,36 @@ describe("Vennbase", () => {
     });
 
     await db.clearSavedRow("current-row");
-    await expect(db.openSavedRow("current-row")).resolves.toBeNull();
+    await expect(db.openSavedRow("current-row", "rows")).resolves.toBeNull();
     expect(mutationCalls).toBe(2);
     unsubscribe();
+  });
+
+  it("surfaces collection mismatches without clearing saved rows", async () => {
+    const kv = new MapKv();
+    const db = new Vennbase({
+      schema: MULTI_COLLECTION_SCHEMA,
+      identityProvider: async () => ({ username: "owner" }),
+      backend: { workers: {}, kv } as BackendClient,
+    });
+
+    await db.saveRow("current-row", {
+      id: "tag_1",
+      collection: "tags",
+      baseUrl: "https://worker.example",
+    });
+
+    await expect(db.openSavedRow("current-row", "rows")).rejects.toMatchObject({
+      name: "SavedRowCollectionMismatchError",
+      key: "current-row",
+      expectedCollection: "rows",
+      actualCollection: "tags",
+    } satisfies Partial<SavedRowCollectionMismatchError>);
+    await expect(loadSavedRow({ workers: {}, kv } as BackendClient, "current-row")).resolves.toEqual({
+      id: "tag_1",
+      collection: "tags",
+      baseUrl: "https://worker.example",
+    });
   });
 
   it("ignores legacy username-prefixed remembered rows", async () => {
@@ -425,7 +462,7 @@ describe("Vennbase", () => {
       backend: { workers: {}, kv } as BackendClient,
     });
 
-    await expect(db.openSavedRow("current-row")).resolves.toBeNull();
+    await expect(db.openSavedRow("current-row", "rows")).resolves.toBeNull();
   });
 
   it("does not persist remembered rows without kv storage", async () => {
@@ -440,7 +477,7 @@ describe("Vennbase", () => {
       baseUrl: "https://worker.example",
     });
 
-    await expect(db.openSavedRow("current-row")).resolves.toBeNull();
+    await expect(db.openSavedRow("current-row", "rows")).resolves.toBeNull();
   });
 
   it("explains how to provide Puter when signIn is called without a backend", async () => {

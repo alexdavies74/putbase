@@ -1,4 +1,4 @@
-import { VENNBASE_INVITE_TARGET_PARAM, isRowRef, toRowRef } from "@vennbase/core";
+import { SavedRowCollectionMismatchError, VENNBASE_INVITE_TARGET_PARAM, isRowRef, toRowRef } from "@vennbase/core";
 import {
   createContext,
   type ReactNode,
@@ -142,11 +142,13 @@ export interface UseAcceptInviteFromUrlResult<
 
 export interface UseSavedRowOptions<
   Schema extends DbSchema,
-  TResult = AnyRowHandle<Schema>,
+  TCollection extends CollectionName<Schema>,
+  TResult = RowHandle<Schema, TCollection>,
 > extends UseHookOptions {
   key: string;
-  loadSavedRow?: (row: AnyRowHandle<Schema>, db: Vennbase<Schema>) => Promise<TResult> | TResult;
-  getRow?: (result: TResult) => RowRef;
+  collection: TCollection;
+  loadSavedRow?: (row: RowHandle<Schema, NoInfer<TCollection>>, db: Vennbase<Schema>) => Promise<TResult> | TResult;
+  getRow?: (result: TResult) => RowInput<NoInfer<TCollection>>;
 }
 
 export interface UseSavedRowResult<TResult> extends UseResourceResult<TResult | null> {
@@ -322,16 +324,16 @@ function hasRowRef(value: unknown): value is { ref: RowRef } {
     && typeof (candidate.ref as { baseUrl?: unknown }).baseUrl === "string";
 }
 
-function getRowFromResult<TResult>(
+function getRowFromResult<TResult, TCollection extends string>(
   result: TResult,
-  getRow?: (result: TResult) => RowRef,
-): RowRef {
+  getRow?: (result: TResult) => RowInput<TCollection>,
+): RowInput<TCollection> {
   const row = getRow
     ? getRow(result)
     : isRowRef(result)
-      ? result
+      ? result as RowInput<TCollection>
       : hasRowRef(result)
-      ? result.ref
+      ? result.ref as RowInput<TCollection>
       : null;
   if (!row) {
     throw new Error("useSavedRow could not resolve a row. Pass getRow when returning non-row data.");
@@ -1002,10 +1004,11 @@ export function useAcceptInviteFromUrl<
 
 export function useSavedRow<
   Schema extends DbSchema,
-  TResult = AnyRowHandle<Schema>,
+  TCollection extends CollectionName<Schema>,
+  TResult = RowHandle<Schema, TCollection>,
 >(
   db: Vennbase<Schema>,
-  options: UseSavedRowOptions<Schema, TResult>,
+  options: UseSavedRowOptions<Schema, TCollection, TResult>,
 ): UseSavedRowResult<TResult> {
   const runtime = useRuntime(db);
   const session = useSessionResource(runtime, options.enabled ?? true);
@@ -1028,7 +1031,7 @@ export function useSavedRow<
       resourceKey as string,
       async () => {
         try {
-          const savedRow = await runtime.client.openSavedRow(options.key);
+          const savedRow = await runtime.client.openSavedRow(options.key, options.collection);
           if (!savedRow) {
             return null;
           }
@@ -1037,7 +1040,9 @@ export function useSavedRow<
             ? await options.loadSavedRow(savedRow, runtime.client)
             : savedRow as TResult;
         } catch (error) {
-          await runtime.client.clearSavedRow(options.key);
+          if (!(error instanceof SavedRowCollectionMismatchError)) {
+            await runtime.client.clearSavedRow(options.key);
+          }
           throw error;
         }
       },

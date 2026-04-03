@@ -4,6 +4,7 @@ import { act, createElement, useEffect, useState, type ReactElement } from "reac
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  SavedRowCollectionMismatchError,
   VENNBASE_INVITE_TARGET_PARAM,
   RowHandle,
   collection,
@@ -48,6 +49,7 @@ const schema = defineSchema({
 });
 
 type TestSchema = typeof schema;
+type SavedDogHookResult = ReturnType<typeof useSavedRow<TestSchema, "dogs">>;
 
 const backend = {
   addParent: async () => undefined,
@@ -348,11 +350,15 @@ class FakeDb {
     this.emitLocalMutation();
   }
 
-  async openSavedRow(key: string): Promise<ReturnType<typeof makeDogRow> | null> {
+  async openSavedRow(key: string, collection: "dogs" | "tags"): Promise<ReturnType<typeof makeDogRow> | null> {
     this.openSavedRowCalls += 1;
     const remembered = this.rememberedRows.get(`${this.username}:${key}`);
     if (!remembered) {
       return null;
+    }
+
+    if (remembered.collection !== collection) {
+      throw new SavedRowCollectionMismatchError(key, collection, remembered.collection);
     }
 
     if (this.failRememberedOpen) {
@@ -934,6 +940,7 @@ describe("@vennbase/react", () => {
       });
       const savedRow = useSavedRow<TestSchema>(db as unknown as Vennbase<TestSchema>, {
         key: "myStudio",
+        collection: "dogs",
         enabled: signedIn && openedRow === null && !latestInvite.hasInvite,
       });
       const route = !signedIn
@@ -1329,11 +1336,12 @@ describe("@vennbase/react", () => {
     expect(window.location.search).toBe("");
     await inviteApp.unmount();
 
-    let latestSaved: ReturnType<typeof useSavedRow<TestSchema>> | null = null;
+    let latestSaved: SavedDogHookResult | null = null;
 
     function SavedProbe() {
       latestSaved = useSavedRow<TestSchema>(db as unknown as Vennbase<TestSchema>, {
         key: "myDog",
+        collection: "dogs",
       });
       return <div>{latestSaved.row?.fields.name ?? latestSaved.status}</div>;
     }
@@ -1353,11 +1361,12 @@ describe("@vennbase/react", () => {
   it("keeps per-user rows idle while signed out", async () => {
     const db = new FakeDb();
     db.signedIn = false;
-    let latest: ReturnType<typeof useSavedRow<TestSchema>> | null = null;
+    let latest: SavedDogHookResult | null = null;
 
     function Probe() {
       latest = useSavedRow<TestSchema>(db as unknown as Vennbase<TestSchema>, {
         key: "myDog",
+        collection: "dogs",
       });
       return <div>{latest.status}</div>;
     }
@@ -1377,11 +1386,12 @@ describe("@vennbase/react", () => {
     db.rememberedRows.set("alex:myDog", dogRef());
     const session = deferred<{ signedIn: true; user: { username: string } }>();
     db.sessionPromise = session.promise;
-    let latest: ReturnType<typeof useSavedRow<TestSchema>> | null = null;
+    let latest: SavedDogHookResult | null = null;
 
     function Probe() {
       latest = useSavedRow<TestSchema>(db as unknown as Vennbase<TestSchema>, {
         key: "myDog",
+        collection: "dogs",
       });
       return <div>{latest.row?.fields.name ?? latest.status}</div>;
     }
@@ -1408,11 +1418,12 @@ describe("@vennbase/react", () => {
 
   it("remembers and clears per-user rows through the shared saved-row resource", async () => {
     const db = new FakeDb();
-    let latest: ReturnType<typeof useSavedRow<TestSchema>> | null = null;
+    let latest: SavedDogHookResult | null = null;
 
     function Probe() {
       latest = useSavedRow<TestSchema>(db as unknown as Vennbase<TestSchema>, {
         key: "myDog",
+        collection: "dogs",
       });
       return <div>{latest.row?.fields.name ?? "empty"}</div>;
     }
@@ -1453,11 +1464,12 @@ describe("@vennbase/react", () => {
 
   it("updates mounted saved rows after imperative db.saveRow", async () => {
     const db = new FakeDb();
-    let latest: ReturnType<typeof useSavedRow<TestSchema>> | null = null;
+    let latest: SavedDogHookResult | null = null;
 
     function Probe() {
       latest = useSavedRow<TestSchema>(db as unknown as Vennbase<TestSchema>, {
         key: "myDog",
+        collection: "dogs",
       });
       return <div>{latest.data?.fields.name ?? "empty"}</div>;
     }
@@ -1484,11 +1496,12 @@ describe("@vennbase/react", () => {
   it("clears mounted saved rows after imperative db.clearSavedRow", async () => {
     const db = new FakeDb();
     db.rememberedRows.set("alex:myDog", dogRef());
-    let latest: ReturnType<typeof useSavedRow<TestSchema>> | null = null;
+    let latest: SavedDogHookResult | null = null;
 
     function Probe() {
       latest = useSavedRow<TestSchema>(db as unknown as Vennbase<TestSchema>, {
         key: "myDog",
+        collection: "dogs",
       });
       return <div>{latest.data?.fields.name ?? "empty"}</div>;
     }
@@ -1512,11 +1525,12 @@ describe("@vennbase/react", () => {
 
   it("does not pin saved rows to stale hook-local state after a later imperative save", async () => {
     const db = new FakeDb();
-    let latest: ReturnType<typeof useSavedRow<TestSchema>> | null = null;
+    let latest: SavedDogHookResult | null = null;
 
     function Probe() {
       latest = useSavedRow<TestSchema>(db as unknown as Vennbase<TestSchema>, {
         key: "myDog",
+        collection: "dogs",
       });
       return <div>{latest.data?.fields.name ?? "empty"}</div>;
     }
@@ -1552,11 +1566,12 @@ describe("@vennbase/react", () => {
 
   it("batches refresh-only saved-row updates within the same tick", async () => {
     const db = new FakeDb();
-    let latest: ReturnType<typeof useSavedRow<TestSchema>> | null = null;
+    let latest: SavedDogHookResult | null = null;
 
     function Probe() {
       latest = useSavedRow<TestSchema>(db as unknown as Vennbase<TestSchema>, {
         key: "myDog",
+        collection: "dogs",
       });
       return <div>{latest.data?.fields.name ?? "empty"}</div>;
     }
@@ -1588,11 +1603,12 @@ describe("@vennbase/react", () => {
     const db = new FakeDb();
     db.rememberedRows.set("alex:myDog", dogRef());
     db.failRememberedOpen = true;
-    let latest: ReturnType<typeof useSavedRow<TestSchema>> | null = null;
+    let latest: SavedDogHookResult | null = null;
 
     function Probe() {
       latest = useSavedRow<TestSchema>(db as unknown as Vennbase<TestSchema>, {
         key: "myDog",
+        collection: "dogs",
       });
       return <div>{latest.status}</div>;
     }
@@ -1605,6 +1621,67 @@ describe("@vennbase/react", () => {
     });
 
     expect(db.rememberedRows.get("alex:myDog")).toBeUndefined();
+    await app.unmount();
+  });
+
+  it("supports transformed saved-row results with collection-typed loaders", async () => {
+    const db = new FakeDb();
+    db.rememberedRows.set("alex:myDog", dogRef());
+    let latest: ReturnType<typeof useSavedRow<TestSchema, "dogs", { dog: ReturnType<typeof makeDogRow>; summary: string }>> | null = null;
+
+    function Probe() {
+      latest = useSavedRow<TestSchema, "dogs", { dog: ReturnType<typeof makeDogRow>; summary: string }>(
+        db as unknown as Vennbase<TestSchema>,
+        {
+          key: "myDog",
+          collection: "dogs",
+          loadSavedRow: (row) => ({
+            dog: row,
+            summary: row.fields.name,
+          }),
+          getRow: (result) => result.dog,
+        },
+      );
+      return <div>{latest.row?.summary ?? latest.status}</div>;
+    }
+
+    const app = await renderApp(<Probe />);
+
+    await waitFor(() => {
+      expect(latest?.status).toBe("success");
+      expect(latest?.row?.summary).toBe("Rex");
+      expect(latest?.row?.dog.fields.name).toBe("Rex");
+    });
+
+    await app.unmount();
+  });
+
+  it("preserves saved rows when the stored collection mismatches", async () => {
+    const db = new FakeDb();
+    db.rememberedRows.set("alex:myDog", tagRef("tag_1"));
+    let latest: SavedDogHookResult | null = null;
+
+    function Probe() {
+      latest = useSavedRow<TestSchema>(db as unknown as Vennbase<TestSchema>, {
+        key: "myDog",
+        collection: "dogs",
+      });
+      return <div>{latest.status}</div>;
+    }
+
+    const app = await renderApp(<Probe />);
+
+    await waitFor(() => {
+      expect(latest?.status).toBe("error");
+      expect(latest?.error).toBeInstanceOf(SavedRowCollectionMismatchError);
+    });
+
+    const mismatch = latest?.error as SavedRowCollectionMismatchError;
+    expect(mismatch.key).toBe("myDog");
+    expect(mismatch.expectedCollection).toBe("dogs");
+    expect(mismatch.actualCollection).toBe("tags");
+    expect(db.rememberedRows.get("alex:myDog")).toEqual(tagRef("tag_1"));
+    expect(db.getRowCalls).toBe(0);
     await app.unmount();
   });
 

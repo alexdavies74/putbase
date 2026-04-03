@@ -43,7 +43,7 @@ type TagHandle = RowHandle<TestSchema, "tags">;
 
 type DogResult = ReturnType<typeof useRow<TestSchema, "dogs">>;
 type TagRows = ReturnType<typeof useQuery<TestSchema, "tags">>["rows"];
-type SavedDogResult = ReturnType<typeof useSavedRow<TestSchema>>;
+type SavedDogResult = ReturnType<typeof useSavedRow<TestSchema, "dogs">>;
 type CurrentUserResult = ReturnType<typeof useCurrentUser<TestSchema>>;
 type InviteResult = ReturnType<typeof useAcceptInviteFromUrl<TestSchema>>["data"];
 
@@ -62,8 +62,21 @@ const maybeDogHandle: DogHandle | undefined = dogResult.data;
 const maybeDogHandleFromAlias: DogHandle | undefined = dogResult.row;
 const fallbackTagRows: TagHandle[] = tagRows ?? [];
 const maybeTagHandle: TagHandle | undefined = tagRows?.[0];
-const maybeSavedDogHandle: AnyRowHandle<TestSchema> | null | undefined = savedDogResult.row;
+const maybeSavedDogHandle: DogHandle | null | undefined = savedDogResult.row;
 const maybeCurrentUser: { username: string } | undefined = currentUserResult.user;
+const savedDog = useSavedRow(anyClient, {
+  key: "current-dog",
+  collection: "dogs",
+});
+const savedDogSummary = useSavedRow(anyClient, {
+  key: "current-dog-summary",
+  collection: "dogs",
+  loadSavedRow: (row) => ({
+    dog: row,
+    id: row.id,
+  }),
+  getRow: (result) => result.dog,
+});
 const projectedTags = useQuery(anyClient, "tags", {
   in: dogHandle,
   select: "anonymous",
@@ -90,6 +103,8 @@ const recentDog: RowHandle<TestSchema, "recentDogs"> | undefined = recentDogs.ro
 const recentDogFromOptions: DbQueryRow<TestSchema, "recentDogs"> | undefined = recentDogsFromOptions.rows?.[0];
 const dogName: string = dogHandle.fields.name;
 const projectedCreatedAt: number | undefined = projectedTag?.fields.createdAt;
+const maybeSavedDogName: string | undefined = savedDog.row?.fields.name;
+const maybeSavedDogSummaryName: string | undefined = savedDogSummary.row?.dog.fields.name;
 
 function useTypedQuery<
   TCollection extends keyof TestSchema & string,
@@ -118,6 +133,10 @@ void genericProjectedTag;
 void genericRecentDog;
 void dogName;
 void projectedCreatedAt;
+void savedDog;
+void savedDogSummary;
+void maybeSavedDogName;
+void maybeSavedDogSummaryName;
 
 // @ts-expect-error queries always require an explicit in option
 void useQuery(anyClient, "recentDogs", {
@@ -154,6 +173,27 @@ if (anyRowHandle.collection === "dogs") {
   const narrowedDogName: string = narrowedDogHandle.fields.name;
   void narrowedDogName;
 }
+
+useSavedRow(anyClient, {
+  key: "current-dog-via-ref",
+  collection: "dogs",
+  getRow: (row) => row.ref,
+});
+
+useSavedRow(anyClient, {
+  key: "bad-dog-transform",
+  collection: "dogs",
+  // @ts-expect-error dogs should narrow before custom transforms
+  loadSavedRow: (row) => row.fields.label,
+});
+
+useSavedRow<TestSchema, "dogs", { row: DogHandle }>(anyClient, {
+  key: "bad-dog-row",
+  collection: "dogs",
+  loadSavedRow: (row) => ({ row }),
+  // @ts-expect-error getRow must stay within the selected collection
+  getRow: () => tagRef,
+});
 
 const firstTag = tagRows?.[0];
 

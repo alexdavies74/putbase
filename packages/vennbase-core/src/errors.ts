@@ -14,6 +14,20 @@ export class VennbaseError extends Error {
   }
 }
 
+export class SavedRowCollectionMismatchError extends Error {
+  readonly key: string;
+  readonly expectedCollection: string;
+  readonly actualCollection: string;
+
+  constructor(key: string, expectedCollection: string, actualCollection: string) {
+    super(`Saved row "${key}" points to "${actualCollection}", expected "${expectedCollection}".`);
+    this.name = "SavedRowCollectionMismatchError";
+    this.key = key;
+    this.expectedCollection = expectedCollection;
+    this.actualCollection = actualCollection;
+  }
+}
+
 export function signedOutError(message = "Not signed in. Call signIn() first."): VennbaseError {
   return new VennbaseError({
     code: "SIGNED_OUT",
