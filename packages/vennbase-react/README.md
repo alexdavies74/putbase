@@ -364,7 +364,7 @@ function useRow<
 ```
 
 - `row: null | undefined` keeps the hook idle.
-- `row` can be either a `RowHandle` or `RowRef`.
+- `row` can be either a `RowHandle` or a `RowRef<"boards">`-style ref. `RowRef` only takes the collection name generic.
 - `useRow` polls for changes and re-renders automatically. In React, prefer it over manual polling around `db.getRow(...)`.
 - The returned handle matches `db.getRow(...)`, including parent collection constraints.
 - Use `row` as the primary payload field and `isLoading` for the common loading check.
@@ -375,6 +375,7 @@ function useRow<
 function useShareLink<Schema extends DbSchema>(
   db: Vennbase<Schema>,
   row: RowInput | null | undefined,
+  role: "editor" | "contributor" | "viewer" | "submitter",
   options?: UseHookOptions,
 ): {
   shareLink: string | undefined;
