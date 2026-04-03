@@ -264,7 +264,7 @@ const joined = await db.joinInvite(submissionLink);
 
 `joinInvite` is idempotent, so call it whenever you need it.
 
-`"submitter"` members can create child rows under the shared parent and can run `db.query(..., { select: "indexKeys" })` to see only index-key projections from sibling rows. Index-key projections expose `kind`, `id`, `collection`, and index-key-only `fields`; they do not include row refs, base URLs, owners, or other locator metadata. Submitters still cannot read the parent row, fetch full sibling rows, inspect members, or use sync. Apps that need a submitter to revisit their own submissions should persist the created child refs separately.
+`"submitter"` members can create child rows under the shared parent and can run `db.query(..., { select: "indexKeys" })` to see only index-key projections from sibling rows. Index-key projections expose `kind`, `id`, `collection`, and index-key-only `fields`; they do not include row refs, base URLs, owners, or other locator metadata. Submitters still cannot read the parent row, fetch full sibling rows, inspect members, or use sync. Child rows they own are still their own rows, so if they persist a child `RowRef` somewhere readable, they can reopen that row later and update it or remove its shared parent link for cancel/edit flows.
 
 ---
 
@@ -363,7 +363,7 @@ pnpm --filter appointment-app dev
 | `listMembers(row)` | Returns `string[]` of all member usernames. |
 | `listDirectMembers(row)` | Returns `{ username, role }[]` for direct members. |
 | `listEffectiveMembers(row)` | Returns resolved membership including grants inherited from parents. |
-| `addMember(row, username, role)` | Grant a user access and return a `MutationReceipt<void>`. Roles: `"editor"`, `"contributor"`, `"viewer"`, and `"submitter"`. `"editor"` can update fields, manage members, manage parents, and send CRDT messages; `"contributor"` can read the row and submit only rows they own under it; `"viewer"` is read-only; `"submitter"` is write-only for child creation under the shared parent. Inherited `"contributor"` access becomes `"viewer"` on descendants. |
+| `addMember(row, username, role)` | Grant a user access and return a `MutationReceipt<void>`. Roles: `"editor"`, `"contributor"`, `"viewer"`, and `"submitter"`. `"editor"` can update fields, manage members, manage parents, and send CRDT messages; `"contributor"` can read the row and submit only rows they own under it; `"viewer"` is read-only; `"submitter"` is can add children under this parent, and may run only `select: "indexKeys"` queries there. Inherited `"contributor"` access becomes `"viewer"` on descendants. |
 | `removeMember(row, username)` | Revoke a user's access and return a `MutationReceipt<void>`. |
 | `addParent(child, parent)` | Link a row to an additional parent after creation and return a `MutationReceipt<void>`. |
 | `removeParent(child, parent)` | Unlink a row from a parent and return a `MutationReceipt<void>`. |

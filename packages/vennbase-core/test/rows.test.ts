@@ -555,6 +555,17 @@ describe("Vennbase rows", () => {
       status: 401,
     });
 
+    const reopened = await bobDb.getRow(task.ref);
+    expect(reopened.fields.status).toBe("todo");
+
+    await bobDb.update("tasks", reopened.ref, { status: "done" }).committed;
+    const updated = await bobDb.getRow(task.ref);
+    expect(updated.fields.status).toBe("done");
+
+    await updated.in.remove(joined.ref).committed;
+    const parentsAfterRemoval = await updated.in.list();
+    expect(parentsAfterRemoval).not.toEqual(expect.arrayContaining([project.ref]));
+
     const memberRole = await bobDb.getRow(task.ref).then((row) => row.members.effective());
     expect(memberRole).not.toEqual(expect.arrayContaining([
       expect.objectContaining({

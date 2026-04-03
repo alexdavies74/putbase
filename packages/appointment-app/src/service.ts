@@ -458,6 +458,8 @@ export class AppointmentService {
 
     const scheduleRef = toRowRef(args.schedule);
     const bookingRef = toRowRef(booking);
+    // Submitters cannot later rediscover full booking rows from the blind inbox,
+    // so each customer keeps their own readable pointer for cancel/status flows.
     await this.db.create("savedBookings", {
       scheduleRef,
       bookingRef,

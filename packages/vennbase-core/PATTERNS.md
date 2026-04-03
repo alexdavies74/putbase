@@ -45,6 +45,30 @@ async ensureBookingRootAccess(schedule: ScheduleHandle): Promise<BookingRootRef>
 
 The customer never holds a viewer link to `bookingRoots` itself, so they cannot read the parent row, inspect its members, or see other customers' full booking records.
 
+That has an important consequence: a blind inbox lets a submitter **create** child rows, but not later rediscover them as full rows from the inbox itself. If the app needs self-cancel, self-edit, or "show me my booking" flows, write a second private record the submitter owns at creation time:
+
+```ts
+const bookingWrite = await this.db.create("bookings", {
+  slotStartMs: args.slotStartMs,
+  slotEndMs: args.slotEndMs,
+  claimedAtMs: Date.now(),
+}, {
+  in: args.bookingRootRef,
+}).committed;
+
+await this.db.create("savedBookings", {
+  scheduleRef: toRowRef(args.schedule),
+  bookingRef: toRowRef(bookingWrite),
+  status: "active",
+  slotStartMs: args.slotStartMs,
+  slotEndMs: args.slotEndMs,
+}, {
+  in: CURRENT_USER,
+}).committed;
+```
+
+Later, the app reopens the shared booking through that private `bookingRef` and cancels it by removing the parent link. The blind inbox stays blind; the submitter's private record is what makes revisit flows possible.
+
 ---
 
 ## Pattern 2: Index-key sibling visibility with `select: "indexKeys"`
@@ -116,7 +140,7 @@ The app wires all three together into a single access-control surface the owner 
 1. **Owner creates a schedule.** During creation, a hidden `bookingRoots` row is created and its submitter link is stored in `schedule.fields.bookingSubmitterLink`.
 2. **Owner shares the schedule** using a viewer share link. Customers open it.
 3. **Customer joins the inbox** — Pattern 1. `ensureBookingRootAccess` calls `joinInvite` on the embedded link, returning a `BookingRootRef` with submitter access.
-4. **Customer creates a claim** under the `BookingRootRef`. No preflight race check is needed.
+4. **Customer creates a claim** under the `BookingRootRef` and immediately stores its `bookingRef` in a private user-scoped row. No preflight race check is needed.
 5. **Customer queries visible claims** — Patterns 2 and 3. `select: "indexKeys"` returns index-key projections with `fields: { slotStartMs, slotEndMs, claimedAtMs }` from sibling bookings. Clients apply a fixed cooloff window and the `(claimedAtMs, id)` tiebreak to decide which claim is active.
 6. **Owner and customers converge** on the same active booking from the same visible rows. Only the owner (with full access) can read the complete booking records.
 
