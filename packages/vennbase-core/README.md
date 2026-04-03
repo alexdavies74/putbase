@@ -200,7 +200,7 @@ const cards = await db.query("cards", {
 ```tsx
 import { useQuery } from "@vennbase/react";
 
-const { rows: cards = [], status } = useQuery(db, "cards", {
+const { rows: cards = [], isLoading } = useQuery(db, "cards", {
   in: board,
   orderBy: "createdAt",
   order: "asc",

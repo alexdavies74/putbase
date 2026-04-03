@@ -608,13 +608,16 @@ describe("@vennbase/react", () => {
 
     function Probe() {
       latest = useCurrentUser<TestSchema>(db as unknown as Vennbase<TestSchema>);
-      return <div>{latest.data?.username ?? latest.status}</div>;
+      return <div>{latest.user?.username ?? latest.status}</div>;
     }
 
     const app = await renderApp(<Probe />);
 
     expect(latest?.status).toBe("success");
+    expect(latest?.isSuccess).toBe(true);
+    expect(latest?.isLoading).toBe(false);
     expect(latest?.data).toEqual({ username: "alex" });
+    expect(latest?.user).toEqual({ username: "alex" });
     expect(latest?.isRefreshing).toBe(false);
     expect(latest?.refreshError).toBeUndefined();
 
@@ -625,6 +628,7 @@ describe("@vennbase/react", () => {
     });
 
     expect(latest?.data).toEqual({ username: "sam" });
+    expect(latest?.user).toEqual({ username: "sam" });
     expect(latest?.isRefreshing).toBe(false);
     expect(latest?.refreshError).toBeUndefined();
     await app.unmount();
@@ -643,6 +647,7 @@ describe("@vennbase/react", () => {
     const app = await renderApp(<Probe />);
 
     expect(latest?.status).toBe("error");
+    expect(latest?.isError).toBe(true);
     expect(latest?.error).toBeInstanceOf(Error);
     expect(latest?.refreshError).toBeUndefined();
     expect(latest?.isRefreshing).toBe(false);
@@ -684,13 +689,14 @@ describe("@vennbase/react", () => {
     function Probe() {
       latestSession = useSession<TestSchema>(db as unknown as Vennbase<TestSchema>);
       latestUser = useCurrentUser<TestSchema>(db as unknown as Vennbase<TestSchema>);
-      return <div>{latestUser.data?.username ?? latestSession.status}</div>;
+      return <div>{latestUser.user?.username ?? latestSession.status}</div>;
     }
 
     const app = await renderApp(<Probe />);
 
     expect(latestSession?.session).toEqual({ signedIn: false });
     expect(latestUser?.status).toBe("idle");
+    expect(latestUser?.isIdle).toBe(true);
 
     await act(async () => {
       await db.signIn();
@@ -699,7 +705,7 @@ describe("@vennbase/react", () => {
 
     await waitFor(() => {
       expect(latestSession?.session).toEqual({ signedIn: true, user: { username: "alex" } });
-      expect(latestUser?.data?.username).toBe("alex");
+      expect(latestUser?.user?.username).toBe("alex");
     });
     await app.unmount();
   });
@@ -718,6 +724,7 @@ describe("@vennbase/react", () => {
     const app = await renderApp(<Probe />);
 
     expect(latest?.status).toBe("loading");
+    expect(latest?.isLoading).toBe(true);
     expect(latest?.session).toBeUndefined();
 
     await act(async () => {
@@ -726,6 +733,7 @@ describe("@vennbase/react", () => {
     });
 
     expect(latest?.status).toBe("success");
+    expect(latest?.isSuccess).toBe(true);
     expect(latest?.session).toEqual({ signedIn: true, user: { username: "alex" } });
     await app.unmount();
   });
@@ -1189,14 +1197,16 @@ describe("@vennbase/react", () => {
       latestSaved = useSavedRow<TestSchema>(db as unknown as Vennbase<TestSchema>, {
         key: "myDog",
       });
-      return <div>{latestSaved.data?.fields.name ?? latestSaved.status}</div>;
+      return <div>{latestSaved.row?.fields.name ?? latestSaved.status}</div>;
     }
 
     const savedApp = await renderApp(<SavedProbe />);
 
     await waitFor(() => {
       expect(latestSaved?.status).toBe("success");
+      expect(latestSaved?.isSuccess).toBe(true);
       expect(latestSaved?.data?.fields.name).toBe("Rex");
+      expect(latestSaved?.row?.fields.name).toBe("Rex");
     });
 
     await savedApp.unmount();
@@ -1217,6 +1227,8 @@ describe("@vennbase/react", () => {
     const app = await renderApp(<Probe />);
 
     expect(latest?.status).toBe("idle");
+    expect(latest?.isIdle).toBe(true);
+    expect(latest?.row).toBeUndefined();
     expect(db.getRowCalls).toBe(0);
     expect(db.acceptInviteCalls).toBe(0);
     await app.unmount();
@@ -1233,12 +1245,13 @@ describe("@vennbase/react", () => {
       latest = useSavedRow<TestSchema>(db as unknown as Vennbase<TestSchema>, {
         key: "myDog",
       });
-      return <div>{latest.data?.fields.name ?? latest.status}</div>;
+      return <div>{latest.row?.fields.name ?? latest.status}</div>;
     }
 
     const app = await renderApp(<Probe />);
 
     expect(latest?.status).toBe("loading");
+    expect(latest?.isLoading).toBe(true);
     expect(db.getRowCalls).toBe(0);
 
     await act(async () => {
@@ -1249,6 +1262,7 @@ describe("@vennbase/react", () => {
 
     expect(latest?.status).toBe("success");
     expect(latest?.data?.fields.name).toBe("Rex");
+    expect(latest?.row?.fields.name).toBe("Rex");
     expect(db.getRowCalls).toBe(1);
     expect(db.lastOpenedRow).toEqual(dogRef());
     await app.unmount();
@@ -1262,7 +1276,7 @@ describe("@vennbase/react", () => {
       latest = useSavedRow<TestSchema>(db as unknown as Vennbase<TestSchema>, {
         key: "myDog",
       });
-      return <div>{latest.data?.fields.name ?? "empty"}</div>;
+      return <div>{latest.row?.fields.name ?? "empty"}</div>;
     }
 
     const app = await renderApp(<Probe />);
@@ -1270,6 +1284,7 @@ describe("@vennbase/react", () => {
     await waitFor(() => {
       expect(latest?.status).toBe("success");
       expect(latest?.data).toBeNull();
+      expect(latest?.row).toBeNull();
     });
 
     await act(async () => {
@@ -1279,6 +1294,7 @@ describe("@vennbase/react", () => {
 
     await waitFor(() => {
       expect(latest?.data?.fields.name).toBe("Rex");
+      expect(latest?.row?.fields.name).toBe("Rex");
     });
     expect(db.rememberedRows.get("alex:myDog")).toEqual(dogRef());
     expect(db.openSavedRowCalls).toBeGreaterThan(1);
@@ -1291,6 +1307,7 @@ describe("@vennbase/react", () => {
 
     await waitFor(() => {
       expect(latest?.data).toBeNull();
+      expect(latest?.row).toBeNull();
     });
     expect(db.rememberedRows.get("alex:myDog")).toBeUndefined();
     await app.unmount();
@@ -1682,6 +1699,7 @@ describe("@vennbase/react", () => {
     const app = await renderApp(<Probe />);
 
     expect(latest?.status).toBe("loading");
+    expect(latest?.isLoading).toBe(true);
     expect(latest?.rows).toBeUndefined();
     expect(latest?.isRefreshing).toBe(false);
     expect(latest?.refreshError).toBeUndefined();
@@ -1692,6 +1710,8 @@ describe("@vennbase/react", () => {
     });
 
     expect(latest?.status).toBe("success");
+    expect(latest?.isSuccess).toBe(true);
+    expect(latest?.isLoading).toBe(false);
     expect(latest?.rows?.map((row) => row.fields.label)).toEqual(["friendly", "sleepy"]);
     expect(latest?.isRefreshing).toBe(false);
     expect(latest?.refreshError).toBeUndefined();
@@ -1831,12 +1851,13 @@ describe("@vennbase/react", () => {
 
     function Probe() {
       latest = useRow(db as unknown as Vennbase<TestSchema>, rowRef);
-      return <div>{latest.data?.fields.name ?? latest.status}</div>;
+      return <div>{latest.row?.fields.name ?? latest.status}</div>;
     }
 
     const app = await renderApp(<Probe />);
 
     expect(latest?.data?.fields.name).toBe("Rex");
+    expect(latest?.row?.fields.name).toBe("Rex");
 
     db.dogName = "Max";
     await act(async () => {
@@ -1845,6 +1866,7 @@ describe("@vennbase/react", () => {
     });
 
     expect(latest?.data?.fields.name).toBe("Max");
+    expect(latest?.row?.fields.name).toBe("Max");
     await app.unmount();
   });
 
@@ -1854,8 +1876,8 @@ describe("@vennbase/react", () => {
     let second: ReturnType<typeof makeDogRow> | undefined;
 
     function Probe() {
-      first = useRow<TestSchema, "dogs">(db as unknown as Vennbase<TestSchema>, dogRef()).data;
-      second = useRow<TestSchema, "dogs">(db as unknown as Vennbase<TestSchema>, dogRef()).data;
+      first = useRow<TestSchema, "dogs">(db as unknown as Vennbase<TestSchema>, dogRef()).row;
+      second = useRow<TestSchema, "dogs">(db as unknown as Vennbase<TestSchema>, dogRef()).row;
       return null;
     }
 
@@ -1873,18 +1895,18 @@ describe("@vennbase/react", () => {
 
     function Probe() {
       latest = useRow<TestSchema, "dogs">(db as unknown as Vennbase<TestSchema>, dogRef());
-      return <div>{latest.data?.fields.name ?? latest.status}</div>;
+      return <div>{latest.row?.fields.name ?? latest.status}</div>;
     }
 
     const app = await renderApp(<Probe />);
-    const initialHandle = latest?.data;
+    const initialHandle = latest?.row;
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5_000);
       await flushMicrotasks();
     });
 
-    expect(latest?.data).toBe(initialHandle);
+    expect(latest?.row).toBe(initialHandle);
 
     db.dogName = "Max";
     await act(async () => {
@@ -1892,8 +1914,9 @@ describe("@vennbase/react", () => {
       await flushMicrotasks();
     });
 
-    expect(latest?.data).toBe(initialHandle);
+    expect(latest?.row).toBe(initialHandle);
     expect(latest?.data?.fields.name).toBe("Max");
+    expect(latest?.row?.fields.name).toBe("Max");
     await app.unmount();
   });
 

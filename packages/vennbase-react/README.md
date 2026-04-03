@@ -74,11 +74,13 @@ import { useQuery } from "@vennbase/react";
 import { db } from "./db";
 
 function CardList({ board }: { board: BoardHandle }) {
-  const { rows: cards = [], status } = useQuery(db, "cards", {
+  const { rows: cards = [], isLoading } = useQuery(db, "cards", {
     in: board,
     orderBy: "createdAt",
     order: "asc",
   });
+
+  if (isLoading) return <p>Loading…</p>;
 
   return (
     <ul>
@@ -127,9 +129,9 @@ import { db } from "./db";
 import type { RowRef } from "@vennbase/core";
 
 function BoardTitle({ boardRef }: { boardRef: RowRef<"boards"> }) {
-  const { data: board, status } = useRow(db, boardRef);
+  const { row: board, isLoading } = useRow(db, boardRef);
 
-  if (status !== "success" || !board) return <p>Loading…</p>;
+  if (isLoading || !board) return <p>Loading…</p>;
   return <h1>{board.fields.title}</h1>;
 }
 ```
@@ -233,7 +235,7 @@ function AppRoot() {
     },
   });
 
-  return <pre>{savedBoard.data?.id ?? "No saved board yet."}</pre>;
+  return <pre>{savedBoard.row?.id ?? "No saved board yet."}</pre>;
 }
 ```
 
@@ -278,18 +280,18 @@ function AddCard({ board }: { board: BoardHandle }) {
 
 | Hook | Arguments | Returns |
 |------|-----------|---------|
-| `useSession(db)` | `Vennbase` instance | `{ session, status, isRefreshing, error, refreshError, signIn, refresh }` |
-| `useCurrentUser(db)` | `Vennbase` instance | `{ data: VennbaseUser, status, isRefreshing, error, refreshError, refresh }` |
+| `useSession(db)` | `Vennbase` instance | `{ session, status, isLoading, isIdle, isSuccess, isError, isRefreshing, error, refreshError, signIn, refresh }` |
+| `useCurrentUser(db)` | `Vennbase` instance | `{ user, data, status, isLoading, isIdle, isSuccess, isError, isRefreshing, error, refreshError, refresh }` |
 | `useVennbase()` | — | `Vennbase` instance from context |
-| `useQuery(db, collection, options)` | db, collection name, query options with required `in` | `{ rows, data, status, isRefreshing, error, refreshError, refresh }` where `rows` is `RowHandle[]` by default or anonymous projections when `select: "anonymous"` is used |
-| `useRow(db, row)` | db, row handle or row ref | `{ data: RowHandle, status, isRefreshing, error, refreshError, refresh }` |
-| `useParents(db, row)` | db, row handle or row ref | `{ data: RowRef[], status, isRefreshing, error, refreshError, refresh }` |
-| `useMemberUsernames(db, row)` | db, row handle or row ref | `{ data: string[], status, isRefreshing, error, refreshError, refresh }` |
-| `useDirectMembers(db, row)` | db, row handle or row ref | `{ data: { username, role }[], status, isRefreshing, error, refreshError, refresh }` |
-| `useEffectiveMembers(db, row)` | db, row handle or row ref | `{ data: DbMemberInfo[], status, isRefreshing, error, refreshError, refresh }` |
-| `useShareLink(db, row, role, options?)` | db, row handle or row ref, role `"editor" \| "contributor" \| "viewer" \| "submitter"`, optional `{ enabled }` | `{ shareLink: string, status, isRefreshing, error, refreshError, refresh }` |
-| `useAcceptInviteFromUrl(db, options?)` | db, `{ url?, clearInviteParams?, onOpen?, onResolve? }` | `{ hasInvite, inviteInput, data, status, isRefreshing, error, refreshError, refresh }` |
-| `useSavedRow(db, options)` | db, `{ key, loadSavedRow?, getRow? }` | `{ data, status, isRefreshing, error, refreshError, refresh, save, clear }` |
+| `useQuery(db, collection, options)` | db, collection name, query options with required `in` | `{ rows, data, status, isLoading, isIdle, isSuccess, isError, isRefreshing, error, refreshError, refresh }` where `rows` is `RowHandle[]` by default or anonymous projections when `select: "anonymous"` is used |
+| `useRow(db, row)` | db, row handle or row ref | `{ row, data, status, isLoading, isIdle, isSuccess, isError, isRefreshing, error, refreshError, refresh }` |
+| `useParents(db, row)` | db, row handle or row ref | `{ data: RowRef[], status, isLoading, isIdle, isSuccess, isError, isRefreshing, error, refreshError, refresh }` |
+| `useMemberUsernames(db, row)` | db, row handle or row ref | `{ data: string[], status, isLoading, isIdle, isSuccess, isError, isRefreshing, error, refreshError, refresh }` |
+| `useDirectMembers(db, row)` | db, row handle or row ref | `{ data: { username, role }[], status, isLoading, isIdle, isSuccess, isError, isRefreshing, error, refreshError, refresh }` |
+| `useEffectiveMembers(db, row)` | db, row handle or row ref | `{ data: DbMemberInfo[], status, isLoading, isIdle, isSuccess, isError, isRefreshing, error, refreshError, refresh }` |
+| `useShareLink(db, row, role, options?)` | db, row handle or row ref, role `"editor" \| "contributor" \| "viewer" \| "submitter"`, optional `{ enabled }` | `{ shareLink: string, status, isLoading, isIdle, isSuccess, isError, isRefreshing, error, refreshError, refresh }` |
+| `useAcceptInviteFromUrl(db, options?)` | db, `{ url?, clearInviteParams?, onOpen?, onResolve? }` | `{ hasInvite, inviteInput, data, status, isLoading, isIdle, isSuccess, isError, isRefreshing, error, refreshError, refresh }` |
+| `useSavedRow(db, options)` | db, `{ key, loadSavedRow?, getRow? }` | `{ row, data, status, isLoading, isIdle, isSuccess, isError, isRefreshing, error, refreshError, refresh, save, clear }` |
 | `useMutation(fn)` | async function | `{ mutate, data, status, error, reset }` |
 
 All data-fetching hooks return `status: "idle" | "loading" | "success" | "error"`. `loading` means there is no usable data yet. Once a hook has usable data, it stays `success` during background reloads and exposes that work through `isRefreshing` / `refreshError`.
@@ -305,6 +307,10 @@ interface UseResourceResult<TData> {
   data: TData | undefined;
   error: unknown;
   refreshError: unknown;
+  isIdle: boolean;
+  isLoading: boolean;
+  isSuccess: boolean;
+  isError: boolean;
   isRefreshing: boolean;
   status: "idle" | "loading" | "success" | "error";
   refresh(): Promise<void>;
@@ -314,6 +320,8 @@ interface UseQueryResult<TRow> extends UseResourceResult<TRow[]> {
   rows: TRow[] | undefined;
 }
 ```
+
+The named payload field is the primary one when a hook has a natural domain object: `rows` for `useQuery`, `row` for `useRow` / `useSavedRow`, `user` for `useCurrentUser`, `session` for `useSession`, and `shareLink` for `useShareLink`. `data` and `status` are still available when you want generic plumbing.
 
 ### `useQuery`
 
@@ -334,6 +342,7 @@ function useQuery<
 - `options: null | undefined` keeps the hook idle.
 - `rows` is `undefined` until the first usable result arrives.
 - Once a query has succeeded, `rows` stays populated during background refreshes.
+- `isLoading` is the ergonomic loading flag; `status` remains available when you need the full state machine.
 - The row type matches `db.query(...)`, including parent collection constraints.
 
 ### `useRow`
@@ -346,15 +355,16 @@ function useRow<
   db: Vennbase<Schema>,
   row: RowInput<TCollection> | null | undefined,
   hookOptions?: UseHookOptions,
-): UseResourceResult<
-  RowHandle<Schema, TCollection>
->
+): UseResourceResult<RowHandle<Schema, TCollection>> & {
+  row: RowHandle<Schema, TCollection> | undefined;
+}
 ```
 
 - `row: null | undefined` keeps the hook idle.
 - `row` can be either a `RowHandle` or `RowRef`.
 - `useRow` polls for changes and re-renders automatically. In React, prefer it over manual polling around `db.getRow(...)`.
 - The returned handle matches `db.getRow(...)`, including parent collection constraints.
+- Use `row` as the primary payload field and `isLoading` for the common loading check.
 
 ### `useShareLink`
 

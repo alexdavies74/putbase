@@ -13,7 +13,7 @@ import {
   type RowRef,
 } from "@vennbase/core";
 
-import { useAcceptInviteFromUrl, useShareLink, useQuery, useRow } from "./index.js";
+import { useAcceptInviteFromUrl, useCurrentUser, useSavedRow, useShareLink, useQuery, useRow } from "./index.js";
 
 const schema = defineSchema({
   dogs: collection({
@@ -43,20 +43,27 @@ type TagHandle = RowHandle<TestSchema, "tags">;
 
 type DogResult = ReturnType<typeof useRow<TestSchema, "dogs">>;
 type TagRows = ReturnType<typeof useQuery<TestSchema, "tags">>["rows"];
+type SavedDogResult = ReturnType<typeof useSavedRow<TestSchema>>;
+type CurrentUserResult = ReturnType<typeof useCurrentUser<TestSchema>>;
 type InviteResult = ReturnType<typeof useAcceptInviteFromUrl<TestSchema>>["data"];
 
 declare const dogResult: DogResult;
 declare const tagRows: TagRows;
+declare const savedDogResult: SavedDogResult;
 declare const dogHandle: DogHandle;
 declare const anyRowHandle: AnyRowHandle<TestSchema>;
 declare const tagRef: RowRef<"tags">;
 declare const anyClient: Vennbase<TestSchema>;
+declare const currentUserResult: CurrentUserResult;
 declare const inviteResult: InviteResult;
 
 const maybeAnyRowHandle: AnyRowHandle<TestSchema> | undefined = dogResult.data;
 const maybeDogHandle: DogHandle | undefined = dogResult.data;
+const maybeDogHandleFromAlias: DogHandle | undefined = dogResult.row;
 const fallbackTagRows: TagHandle[] = tagRows ?? [];
 const maybeTagHandle: TagHandle | undefined = tagRows?.[0];
+const maybeSavedDogHandle: AnyRowHandle<TestSchema> | null | undefined = savedDogResult.row;
+const maybeCurrentUser: { username: string } | undefined = currentUserResult.user;
 const projectedTags = useQuery(anyClient, "tags", {
   in: dogHandle,
   select: "anonymous",
@@ -98,7 +105,10 @@ const genericRecentDog: DbQueryRow<TestSchema, "recentDogs"> | undefined =
 
 void maybeAnyRowHandle;
 void maybeDogHandle;
+void maybeDogHandleFromAlias;
 void maybeTagHandle;
+void maybeSavedDogHandle;
+void maybeCurrentUser;
 void fallbackTagRows;
 void projectedTag;
 void projectedTagFromOptions;

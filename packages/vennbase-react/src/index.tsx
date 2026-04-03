@@ -55,6 +55,10 @@ export type { ActivitySubscriber } from "./polling.js";
 export type { LoadStatus } from "./runtime.js";
 
 export interface UseResourceResult<TData> extends ResourceSnapshot<TData> {
+  isIdle: boolean;
+  isLoading: boolean;
+  isSuccess: boolean;
+  isError: boolean;
   refresh(): Promise<void>;
 }
 
@@ -69,6 +73,17 @@ export type UseShareLinkResult = Omit<UseResourceResult<string>, "data"> & {
 export interface UseSessionResult extends UseResourceResult<AuthSession> {
   session: AuthSession | undefined;
   signIn(): Promise<VennbaseUser>;
+}
+
+export interface UseCurrentUserResult extends UseResourceResult<VennbaseUser> {
+  user: VennbaseUser | undefined;
+}
+
+export interface UseRowResult<
+  Schema extends DbSchema,
+  TCollection extends CollectionName<Schema>,
+> extends UseResourceResult<RowHandle<Schema, TCollection>> {
+  row: RowHandle<Schema, TCollection> | undefined;
 }
 
 export interface UseCrdtResult<TValue> {
@@ -135,6 +150,7 @@ export interface UseSavedRowOptions<
 }
 
 export interface UseSavedRowResult<TResult> extends UseResourceResult<TResult | null> {
+  row: TResult | null | undefined;
   save(result: TResult): Promise<void>;
   clear(): Promise<void>;
 }
@@ -157,6 +173,15 @@ interface CrdtRowLike {
   connectCrdt(callbacks: CrdtConnectCallbacks): CrdtConnection;
 }
 
+function getLoadState(status: LoadStatus): Pick<UseResourceResult<never>, "isIdle" | "isLoading" | "isSuccess" | "isError"> {
+  return {
+    isIdle: status === "idle",
+    isLoading: status === "loading",
+    isSuccess: status === "success",
+    isError: status === "error",
+  };
+}
+
 function makeResourceResult<TData>(
   snapshot: Partial<ResourceSnapshot<TData>> & Pick<ResourceSnapshot<TData>, "status">,
   refresh: () => Promise<void> = noopRefresh,
@@ -166,6 +191,7 @@ function makeResourceResult<TData>(
     error: snapshot.error,
     refreshError: snapshot.refreshError,
     isRefreshing: snapshot.isRefreshing ?? false,
+    ...getLoadState(snapshot.status),
     status: snapshot.status,
     refresh,
   };
@@ -199,6 +225,7 @@ function useResource<TData>(
 
   return {
     ...snapshot,
+    ...getLoadState(snapshot.status),
     refresh: resource ? resource.refresh : noopRefresh,
   };
 }
@@ -452,26 +479,27 @@ export function useSession<Schema extends DbSchema>(
 export function useCurrentUser<Schema extends DbSchema>(
   db: Vennbase<Schema>,
   options: UseHookOptions = {},
-): UseResourceResult<VennbaseUser> {
+): UseCurrentUserResult {
   const runtime = useRuntime(db);
   const session = useSessionResource(runtime, options.enabled ?? true);
-  if (session.status === "error") {
-    return makeResourceResult<VennbaseUser>({
-      error: session.error,
-      status: "error",
-    }, session.refresh);
-  }
+  const result = session.status === "error"
+    ? makeResourceResult<VennbaseUser>({
+        error: session.error,
+        status: "error",
+      }, session.refresh)
+    : session.status !== "success" || !session.data?.signedIn
+      ? makeResourceResult<VennbaseUser>({
+          status: "idle",
+        }, session.refresh)
+      : makeResourceResult<VennbaseUser>({
+          data: session.data.user,
+          status: "success",
+        }, session.refresh);
 
-  if (session.status !== "success" || !session.data?.signedIn) {
-    return makeResourceResult<VennbaseUser>({
-      status: "idle",
-    }, session.refresh);
-  }
-
-  return makeResourceResult<VennbaseUser>({
-    data: session.data.user,
-    status: "success",
-  }, session.refresh);
+  return {
+    ...result,
+    user: result.data,
+  };
 }
 
 export function useQuery<
@@ -509,9 +537,11 @@ export function useQuery<
     ),
   );
 
+  const result = blocked ?? resource;
+
   return {
-    ...(blocked ?? resource),
-    rows: (blocked ?? resource).data,
+    ...result,
+    rows: result.data,
   };
 }
 
@@ -522,9 +552,7 @@ export function useRow<
   db: Vennbase<Schema>,
   row: RowInput<TCollection> | null | undefined,
   options: UseHookOptions = {},
-): UseResourceResult<
-  RowHandle<Schema, TCollection>
-> {
+): UseRowResult<Schema, TCollection> {
   const runtime = useRuntime(db);
   const session = useSessionResource(runtime, options.enabled ?? true);
   const rowRef = row ? toRowRef(row) : null;
@@ -542,7 +570,13 @@ export function useRow<
       snapshots.row,
     ),
   );
-  return blocked ?? resource;
+
+  const result = blocked ?? resource;
+
+  return {
+    ...result,
+    row: result.data,
+  };
 }
 
 export function useParents<Schema extends DbSchema>(
@@ -669,6 +703,10 @@ export function useShareLink<Schema extends DbSchema>(
     shareLink: result.data,
     error: result.error,
     refreshError: result.refreshError,
+    isIdle: result.isIdle,
+    isLoading: result.isLoading,
+    isSuccess: result.isSuccess,
+    isError: result.isError,
     isRefreshing: result.isRefreshing,
     status: result.status,
     refresh: result.refresh,
@@ -1021,6 +1059,7 @@ export function useSavedRow<
       ...makeResourceResult<TResult | null>({
         status: "idle",
       }, refresh),
+      row: undefined,
       clear,
       save,
       refresh,
@@ -1033,6 +1072,7 @@ export function useSavedRow<
         error: session.error,
         status: "error",
       }, refresh),
+      row: undefined,
       clear,
       save,
       refresh,
@@ -1044,6 +1084,7 @@ export function useSavedRow<
       ...makeResourceResult<TResult | null>({
         status: "loading",
       }, refresh),
+      row: undefined,
       clear,
       save,
       refresh,
@@ -1055,6 +1096,7 @@ export function useSavedRow<
       ...makeResourceResult<TResult | null>({
         status: "idle",
       }, refresh),
+      row: undefined,
       clear,
       save,
       refresh,
@@ -1063,6 +1105,7 @@ export function useSavedRow<
 
   return {
     ...resource,
+    row: resource.data,
     clear,
     save,
     refresh,
