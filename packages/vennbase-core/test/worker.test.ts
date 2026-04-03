@@ -182,6 +182,99 @@ describe("RowWorker", () => {
     expect((await jsonBody(response)).rows).toEqual([]);
   });
 
+  it("returns mixed child rows when db/query omits collection", async () => {
+    const kv = new InMemoryKv();
+    const worker = new RowWorker(
+      {
+        owner: "owner",
+        workerUrl: "https://worker.example",
+      },
+      { kv },
+    );
+
+    expect(await createRow(worker, "project_mixed")).toMatchObject({ status: 200 });
+    await kv.set("row:project_mixed:child:tasks:owner:task_2", {
+      rowId: "task_2",
+      owner: "owner",
+      baseUrl: "https://worker.example",
+      collection: "tasks",
+      fields: { rank: 2, status: "open" },
+      addedAt: 1,
+      updatedAt: 1,
+      active: true,
+    });
+    await kv.set("row:project_mixed:child:tasks:owner:task_1", {
+      rowId: "task_1",
+      owner: "owner",
+      baseUrl: "https://worker.example",
+      collection: "tasks",
+      fields: { rank: 1, status: "open" },
+      addedAt: 1,
+      updatedAt: 1,
+      active: true,
+    });
+    await kv.set("row:project_mixed:child:notes:owner:note_1", {
+      rowId: "note_1",
+      owner: "owner",
+      baseUrl: "https://worker.example",
+      collection: "notes",
+      fields: { rank: 3, status: "open" },
+      addedAt: 1,
+      updatedAt: 1,
+      active: true,
+    });
+    await kv.set("row:project_mixed:child:notes:owner:note_2", {
+      rowId: "note_2",
+      owner: "owner",
+      baseUrl: "https://worker.example",
+      collection: "notes",
+      fields: { rank: 4, status: "closed" },
+      addedAt: 1,
+      updatedAt: 1,
+      active: true,
+    });
+
+    const response = await worker.handle(
+      await authedRequest({
+        url: rowEndpoint("project_mixed", "db/query"),
+        action: "db/query",
+        rowId: "project_mixed",
+        username: "owner",
+        body: {
+          where: { status: "open" },
+          orderBy: "rank",
+          order: "asc",
+          limit: 3,
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect((await jsonBody(response)).rows).toEqual([
+      {
+        rowId: "task_1",
+        owner: "owner",
+        baseUrl: "https://worker.example",
+        collection: "tasks",
+        fields: { rank: 1, status: "open" },
+      },
+      {
+        rowId: "task_2",
+        owner: "owner",
+        baseUrl: "https://worker.example",
+        collection: "tasks",
+        fields: { rank: 2, status: "open" },
+      },
+      {
+        rowId: "note_1",
+        owner: "owner",
+        baseUrl: "https://worker.example",
+        collection: "notes",
+        fields: { rank: 3, status: "open" },
+      },
+    ]);
+  });
+
   it("enforces invite and members-only reads", async () => {
     const worker = new RowWorker(
       {

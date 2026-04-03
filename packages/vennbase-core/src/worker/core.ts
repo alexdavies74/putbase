@@ -106,7 +106,7 @@ interface MemberMutationRequest {
 }
 
 interface QueryRequest {
-  collection: string;
+  collection?: string;
   select?: "full" | "anonymous";
   orderBy?: string;
   order?: "asc" | "desc";
@@ -247,6 +247,10 @@ function rowChildSchemaKey(parentId: string, collection: string): string {
 
 function rowChildPrefix(parentId: string, collection: string): string {
   return `row:${parentId}:child:${collection}:`;
+}
+
+function rowAnyChildPrefix(parentId: string): string {
+  return `row:${parentId}:child:`;
 }
 
 function rowChildKey(parentId: string, collection: string, childOwner: string, childRowId: string): string {
@@ -1290,10 +1294,7 @@ export class RowWorker {
       error(401, "UNAUTHORIZED", "Members only");
     }
 
-    const collection = payload.collection?.trim();
-    if (!collection) {
-      error(400, "BAD_REQUEST", "collection is required");
-    }
+    const collection = payload.collection?.trim() || undefined;
 
     const select = payload.select === "anonymous" ? "anonymous" : "full";
     if (role === "submitter" && select !== "anonymous") {
@@ -1673,17 +1674,22 @@ export class RowWorker {
 
   private async queryByChildren(
     parentRowId: string,
-    collection: string,
+    collection: string | undefined,
     where: Record<string, JsonValue> | undefined,
     orderBy: string | undefined,
     order: "asc" | "desc",
     limit: number,
   ): Promise<ChildEntry[]> {
-    const entries = await this.kv.list(rowChildPrefix(parentRowId, collection));
+    const entries = await this.kv.list(
+      collection
+        ? rowChildPrefix(parentRowId, collection)
+        : rowAnyChildPrefix(parentRowId),
+    );
 
     const activeChildren = entries
       .map((entry) => entry.value as ChildEntry)
-      .filter((entry) => entry && entry.active !== false);
+      .filter((entry) => entry && entry.active !== false)
+      .filter((entry) => !collection || entry.collection === collection);
 
     const filtered = where
       ? activeChildren.filter((child) => Object.entries(where).every(

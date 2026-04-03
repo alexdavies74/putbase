@@ -1,4 +1,5 @@
 export { Vennbase } from "./vennbase.js";
+export { VennbaseInspector } from "./inspector.js";
 export { RowHandle } from "./row-handle.js";
 export type { AnyRowHandle } from "./row-handle.js";
 export { VennbaseError } from "./errors.js";
@@ -13,7 +14,21 @@ export {
   toRowRef,
 } from "./schema.js";
 export type { VennbaseOptions } from "./vennbase.js";
+export type {
+  InspectorAnonymousQueryOptions,
+  InspectorAnonymousQueryRow,
+  InspectorCrawlEdge,
+  InspectorCrawlError,
+  InspectorCrawlNode,
+  InspectorCrawlOptions,
+  InspectorCrawlResult,
+  InspectorFullQueryOptions,
+  InspectorFullQueryRow,
+  InspectorQueryOptions,
+  VennbaseInspectorOptions,
+} from "./inspector.js";
 export type { MutationReceipt, MutationStatus } from "./mutation-receipt.js";
+export type { SavedRowEntry } from "./saved-rows.js";
 export type {
   AuthSession,
   BackendClient,
@@ -23,6 +38,7 @@ export type {
   DeployWorkerArgs,
   JsonValue,
   ParsedInvite,
+  RowSnapshot,
   ShareToken,
   VennbaseUser,
   SyncMessage,
