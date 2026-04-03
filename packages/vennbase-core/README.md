@@ -51,7 +51,7 @@ Access is **explicit-grant only**. To let someone into a row, generate a share l
 
 | Document | Description |
 |----------|-------------|
-| [`PATTERNS.md`](https://github.com/alexdavies74/vennbase/blob/main/packages/vennbase-core/PATTERNS.md) | Recipe-style app patterns for blind inboxes, index-key projections, conflict handling, and other real-world Vennbase designs. |
+| [`PATTERNS.md`](https://github.com/alexdavies74/vennbase/blob/main/packages/vennbase-core/PATTERNS.md) | Recipe-style app patterns for blind inboxes, index-key projections, resource claims, and other real-world Vennbase designs. |
 
 ---
 
@@ -327,7 +327,7 @@ For a fuller picture of how the pieces fit together in a real app, read `package
 pnpm --filter woof-app dev
 ```
 
-`packages/appointment-app` goes further into access-control territory: a blind booking inbox where customers can add rows without seeing each other, run index-key projection queries using `select: "indexKeys"`, and resolve capacity conflicts with a deterministic read-side cooloff pattern. Read [`PATTERNS.md`](./PATTERNS.md) for a recipe-style walkthrough of each pattern.
+`packages/appointment-app` is the clearest example of the Vennbase access-control philosophy in a full app: explicit grants, a blind booking inbox, and minimal anonymous sibling visibility via `select: "indexKeys"`. It demonstrates convergent client-side claim resolution, not hard capacity enforcement. Read [`PATTERNS.md`](./PATTERNS.md) for a recipe-style walkthrough of each pattern.
 
 ```bash
 pnpm --filter appointment-app dev

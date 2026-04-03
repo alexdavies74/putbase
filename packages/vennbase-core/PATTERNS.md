@@ -73,7 +73,7 @@ Later, the app reopens the shared booking through that private `bookingRef` and 
 
 ## Pattern 2: Index-key sibling visibility with `select: "indexKeys"`
 
-**Problem.** Customers need to see which slots are already taken so they can pick an open one — but they shouldn't see other customers' private booking details.
+**Problem.** Customers need to see which slots currently look occupied so they can avoid obvious collisions — but they shouldn't see other customers' private booking details.
 
 **Trick.** Query with `select: "indexKeys"`. Submitters can run this query against the inbox without needing read access to the parent. The response is an index-key projection: it includes only `kind`, `id`, `collection`, and index-key-only `fields`.
 
@@ -87,7 +87,7 @@ const { rows: sharedBookings = [] } = useQuery(db, "bookings", {
 });
 ```
 
-For capacity-limited booking, the recommended pattern is **write first, then arbitrate on the read path**:
+In the appointment example, the flow is **write first, then converge on the read path**:
 
 ```ts
 await this.db.create("bookings", {
@@ -99,7 +99,7 @@ await this.db.create("bookings", {
 }).committed;
 ```
 
-Then derive the active booking from the visible rows:
+Then derive the visible winning claim from the visible rows:
 
 1. group claims by `{ slotStartMs, slotEndMs }`
 2. sort each group by `(claimedAtMs, id)`
@@ -110,7 +110,14 @@ Then derive the active booking from the visible rows:
 
 `select: "indexKeys"` works in both `useQuery` and the imperative `db.query`. No additional permissions are required — submitter access already allows index-key sibling queries. These projections are not locatable row refs; use a full query if you need to reopen a row later.
 
-This gives **honest convergence**, not fairness against malicious writers. All well-behaved clients will compute the same winner from the same visible rows, but a malicious writer can still bias the outcome by choosing favorable visible tiebreak values.
+Important: this pattern gives **shared visibility and client convergence only**.
+
+- It does not enforce uniqueness or capacity.
+- It does not prevent oversubscription.
+- It is not fair against malicious writers.
+- It should not be described as a hard reservation mechanism.
+
+This gives **honest convergence**, not enforcement. All well-behaved clients will compute the same visible winner from the same visible rows, but a malicious writer can still bias the outcome by choosing favorable visible tiebreak values.
 
 ---
 
@@ -141,7 +148,7 @@ The app wires all three together into a single access-control surface the owner 
 2. **Owner shares the schedule** using a viewer share link. Customers open it.
 3. **Customer joins the inbox** — Pattern 1. `ensureBookingRootAccess` calls `joinInvite` on the embedded link, returning a `BookingRootRef` with submitter access.
 4. **Customer creates a claim** under the `BookingRootRef` and immediately stores its `bookingRef` in a private user-scoped row. No preflight race check is needed.
-5. **Customer queries visible claims** — Patterns 2 and 3. `select: "indexKeys"` returns index-key projections with `fields: { slotStartMs, slotEndMs, claimedAtMs }` from sibling bookings. Clients apply a fixed cooloff window and the `(claimedAtMs, id)` tiebreak to decide which claim is active.
-6. **Owner and customers converge** on the same active booking from the same visible rows. Only the owner (with full access) can read the complete booking records.
+5. **Customer queries visible claims** — Patterns 2 and 3. `select: "indexKeys"` returns index-key projections with `fields: { slotStartMs, slotEndMs, claimedAtMs }` from sibling bookings. Clients apply a fixed cooloff window and the `(claimedAtMs, id)` tiebreak to decide which visible claim currently wins.
+6. **Owner and customers converge** on the same visible winning claim from the same visible rows. Only the owner (with full access) can read the complete booking records.
 
 The owner never manually grants or revokes customer access. The submitter link embedded in the schedule is the entire access-control surface.
