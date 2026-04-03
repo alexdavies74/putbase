@@ -51,6 +51,7 @@ declare const dogResult: DogResult;
 declare const tagRows: TagRows;
 declare const savedDogResult: SavedDogResult;
 declare const dogHandle: DogHandle;
+declare const dogRef: RowRef<"dogs">;
 declare const anyRowHandle: AnyRowHandle<TestSchema>;
 declare const tagRef: RowRef<"tags">;
 declare const anyClient: Vennbase<TestSchema>;
@@ -60,10 +61,12 @@ declare const inviteResult: InviteResult;
 const maybeAnyRowHandle: AnyRowHandle<TestSchema> | undefined = dogResult.data;
 const maybeDogHandle: DogHandle | undefined = dogResult.data;
 const maybeDogHandleFromAlias: DogHandle | undefined = dogResult.row;
+const maybeDogHandleFromRef: DogHandle | undefined = useRow(anyClient, dogRef).row;
 const fallbackTagRows: TagHandle[] = tagRows ?? [];
 const maybeTagHandle: TagHandle | undefined = tagRows?.[0];
 const maybeSavedDogHandle: DogHandle | null | undefined = savedDogResult.row;
 const maybeCurrentUser: { username: string } | undefined = currentUserResult.user;
+const maybeDogNameFromRef: string | undefined = useRow(anyClient, dogRef).row?.fields.name;
 const savedDog = useSavedRow(anyClient, {
   key: "current-dog",
   collection: "dogs",
@@ -121,6 +124,7 @@ const genericRecentDog: DbQueryRow<TestSchema, "recentDogs"> | undefined =
 void maybeAnyRowHandle;
 void maybeDogHandle;
 void maybeDogHandleFromAlias;
+void maybeDogHandleFromRef;
 void maybeTagHandle;
 void maybeSavedDogHandle;
 void maybeCurrentUser;
@@ -135,6 +139,7 @@ void dogName;
 void projectedCreatedAt;
 void savedDog;
 void savedDogSummary;
+void maybeDogNameFromRef;
 void maybeSavedDogName;
 void maybeSavedDogSummaryName;
 
