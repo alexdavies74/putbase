@@ -91,6 +91,7 @@ img {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  min-width: 0;
   padding: 0.9rem 1.1rem;
   margin-top: 0;
   border-top: 0;
@@ -105,6 +106,7 @@ img {
   display: flex;
   flex-wrap: wrap;
   gap: 1.1rem;
+  min-width: 0;
   color: var(--ink-soft);
   font-size: 0.94rem;
   font-weight: 700;
@@ -158,6 +160,7 @@ img {
 .hero-copy,
 .hero-code,
 .reference-hero__content {
+  min-width: 0;
   padding: 2rem;
 }
 
@@ -266,6 +269,7 @@ h1 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0;
+  min-width: 0;
   padding: 0;
   margin: 1.7rem 0 0;
   list-style: none;
@@ -275,6 +279,7 @@ h1 {
 
 .feature-list li {
   min-height: 100%;
+  min-width: 0;
   padding: 0.9rem 1rem;
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
@@ -312,12 +317,14 @@ h1 {
 .prompt-band {
   display: grid;
   gap: 0;
+  min-width: 0;
   border: 1px solid var(--line);
   border-top: 0;
   background: var(--surface);
 }
 
 .prompt-band__copy {
+  min-width: 0;
   padding: 1rem 1.25rem 0.35rem;
 }
 
@@ -331,6 +338,7 @@ h1 {
 .prompt-band__panel {
   display: grid;
   gap: 0;
+  min-width: 0;
   padding: 0 1.25rem 1rem;
   align-content: start;
   background:
@@ -343,12 +351,14 @@ h1 {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.65rem;
   align-items: start;
+  min-width: 0;
 }
 
 .prompt-band__textarea {
   width: 100%;
   min-height: 2.75rem;
   max-height: 2.75rem;
+  min-width: 0;
   padding: 0.58rem 0.75rem;
   border: 1px solid var(--line);
   border-radius: 0;
@@ -484,6 +494,7 @@ h1 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0;
+  min-width: 0;
   border-left: 1px solid var(--line);
 }
 
@@ -491,6 +502,7 @@ h1 {
   position: relative;
   display: block;
   width: auto;
+  min-width: 0;
   margin: 0;
   padding: 1.35rem;
   overflow: hidden;
@@ -611,6 +623,7 @@ h1 {
 
 .code-frame {
   margin: 1.2rem 0;
+  min-width: 0;
   overflow: hidden;
   border: 1px solid rgba(14, 21, 38, 0.2);
   border-radius: 0;
@@ -755,12 +768,14 @@ th {
   grid-template-columns: 240px minmax(0, 1fr);
   gap: 0;
   align-items: start;
+  min-width: 0;
   padding-bottom: 0;
 }
 
 .reference-nav {
   position: sticky;
   top: 1.2rem;
+  min-width: 0;
   padding: 1.2rem;
   border-right: 0;
 }
@@ -783,11 +798,13 @@ th {
 .reference-content {
   display: grid;
   gap: 0;
+  min-width: 0;
   border-left: 1px solid var(--line);
 }
 
 .reference-intro,
 .reference-content > article {
+  min-width: 0;
   padding: 1.4rem;
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
@@ -861,7 +878,6 @@ blockquote {
     width: 100%;
   }
 
-  .hero,
   .page-content,
   .reference-layout,
   .hero-wrap {
@@ -891,5 +907,39 @@ blockquote {
 
   table {
     min-width: 28rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .hero-wrap,
+  .page-content,
+  .reference-layout {
+    width: calc(100% - 16px);
+  }
+
+  .top-nav {
+    padding: 0.8rem 0.9rem;
+  }
+
+  .hero-copy,
+  .hero-code,
+  .reference-hero__content,
+  .section-card,
+  .reference-nav,
+  .reference-content > article,
+  .reference-intro {
+    padding: 1rem;
+  }
+
+  .prompt-band__copy {
+    padding: 0.9rem 1rem 0.3rem;
+  }
+
+  .prompt-band__panel {
+    padding: 0 1rem 1rem;
+  }
+
+  .feature-list li {
+    padding: 0.8rem 0.9rem;
   }
 }

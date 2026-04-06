@@ -6,7 +6,7 @@
 
 **Build multi-user apps without writing a single access rule.**
 
-Vennbase is a TypeScript client-side database for collaborative, local-first web apps — with no backend to run, no server to pay for, and no access control rules to misconfigure. Users sign in with their [Puter](https://puter.com) account. Your app only sees the user's subset of the data stored in Puter.
+Vennbase is a TypeScript client-side database for **collaborative**, local-first web apps. It frees developers from running a backend, paying for servers, or writing finnicky access control rules. Users sign up for a [Puter](https://puter.com) account to store their data. Your app sees the subset of the data shared with a user.
 
 ```tsx
 // Write
@@ -26,7 +26,7 @@ const { shareLink } = useShareLink(db, board, "editor");
 
 Write your frontend. Vennbase handles the rest.
 
-- **Zero backend** — no server to run, no infrastructure bill
+- **User brings standardized backend** — no server to run, no infrastructure bill
 - **No access rules to write** — share a link, they're in; that's the whole model
 - **Optimistic updates** — instant writes built-in
 - **Local-first support** — app data syncs via CRDT automatically
