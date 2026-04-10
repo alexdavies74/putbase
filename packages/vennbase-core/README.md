@@ -213,7 +213,7 @@ const { rows: cards = [], isLoading } = useQuery(db, "cards", {
 
 The default query result is a full row handle. Full rows are locatable and reusable: they expose `ref`, `owner`, `fields`, row membership APIs, parent-link APIs, and can be passed back into row workflows.
 
-Anonymous queries are intentionally weaker:
+Index key queries are intentionally weaker:
 
 ```ts
 const slots = await db.query("bookings", {
@@ -276,7 +276,7 @@ const joined = await db.joinInvite(submissionLink);
 
 `joinInvite` is idempotent, so call it whenever you need it.
 
-`"index-submitter"` members can create child rows under the shared parent and can run `db.query(..., { select: "indexKeys" })` to see only index-key projections from sibling rows. Index-key projections expose `kind`, `id`, `collection`, and index-key-only `fields`; they do not include row refs, base URLs, owners, or other locator metadata. Index submitters still cannot read the parent row, fetch full sibling rows, inspect members, or use sync. Child rows they own are still their own rows, so if they persist a child `RowRef` somewhere readable, they can reopen that row later and update it or remove its shared parent link for cancel/edit flows.
+`"index-submitter"` members can create child rows under the shared parent and can run `db.query(..., { select: "indexKeys" })` to see only index-key projections from sibling rows. Child rows they own are still their own rows, so if they persist a child `RowRef` somewhere readable, they can reopen that row later and update it or remove its shared parent link for cancel/edit flows.
 
 ---
 
