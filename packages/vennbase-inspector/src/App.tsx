@@ -78,6 +78,10 @@ function formatVia(via: DbMemberInfo["via"]): string {
   return `${via.collection}:${via.id.slice(0, 8)}`;
 }
 
+function formatRoles(roles: DbMemberInfo["roles"]): string {
+  return roles.join(", ");
+}
+
 function parseManualSeedInput(input: string): RowRef[] {
   const parsed = JSON.parse(input) as unknown;
   const values = Array.isArray(parsed) ? parsed : [parsed];
@@ -731,9 +735,9 @@ export function App() {
               <div>
                 <h3>Effective</h3>
                 {(detail.effectiveMembers).map((member) => (
-                  <div key={`${member.username}:${formatVia(member.via)}`} className="member-row">
+                  <div key={`${member.username}:${formatRoles(member.roles)}:${formatVia(member.via)}`} className="member-row">
                     <span>{member.username}</span>
-                    <span>{member.role}</span>
+                    <span>{formatRoles(member.roles)}</span>
                     <span className="mono-copy">{formatVia(member.via)}</span>
                   </div>
                 ))}
