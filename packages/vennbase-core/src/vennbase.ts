@@ -206,7 +206,7 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
 
   /**
    * Create a row optimistically and return a mutation receipt immediately.
-   * Use `.value` for the row handle and await `.committed` when you need remote confirmation.
+   * Use `.value` for the row handle immediately. `.committed` resolves once the server confirms the write — only needed for cross-session flows.
    */
   create<TCollection extends CollectionName<Schema>>(
     collection: TCollection,
@@ -219,7 +219,7 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
 
   /**
    * Apply an optimistic field update and return a mutation receipt immediately.
-   * Use `.value` for the refreshed row handle and await `.committed` when you need remote confirmation.
+   * Use `.value` for the refreshed row handle immediately. `.committed` resolves once the server confirms the write — only needed for cross-session flows.
    */
   update<TCollection extends CollectionName<Schema>>(
     collection: TCollection,

@@ -267,7 +267,6 @@ import { useMutation } from "@vennbase/react";
 function AddCard({ board }: { board: BoardHandle }) {
   const { mutate: addCard, status } = useMutation(async (text: string) => {
     const write = db.create("cards", { text, done: false, createdAt: Date.now() }, { in: board });
-    await write.committed;
     return write.value;
   });
 

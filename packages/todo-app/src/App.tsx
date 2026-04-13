@@ -19,20 +19,11 @@ async function rememberRecentBoard(board: BoardHandle): Promise<void> {
   const existingRecentBoard = existingRecentBoards[0] ?? null;
 
   if (existingRecentBoard) {
-    const updatedRecentBoardWrite = db.update("recentBoards", existingRecentBoard, {
-      openedAt: Date.now(),
-    });
-    await updatedRecentBoardWrite.committed;
+    db.update("recentBoards", existingRecentBoard, { openedAt: Date.now() });
     return;
   }
 
-  const recentBoardWrite = db.create("recentBoards", {
-    boardRef,
-    openedAt: Date.now(),
-  }, {
-    in: CURRENT_USER,
-  });
-  await recentBoardWrite.committed;
+  db.create("recentBoards", { boardRef, openedAt: Date.now() }, { in: CURRENT_USER });
 }
 
 async function openRecentBoard(recentBoard: RecentBoardHandle): Promise<BoardHandle> {
@@ -134,14 +125,7 @@ function LandingView({ errorMessage, onBoard }: { errorMessage?: string; onBoard
             setTitle("");
             onBoard(board);
 
-            void (async () => {
-              try {
-                await boardWrite.committed;
-                await rememberRecentBoard(board);
-              } catch (error) {
-                console.error(error);
-              }
-            })();
+            void rememberRecentBoard(board).catch(console.error);
           }}
         >
           <input
@@ -238,8 +222,7 @@ function BoardView({ board, onLeave }: { board: BoardHandle; onLeave: () => void
   const { shareLink } = useShareLink(db, board, "all-editor");
 
   const toggleDone = useMutation(async (card: CardHandle) => {
-    const updatedCardWrite = db.update("cards", card, { done: !card.fields.done });
-    await updatedCardWrite.committed;
+    db.update("cards", card, { done: !card.fields.done });
   });
 
   return (

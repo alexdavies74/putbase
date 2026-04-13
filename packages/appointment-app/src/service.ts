@@ -371,16 +371,11 @@ export class AppointmentService {
     const current = existing.find((recentSchedule) => sameRef(recentSchedule.fields.scheduleRef, schedule)) ?? null;
 
     if (current) {
-      await this.db.update("recentSchedules", current, { openedAt: now }).committed;
+      this.db.update("recentSchedules", current, { openedAt: now });
       return;
     }
 
-    await this.db.create("recentSchedules", {
-      scheduleRef,
-      openedAt: now,
-    }, {
-      in: CURRENT_USER,
-    }).committed;
+    this.db.create("recentSchedules", { scheduleRef, openedAt: now }, { in: CURRENT_USER });
   }
 
   async openRecentSchedule(recentSchedule: RecentScheduleHandle): Promise<ScheduleHandle> {

@@ -53,12 +53,12 @@ async ensureScheduleUserRow(schedule: ScheduleHandle): Promise<ScheduleUserHandl
     limit: 1,
   });
   return existing
-    ?? await this.db.create("scheduleUsers", {
+    ?? this.db.create("scheduleUsers", {
       scheduleRef: toRowRef(schedule),
       createdAt: Date.now(),
     }, {
       in: [toRowRef(schedule), CURRENT_USER],
-    }).committed;
+    }).value;
 }
 ```
 
@@ -69,7 +69,7 @@ The customer never gets readable access to `bookingRoots`, so they cannot inspec
 The app links each booking into both the booking root and scheduleUser:
 
 ```ts
-const bookingWrite = await this.db.create("bookings", {
+const booking = this.db.create("bookings", {
   slotStartMs: args.slotStartMs,
   slotEndMs: args.slotEndMs,
   claimedAtMs: Date.now(),
@@ -77,7 +77,7 @@ const bookingWrite = await this.db.create("bookings", {
   customerUsername: args.scheduleUser.owner,
 }, {
   in: [args.bookingRootRef, args.scheduleUser.ref],
-}).committed;
+}).value;
 ```
 
 The owner can enumerate bookings from `bookingRoots`. Each customer can enumerate "my bookings for this schedule" by querying `bookings` under their own `scheduleUsers` row. Cancel removes both parent links.
@@ -103,13 +103,13 @@ const { rows: sharedBookings = [] } = useQuery(db, "bookings", {
 In the appointment example, the flow is **write first, then converge on the read path**:
 
 ```ts
-await this.db.create("bookings", {
+this.db.create("bookings", {
   slotStartMs: args.slotStartMs,
   slotEndMs: args.slotEndMs,
   claimedAtMs: Date.now(),
 }, {
   in: [args.bookingRootRef, args.scheduleUser.ref],
-}).committed;
+});
 ```
 
 Then derive the visible winning claim from the visible rows:
