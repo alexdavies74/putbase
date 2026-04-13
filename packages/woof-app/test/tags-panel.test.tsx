@@ -72,7 +72,6 @@ const backend = {
   addParent: async () => undefined,
   removeParent: async () => undefined,
   listParents: async () => [],
-  addMember: async () => undefined,
   removeMember: async () => undefined,
   listDirectMembers: async () => [],
   listEffectiveMembers: async () => [],

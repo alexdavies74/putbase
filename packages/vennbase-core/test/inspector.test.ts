@@ -15,10 +15,6 @@ function asUrl(input: RequestInfo | URL): string {
       : input.url;
 }
 
-async function waitForMutationBootstrap<Schema extends Record<string, unknown>>(db: Vennbase<Schema>): Promise<void> {
-  await (db as unknown as { awaitSharedReadiness(): Promise<void> }).awaitSharedReadiness();
-}
-
 class TestWorkerNetwork {
   private readonly workers = new Map<string, RowWorker>();
 
@@ -171,7 +167,6 @@ describe("VennbaseInspector", () => {
     const inspector = buildInspector({ username: "alice", network, backend });
 
     await db.getSession();
-    await waitForMutationBootstrap(db);
     const project = await settle(db.create("projects", { name: "Website" }));
     await db.saveRow("picked-project", project.ref);
     await settle(db.create("recentProjects", { projectRef: project.ref }, { in: CURRENT_USER }));
@@ -203,7 +198,6 @@ describe("VennbaseInspector", () => {
     const inspector = buildInspector({ username: "alice", network, backend });
 
     await db.getSession();
-    await waitForMutationBootstrap(db);
 
     const projectA = await settle(db.create("projects", { name: "Alpha" }));
     const projectB = await settle(db.create("projects", { name: "Beta" }));

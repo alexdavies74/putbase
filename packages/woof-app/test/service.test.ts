@@ -129,7 +129,6 @@ class MockDb implements WoofDbPort {
     addParent: () => committedReceipt(undefined),
     removeParent: () => committedReceipt(undefined),
     listParents: async <TParentCollection extends string>() => [] as Array<RowRef<TParentCollection>>,
-    addMember: () => committedReceipt(undefined),
     removeMember: () => committedReceipt(undefined),
     listDirectMembers: async () => this.memberList.map((username) => ({
       username,
@@ -369,7 +368,6 @@ describe("WoofService", () => {
         addParent: () => committedReceipt(undefined),
         removeParent: () => committedReceipt(undefined),
         listParents: async () => [],
-        addMember: () => committedReceipt(undefined),
         removeMember: () => committedReceipt(undefined),
         listDirectMembers: async () => [],
         listEffectiveMembers: async () => [],

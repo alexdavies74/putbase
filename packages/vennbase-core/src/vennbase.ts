@@ -38,7 +38,7 @@ import type {
   RowFields,
 } from "./schema.js";
 import { resolveBackend } from "./backend.js";
-import { BUILTIN_USER_SCOPE as USER_SCOPE_COLLECTION, isCurrentUser, resolveCollectionName } from "./schema.js";
+import { BUILTIN_USER_SCOPE as USER_SCOPE_COLLECTION, collectionAllowsCurrentUser, isCurrentUser, resolveCollectionName } from "./schema.js";
 import { stableJsonStringify } from "./stable-json.js";
 import { Transport } from "./transport.js";
 import type {
@@ -94,6 +94,7 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
   private readonly optimisticStore = new OptimisticStore();
   private readonly writeSettler = new WriteSettler();
   private readonly writePlanner: WritePlanner;
+  private readonly requiresCurrentUserScope: boolean;
   private ready = false;
   private readinessPromise: Promise<void> | null = null;
   private pendingReadinessError: unknown | null = null;
@@ -108,6 +109,7 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
     this.provisioning = new Provisioning(options, this.transport, this.auth);
     this.syncRuntime();
     this.writePlanner = new WritePlanner(this.transport);
+    this.requiresCurrentUserScope = Object.values(options.schema).some((collectionSpec) => collectionAllowsCurrentUser(collectionSpec));
     this.rowRuntime = new RowRuntime(
       this.transport,
       this.identity,
@@ -159,14 +161,14 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
       return session;
     }
 
-    this.startReadinessInBackground();
+    await this.awaitSharedReadiness();
     return session;
   }
 
   async signIn(): Promise<VennbaseUser> {
     this.resetSessionState();
     const user = await this.identity.signIn();
-    this.startReadinessInBackground();
+    await this.awaitSharedReadiness();
     this.notifyLocalMutation();
     return user;
   }
@@ -483,10 +485,6 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
     this.provisioning.setBackend(backend);
   }
 
-  private startReadinessInBackground(): void {
-    void this.startReadiness().catch(() => undefined);
-  }
-
   private resetSessionState(): void {
     this.ready = false;
     this.readinessPromise = null;
@@ -543,10 +541,13 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
           user,
           federationWorkerUrl,
         });
+        const userScopeRow = this.requiresCurrentUserScope
+          ? await this.ensureCurrentUserScopeRow(user.username, true)
+          : null;
         this.readyMutationState = {
           user,
           federationWorkerUrl,
-          userScopeRow: null,
+          userScopeRow,
         };
         this.ready = true;
         this.pendingReadinessError = null;

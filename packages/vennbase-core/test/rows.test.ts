@@ -133,10 +133,6 @@ function buildDb(args: {
   });
 }
 
-async function waitForMutationBootstrap(db: Vennbase<typeof schema>): Promise<void> {
-  await (db as unknown as { awaitSharedReadiness(): Promise<void> }).awaitSharedReadiness();
-}
-
 async function buildReadyDb(args: {
   username: string;
   network: TestWorkerNetwork;
@@ -144,7 +140,6 @@ async function buildReadyDb(args: {
 }): Promise<Vennbase<typeof schema>> {
   const db = buildDb(args);
   await db.getSession();
-  await waitForMutationBootstrap(db);
   return db;
 }
 
