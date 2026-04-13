@@ -276,13 +276,13 @@ const joined = await db.joinInvite(submissionLink);
 
 `joinInvite` is idempotent, so call it whenever you need it.
 
-`"index-submitter"` members can create child rows under the shared parent and can run `db.query(..., { select: "indexKeys" })` to see only index-key projections from sibling rows. Child rows they own are still their own rows, so if they persist a child `RowRef` somewhere readable, they can reopen that row later and update it or remove its shared parent link for cancel/edit flows.
+`"index-submitter"` members can create child rows under the shared parent and can run `db.query(..., { select: "indexKeys" })` to see only index-key projections from sibling rows. If the app needs durable revisit/edit/cancel flows, the usual pattern is to also link the child into a user-specific join row that the submitter can query later.
 
 ---
 
 ## Membership
 
-Only `all-*` role members can inspect the member list, and only `all-editor` can mutate it:
+Only `all-*` role members can inspect the member list, and only `all-editor` can revoke direct members:
 
 ```ts
 // Flat list of usernames
@@ -292,12 +292,14 @@ const members = await db.listMembers(board);
 const detailed = await db.listDirectMembers(board);
 // → [{ username: "alice", role: "all-editor" }, ...]
 
-// Add or remove manually
-await db.addMember(board, "bob", "all-editor").committed;
+// Grant access by sending an invite link
+const editorLink = await db.createShareLink(board, "all-editor").committed;
+
+// Later, revoke an already-joined direct member
 await db.removeMember(board, "eve").committed;
 ```
 
-Membership inherited through a parent row is visible via `listEffectiveMembers`.
+Membership inherited through a parent row is visible via `listEffectiveMembers`. For app-level "memberships" that need discovery, ordering, or extra metadata, prefer modeling them as rows and parent links instead of username-only grants. A common pattern is sharing a readable parent row with `content-submitter`, then letting each user create their own child join row beneath it.
 
 ---
 
@@ -375,7 +377,6 @@ pnpm --filter appointment-app dev
 | `listMembers(row)` | Returns `string[]` of all member usernames. |
 | `listDirectMembers(row)` | Returns `{ username, role }[]` for direct members. |
 | `listEffectiveMembers(row)` | Returns resolved membership including grants inherited from parents. |
-| `addMember(row, username, role)` | Grant a user access and return a `MutationReceipt<void>`. Roles: `index-viewer`, `index-submitter`, `index-editor`, `content-viewer`, `content-submitter`, `content-editor`, `all-viewer`, `all-submitter`, `all-editor`. `index-*` is index-only, `content-*` reads content without member visibility, and `all-*` reads content plus members. `*-submitter` becomes `*-viewer` when inherited onto descendants. |
 | `removeMember(row, username)` | Revoke a user's access and return a `MutationReceipt<void>`. |
 | `addParent(child, parent)` | Link a row to an additional parent after creation and return a `MutationReceipt<void>`. |
 | `removeParent(child, parent)` | Unlink a row from a parent and return a `MutationReceipt<void>`. |
@@ -393,7 +394,7 @@ pnpm --filter appointment-app dev
 | `.refresh()` | Re-fetch fields from the server. Resolves to the latest field snapshot. |
 | `.connectCrdt(callbacks)` | Shorthand for `db.connectCrdt(row, callbacks)`. |
 | `.in.add(parent)` / `.in.remove(parent)` / `.in.list()` | Manage parent links. |
-| `.members.add(username, role)` / `.members.remove(username)` / `.members.list()` | Manage membership. |
+| `.members.remove(username)` / `.members.list()` / `.members.effective()` / `.members.listAll()` | Inspect direct/effective membership and revoke direct members. |
 
 ### `MutationReceipt<T>`
 

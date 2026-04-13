@@ -14,10 +14,10 @@ export interface OptimisticRowRecord {
   knownParents: RowRef[] | null;
   pendingCreate: boolean;
   pendingCreateReceipt: Promise<unknown> | null;
+  pendingCurrentUserParent: boolean;
   pendingParentAdds: RowRef[];
   pendingParentRemoves: RowRef[];
   directMembers: Array<{ username: string; role: MemberRole }> | null;
-  pendingMemberAdds: Array<{ username: string; role: MemberRole }>;
   pendingMemberRemoves: string[];
   pendingShareTokens: ShareToken[];
 }
@@ -42,19 +42,9 @@ function removeRows(left: RowRef[], removals: RowRef[]): RowRef[] {
 
 function mergeMembers(
   base: Array<{ username: string; role: MemberRole }>,
-  adds: Array<{ username: string; role: MemberRole }>,
   removals: string[],
 ): Array<{ username: string; role: MemberRole }> {
-  const filtered = base.filter((member) => !removals.includes(member.username));
-  for (const member of adds) {
-    const index = filtered.findIndex((candidate) => candidate.username === member.username);
-    if (index >= 0) {
-      filtered[index] = member;
-    } else {
-      filtered.push(member);
-    }
-  }
-  return filtered;
+  return base.filter((member) => !removals.includes(member.username));
 }
 
 export class OptimisticStore {
@@ -81,10 +71,10 @@ export class OptimisticStore {
       knownParents: null,
       pendingCreate: false,
       pendingCreateReceipt: null,
+      pendingCurrentUserParent: false,
       pendingParentAdds: [],
       pendingParentRemoves: [],
       directMembers: null,
-      pendingMemberAdds: [],
       pendingMemberRemoves: [],
       pendingShareTokens: [],
     };
@@ -115,6 +105,7 @@ export class OptimisticStore {
     collection: string;
     fields: Record<string, JsonValue>;
     parents: RowRef[];
+    currentUserParent: boolean;
     receipt: MutationReceipt<unknown>;
   }): void {
     const record = this.ensureRecord({
@@ -126,6 +117,7 @@ export class OptimisticStore {
     record.owner = args.owner;
     record.pendingCreate = true;
     record.pendingCreateReceipt = args.receipt.committed;
+    record.pendingCurrentUserParent = args.currentUserParent;
     record.knownParents = [...args.parents];
     record.baseFields = { ...args.fields };
     record.overlayFields = {};
@@ -138,6 +130,7 @@ export class OptimisticStore {
     }
     record.pendingCreate = false;
     record.pendingCreateReceipt = null;
+    record.pendingCurrentUserParent = false;
   }
 
   rollbackCreate(row: RowRef): void {
@@ -277,14 +270,25 @@ export class OptimisticStore {
     return removeRows(mergeUniqueRows([...base], record.pendingParentAdds), record.pendingParentRemoves);
   }
 
-  getOptimisticQueryRows(collection: string, parents: RowRef[]): OptimisticRowRecord[] {
+  getOptimisticQueryRows(collection: string, parents: RowRef[], includeCurrentUser = false): OptimisticRowRecord[] {
     return Array.from(this.rows.values()).filter((record) => {
       if (record.collection !== collection) {
         return false;
       }
       const currentParents = this.getCurrentParents(record.row, []);
-      return currentParents.some((parent) => parents.some((candidate) => sameRowRef(candidate, parent)));
+      return currentParents.some((parent) => parents.some((candidate) => sameRowRef(candidate, parent)))
+        || (includeCurrentUser && record.pendingCurrentUserParent);
     });
+  }
+
+  materializeCurrentUserParent(row: RowRef, parent: RowRef): void {
+    const record = this.rows.get(rowKey(row));
+    if (!record) {
+      return;
+    }
+
+    record.pendingCurrentUserParent = false;
+    record.knownParents = mergeUniqueRows(record.knownParents ?? [], [parent]);
   }
 
   findIndexKeyQueryRow(collection: string, rowId: string): OptimisticRowRecord | null {
@@ -303,20 +307,8 @@ export class OptimisticStore {
     record.directMembers = [...members];
   }
 
-  addMember(row: RowRef, username: string, role: MemberRole): void {
-    const record = this.ensureRecord({ row, owner: "", collection: row.collection });
-    record.pendingMemberRemoves = record.pendingMemberRemoves.filter((candidate) => candidate !== username);
-    const existingIndex = record.pendingMemberAdds.findIndex((candidate) => candidate.username === username);
-    if (existingIndex >= 0) {
-      record.pendingMemberAdds[existingIndex] = { username, role };
-    } else {
-      record.pendingMemberAdds.push({ username, role });
-    }
-  }
-
   removeMember(row: RowRef, username: string): void {
     const record = this.ensureRecord({ row, owner: "", collection: row.collection });
-    record.pendingMemberAdds = record.pendingMemberAdds.filter((candidate) => candidate.username !== username);
     if (!record.pendingMemberRemoves.includes(username)) {
       record.pendingMemberRemoves.push(username);
     }
@@ -327,8 +319,7 @@ export class OptimisticStore {
     if (!record) {
       return;
     }
-    record.directMembers = mergeMembers(record.directMembers ?? [], record.pendingMemberAdds, record.pendingMemberRemoves);
-    record.pendingMemberAdds = [];
+    record.directMembers = mergeMembers(record.directMembers ?? [], record.pendingMemberRemoves);
     record.pendingMemberRemoves = [];
   }
 
@@ -337,7 +328,6 @@ export class OptimisticStore {
     if (!record) {
       return;
     }
-    record.pendingMemberAdds = [];
     record.pendingMemberRemoves = [];
   }
 
@@ -346,7 +336,7 @@ export class OptimisticStore {
     if (!record) {
       return null;
     }
-    return mergeMembers(record.directMembers ?? [], record.pendingMemberAdds, record.pendingMemberRemoves);
+    return mergeMembers(record.directMembers ?? [], record.pendingMemberRemoves);
   }
 
   getMemberUsernames(row: RowRef): string[] | null {

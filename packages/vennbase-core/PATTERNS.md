@@ -16,7 +16,7 @@ The schema lives in `packages/appointment-app/src/schema.ts`. The service layer 
 
 **Problem.** Customers need to create bookings under a parent row that only the owner can read. The owner doesn't want to send each customer a separate invite.
 
-**Trick.** Store the `index-submitter` link for the hidden `bookingRoots` row as a plain string field on the *readable* `schedules` row. Any `content-viewer` of the schedule calls `joinInvite(...)` on that embedded link to gain `index-submitter` access to the inbox without ever getting readable access to it.
+**Trick.** Store the `index-submitter` link for the hidden `bookingRoots` row as a plain string field on the *readable* `schedules` row. Customers join as `content-submitter` of the schedule, then call `joinInvite(...)` on that embedded link to gain `index-submitter` access to the inbox without ever getting readable access to it.
 
 **Owner side — create the inbox and embed its link in the schedule:**
 
@@ -36,7 +36,7 @@ await Promise.all([
 ]);
 ```
 
-**Customer side — claim `index-submitter` access from the embedded link:**
+**Customer side — claim `index-submitter` access from the embedded link and reuse-or-create one `scheduleUsers` row:**
 
 ```ts
 async ensureBookingRootAccess(schedule: ScheduleHandle): Promise<BookingRootRef> {
@@ -45,33 +45,42 @@ async ensureBookingRootAccess(schedule: ScheduleHandle): Promise<BookingRootRef>
 }
 ```
 
+```ts
+async ensureScheduleUserRow(schedule: ScheduleHandle): Promise<ScheduleUserHandle> {
+  const [existing] = await this.db.query("scheduleUsers", {
+    in: CURRENT_USER,
+    where: { scheduleRef: toRowRef(schedule) },
+    limit: 1,
+  });
+  return existing
+    ?? await this.db.create("scheduleUsers", {
+      scheduleRef: toRowRef(schedule),
+      createdAt: Date.now(),
+    }, {
+      in: [toRowRef(schedule), CURRENT_USER],
+    }).committed;
+}
+```
+
 `joinInvite` is idempotent — calling it again on a link the user already joined is a no-op. Call it every time a customer opens a schedule; no local state needed.
 
-The customer never holds a readable invite to `bookingRoots` itself, so they cannot read the parent row, inspect its members, or see other customers' full booking records.
+The customer never gets readable access to `bookingRoots`, so they cannot inspect that inbox directly or see other customers' full booking records from it.
 
-That has an important consequence: a blind inbox lets an `index-submitter` **create** child rows, but not later rediscover them as full rows from the inbox itself. If the app needs self-cancel, self-edit, or "show me my booking" flows, write a second private record the submitter owns at creation time:
+The app links each booking into both the booking root and scheduleUser:
 
 ```ts
 const bookingWrite = await this.db.create("bookings", {
   slotStartMs: args.slotStartMs,
   slotEndMs: args.slotEndMs,
   claimedAtMs: Date.now(),
+  scheduleUserRef: args.scheduleUser.ref,
+  customerUsername: args.scheduleUser.owner,
 }, {
-  in: args.bookingRootRef,
-}).committed;
-
-await this.db.create("savedBookings", {
-  scheduleRef: toRowRef(args.schedule),
-  bookingRef: toRowRef(bookingWrite),
-  status: "active",
-  slotStartMs: args.slotStartMs,
-  slotEndMs: args.slotEndMs,
-}, {
-  in: CURRENT_USER,
+  in: [args.bookingRootRef, args.scheduleUser.ref],
 }).committed;
 ```
 
-Later, the app reopens the shared booking through that private `bookingRef` and cancels it by removing the parent link. The blind inbox stays blind; the submitter's private record is what makes revisit flows possible.
+The owner can enumerate bookings from `bookingRoots`. Each customer can enumerate "my bookings for this schedule" by querying `bookings` under their own `scheduleUsers` row. Cancel removes both parent links.
 
 ---
 
@@ -99,7 +108,7 @@ await this.db.create("bookings", {
   slotEndMs: args.slotEndMs,
   claimedAtMs: Date.now(),
 }, {
-  in: args.bookingRootRef,
+  in: [args.bookingRootRef, args.scheduleUser.ref],
 }).committed;
 ```
 
@@ -149,10 +158,10 @@ bookings: collection({
 The app wires all three together into a single access-control surface the owner never has to touch again:
 
 1. **Owner creates a schedule.** During creation, a hidden `bookingRoots` row is created and its `index-submitter` link is stored in `schedule.fields.bookingSubmitterLink`.
-2. **Owner shares the schedule** using a `content-viewer` share link. Customers open it.
-3. **Customer joins the inbox** — Pattern 1. `ensureBookingRootAccess` calls `joinInvite` on the embedded link, returning a `BookingRootRef` with `index-submitter` access.
-4. **Customer creates a claim** under the `BookingRootRef` and immediately stores its `bookingRef` in a private user-scoped row. No preflight race check is needed.
-5. **Customer queries visible claims** — Patterns 2 and 3. `select: "indexKeys"` returns index-key projections with `fields: { slotStartMs, slotEndMs, claimedAtMs }` from sibling bookings. Clients apply a fixed cooloff window and the `(claimedAtMs, id)` tiebreak to decide which visible claim currently wins.
-6. **Owner and customers converge** on the same visible winning claim from the same visible rows. Only the owner (with full access) can read the complete booking records.
+2. **Owner shares the schedule** using a `content-submitter` link. Customers open it.
+3. **Customer joins the inbox** via `bookingSubmitterLink` and ensures one `scheduleUsers` row under the schedule.
+4. **Customer creates a claim** linked into both parents: `bookingRoots` and their `scheduleUsers` row.
+5. **Customer queries visible claims** — Patterns 2 and 3. `select: "indexKeys"` returns index-key projections with `fields: { slotStartMs, slotEndMs, claimedAtMs }` from sibling bookings, while the `scheduleUsers` query returns the customer's full booking rows.
+6. **Owner and customers converge** on the same visible winning claim from the same inbox rows, while both sides can still reopen the same booking through their respective parent link.
 
-The owner never manually grants or revokes customer access. The `index-submitter` link embedded in the schedule is the entire access-control surface.
+The owner never manually grants customer access by username. Embedded invite links, plus rows representing a user within a scope, are the whole access-control surface.

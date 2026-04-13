@@ -116,8 +116,6 @@ router.options("/rows/:rowId/parents/link-parent", () =>
   new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
 router.options("/rows/:rowId/parents/unlink-parent", () =>
   new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
-router.options("/rows/:rowId/members/add", () =>
-  new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
 router.options("/rows/:rowId/members/remove", () =>
   new Response(null, { status: 204, headers: CORS_PREFLIGHT_HEADERS }));
 router.options("/rows/:rowId/members/direct", () =>
@@ -144,5 +142,4 @@ router.post("/rows/:rowId/parents/update-index", route);
 router.post("/rows/:rowId/parents/list", route);
 router.post("/rows/:rowId/parents/link-parent", route);
 router.post("/rows/:rowId/parents/unlink-parent", route);
-router.post("/rows/:rowId/members/add", route);
 router.post("/rows/:rowId/members/remove", route);

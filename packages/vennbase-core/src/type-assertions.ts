@@ -195,7 +195,6 @@ void db.openSavedRow("recent-project", "projects").then((saved) => {
   const collection: "projects" | undefined = saved?.collection;
   void collection;
 });
-void project.members.add("alice", "all-editor");
 const projectRowRef = toRowRef(project);
 const projectRefStillTyped: RowRef<"projects"> = projectRowRef;
 void projectRefStillTyped;
@@ -207,8 +206,10 @@ if (isRowRef<"projects">(maybeUnknownRow)) {
 
 // @ts-expect-error ref fields still require a serializable RowRef
 void db.create("gameRecords", { gameRef: project, role: "owner" }, { in: CURRENT_USER });
-// @ts-expect-error role is now positional on row-handle membership helpers
-void project.members.add("alice", { role: "all-editor" });
+// @ts-expect-error addMember has been removed; membership must be granted via invite joins
+void db.addMember(project, "alice", "all-editor");
+// @ts-expect-error row-handle direct membership grants have been removed
+void project.members.add("alice", "all-editor");
 
 const taskWrite = db.create("tasks", { title: "Ship v2" }, { in: projectRef });
 const task = taskWrite.value;

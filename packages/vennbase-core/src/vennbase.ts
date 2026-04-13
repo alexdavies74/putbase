@@ -38,7 +38,7 @@ import type {
   RowFields,
 } from "./schema.js";
 import { resolveBackend } from "./backend.js";
-import { BUILTIN_USER_SCOPE as USER_SCOPE_COLLECTION, collectionAllowsCurrentUser, isCurrentUser, resolveCollectionName } from "./schema.js";
+import { BUILTIN_USER_SCOPE as USER_SCOPE_COLLECTION, isCurrentUser, resolveCollectionName } from "./schema.js";
 import { stableJsonStringify } from "./stable-json.js";
 import { Transport } from "./transport.js";
 import type {
@@ -94,7 +94,6 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
   private readonly optimisticStore = new OptimisticStore();
   private readonly writeSettler = new WriteSettler();
   private readonly writePlanner: WritePlanner;
-  private readonly requiresCurrentUserScope: boolean;
   private ready = false;
   private readinessPromise: Promise<void> | null = null;
   private pendingReadinessError: unknown | null = null;
@@ -109,7 +108,6 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
     this.provisioning = new Provisioning(options, this.transport, this.auth);
     this.syncRuntime();
     this.writePlanner = new WritePlanner(this.transport);
-    this.requiresCurrentUserScope = Object.values(options.schema).some((collectionSpec) => collectionAllowsCurrentUser(collectionSpec));
     this.rowRuntime = new RowRuntime(
       this.transport,
       this.identity,
@@ -126,6 +124,7 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
       this.optimisticStore,
       this.writeSettler,
       (collection, row, owner, fields) => this.materializeRowHandle(collection, row, owner, fields),
+      () => this.ensureCurrentUserScopeRow(),
       (child, parent) => this.parentsModule.addRemote(child, parent),
       () => this.notifyLocalMutation(),
     );
@@ -160,14 +159,14 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
       return session;
     }
 
-    await this.awaitSharedReadiness();
+    this.startReadinessInBackground();
     return session;
   }
 
   async signIn(): Promise<VennbaseUser> {
     this.resetSessionState();
     const user = await this.identity.signIn();
-    await this.awaitSharedReadiness();
+    this.startReadinessInBackground();
     this.notifyLocalMutation();
     return user;
   }
@@ -418,24 +417,6 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
     return this.optimisticStore.getCurrentParents(childRef, serverParents as RowRef[]) as Array<RowRef<TParentCollection>>;
   }
 
-  addMember(row: RowInput, username: string, role: MemberRole): MutationReceipt<void> {
-    this.assertReadyForMutation();
-    const rowRef = normalizeRowRef(row);
-    this.optimisticStore.addMember(rowRef, username, role);
-    const receipt = createMutationReceipt(undefined);
-    this.notifyLocalMutation();
-    this.scheduleConfirmableWrite({
-      key: `member-add:${rowRefKey(rowRef)}:${username}`,
-      operation: () => this.membersModule.addRemote(rowRef, username, role),
-      confirm: () => this.optimisticStore.confirmMemberMutation(rowRef),
-      rollback: () => this.optimisticStore.rollbackMemberMutation(rowRef),
-      dependencies: [this.optimisticStore.getPendingCreateDependency(rowRef)].filter((dependency): dependency is Promise<unknown> => dependency !== null),
-      receipt,
-    });
-
-    return receipt;
-  }
-
   removeMember(row: RowInput, username: string): MutationReceipt<void> {
     this.assertReadyForMutation();
     const rowRef = normalizeRowRef(row);
@@ -502,6 +483,10 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
     this.provisioning.setBackend(backend);
   }
 
+  private startReadinessInBackground(): void {
+    void this.startReadiness().catch(() => undefined);
+  }
+
   private resetSessionState(): void {
     this.ready = false;
     this.readinessPromise = null;
@@ -558,13 +543,10 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
           user,
           federationWorkerUrl,
         });
-        const userScopeRow = this.requiresCurrentUserScope
-          ? await this.ensureCurrentUserScopeRow(user.username, true)
-          : null;
         this.readyMutationState = {
           user,
           federationWorkerUrl,
-          userScopeRow,
+          userScopeRow: null,
         };
         this.ready = true;
         this.pendingReadinessError = null;
@@ -794,12 +776,11 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
       return input;
     }
 
-    const state = this.assertReadyForMutation();
-    if (!state.userScopeRow) {
-      throw new Error("CURRENT_USER requires a ready user scope row, but the client has no user scope row.");
+    if (this.readyMutationState?.userScopeRow) {
+      return this.readyMutationState.userScopeRow;
     }
 
-    return state.userScopeRow;
+    return input;
   }
 
   private async resolveCurrentUserParent<TParentInput>(input: TParentInput): Promise<TParentInput | RowRef<typeof USER_SCOPE_COLLECTION>> {
@@ -831,6 +812,9 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
     if (rememberedRow) {
       const remembered = await this.resolveUserScopeRowFromRef(rememberedRow, user.username);
       if (remembered) {
+        if (this.readyMutationState?.user.username === user.username) {
+          this.readyMutationState.userScopeRow = remembered;
+        }
         return remembered;
       }
     }
@@ -848,6 +832,9 @@ export class Vennbase<Schema extends DbSchema = DbSchema> implements RowHandleBa
       collection: USER_SCOPE_COLLECTION,
     });
     await saveRow(backend, INTERNAL_USER_SCOPE_ROW_KEY, rowRef);
+    if (this.readyMutationState?.user.username === user.username) {
+      this.readyMutationState.userScopeRow = rowRef;
+    }
     return rowRef;
   }
 

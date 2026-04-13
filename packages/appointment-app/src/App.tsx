@@ -18,8 +18,8 @@ import type {
   BookingHandle,
   BookingRootRef,
   RecentScheduleHandle,
-  SavedBookingHandle,
   ScheduleHandle,
+  ScheduleUserHandle,
   Schema,
 } from "./schema";
 
@@ -278,6 +278,7 @@ function ScheduleScreen(props: {
       : null;
   const isOwner = signedInUser?.username === schedule.owner;
   const [bookingRootRef, setBookingRootRef] = useState<BookingRootRef | null>(null);
+  const [scheduleUser, setScheduleUser] = useState<ScheduleUserHandle | null>(null);
   const [rootStatus, setRootStatus] = useState<"loading" | "ready" | "error">("loading");
   const [rootError, setRootError] = useState("");
 
@@ -289,6 +290,7 @@ function ScheduleScreen(props: {
         const nextRef = service.getBookingRootRef(schedule);
         if (!cancelled) {
           setBookingRootRef(nextRef);
+          setScheduleUser(null);
           setRootStatus("ready");
           setRootError("");
         }
@@ -309,14 +311,19 @@ function ScheduleScreen(props: {
     setRootStatus("loading");
     setRootError("");
     setBookingRootRef(null);
+    setScheduleUser(null);
 
-    void service.ensureBookingRootAccess(schedule)
-      .then((nextRef) => {
+    void Promise.all([
+      service.ensureBookingRootAccess(schedule),
+      service.ensureScheduleUserRow(schedule),
+    ])
+      .then(([nextRef, nextScheduleUser]) => {
         if (cancelled) {
           return;
         }
 
         setBookingRootRef(nextRef);
+        setScheduleUser(nextScheduleUser);
         setRootStatus("ready");
       })
       .catch((error) => {
@@ -372,7 +379,9 @@ function ScheduleScreen(props: {
       {rootStatus === "ready" && bookingRootRef
         ? isOwner
           ? <OwnerScheduleView bookingRootRef={bookingRootRef} schedule={schedule} />
-          : <CustomerScheduleView bookingRootRef={bookingRootRef} schedule={schedule} />
+          : scheduleUser
+            ? <CustomerScheduleView bookingRootRef={bookingRootRef} schedule={schedule} scheduleUser={scheduleUser} />
+            : null
         : null}
     </MainLayout>
   );
@@ -386,8 +395,14 @@ function OwnerScheduleView(props: {
   const nowMs = useNow();
   const [draft, setDraft] = useState(() => service.createDraftFromSchedule(props.schedule));
   const [copyStatus, setCopyStatus] = useState("");
+  const [repeatStatus, setRepeatStatus] = useState("");
+  const [pendingRepeatId, setPendingRepeatId] = useState<string | null>(null);
   const updateSchedule = useMutation(async (nextDraft: ScheduleDraft) => service.updateSchedule(props.schedule, nextDraft));
-  const shareLink = useShareLink(db, props.schedule, "content-viewer");
+  const repeatBooking = useMutation(async (booking: BookingHandle) => service.repeatBookingOneWeekLater({
+    booking,
+    bookingRootRef: props.bookingRootRef,
+  }));
+  const shareLink = useShareLink(db, props.schedule, "content-submitter");
   const {
     rows: bookings = [],
     error: bookingsError,
@@ -469,7 +484,7 @@ function OwnerScheduleView(props: {
             Copy link
           </button>
         </div>
-        <p className="muted">{copyStatus || (shareLink.error ? getErrorMessage(shareLink.error, "Could not create share link.") : "Share this content-viewer link with customers.")}</p>
+        <p className="muted">{copyStatus || (shareLink.error ? getErrorMessage(shareLink.error, "Could not create share link.") : "Share this content-submitter link with customers.")}</p>
       </section>
 
       <section className="card">
@@ -491,8 +506,33 @@ function OwnerScheduleView(props: {
                     <li key={entry.id} className="list-item booking-item">
                       <span>{entry.label}</span>
                       <span className="booking-owner">
-                        @{entry.owner} {entry.status === "pending" ? "(pending)" : ""}
+                        @{entry.customerUsername} {entry.status === "pending" ? "(pending)" : ""}
                       </span>
+                      <button
+                        className="secondary small"
+                        type="button"
+                        disabled={pendingRepeatId === entry.id}
+                        onClick={() => {
+                          setPendingRepeatId(entry.id);
+                          setRepeatStatus("");
+                          void repeatBooking.mutate(entry.booking)
+                            .then(() => {
+                              setRepeatStatus(`Repeated ${entry.label} for next week.`);
+                            })
+                            .catch((error) => {
+                              logAppError("repeat booking failed", error, {
+                                bookingId: entry.booking.id,
+                                scheduleId: props.schedule.id,
+                              });
+                              setRepeatStatus(getErrorMessage(error, "Could not repeat booking."));
+                            })
+                            .finally(() => {
+                              setPendingRepeatId((current) => current === entry.id ? null : current);
+                            });
+                        }}
+                      >
+                        {pendingRepeatId === entry.id ? "Repeating..." : "Repeat next week"}
+                      </button>
                     </li>
                   ))}
                 </ul>
@@ -500,6 +540,7 @@ function OwnerScheduleView(props: {
             ))}
           </div>
         )}
+        {repeatStatus ? <p className={repeatStatus.includes("Could not") ? "error" : "muted"}>{repeatStatus}</p> : null}
         {bookingsError ? <p className="error">{getErrorMessage(bookingsError, "Could not load bookings.")}</p> : null}
       </section>
     </>
@@ -509,6 +550,7 @@ function OwnerScheduleView(props: {
 function CustomerScheduleView(props: {
   schedule: ScheduleHandle;
   bookingRootRef: BookingRootRef;
+  scheduleUser: ScheduleUserHandle;
 }) {
   const db = useVennbase<Schema>();
   const nowMs = useNow();
@@ -523,41 +565,32 @@ function CustomerScheduleView(props: {
     limit: 500,
   });
   const {
-    rows: savedBookings = [],
-    error: savedBookingsError,
-  } = useQuery(db, "savedBookings", {
-    in: CURRENT_USER,
-    where: { scheduleRef: props.schedule.ref },
-    orderBy: "slotStartMs",
-    order: "asc",
+    rows: customerBookings = [],
+    error: customerBookingsError,
+  } = useQuery(db, "bookings", {
+    in: props.scheduleUser,
     limit: 500,
   });
-  const visibleSavedBookings = useMemo(
-    () =>
-      savedBookings
-        .filter((savedBooking) => savedBooking.fields.status === "active")
-        .sort((left, right) => left.fields.slotStartMs - right.fields.slotStartMs),
-    [savedBookings],
-  );
 
   const reserve = useMutation(async (slot: { key: string; startMs: number; endMs: number }) => {
     await service.bookSlot({
-      schedule: props.schedule,
       bookingRootRef: props.bookingRootRef,
+      scheduleUser: props.scheduleUser,
       slotStartMs: slot.startMs,
       slotEndMs: slot.endMs,
     });
   });
-  const cancel = useMutation(async (savedBooking: SavedBookingHandle) => {
-    await service.cancelSavedBooking({
-      savedBooking,
+  const cancel = useMutation(async (booking: BookingHandle) => {
+    await service.cancelBooking({
+      booking,
       bookingRootRef: props.bookingRootRef,
+      scheduleUser: props.scheduleUser,
     });
   });
 
   const slotDays = useMemo(
-    () => buildCustomerSlotDays(props.schedule, sharedBookings, visibleSavedBookings, nowMs),
-    [nowMs, props.schedule, sharedBookings, visibleSavedBookings],
+    () => buildCustomerSlotDays(props.schedule, sharedBookings, customerBookings as BookingHandle[], nowMs),
+    [customerBookings, nowMs, props.schedule, sharedBookings],
   );
 
   return (
@@ -612,7 +645,7 @@ function CustomerScheduleView(props: {
                       >
                         {pendingAction?.key === slot.key && pendingAction.type === "book" ? "Booking..." : "Book"}
                       </button>
-                    ) : slot.savedBooking ? (
+                    ) : slot.booking ? (
                       <div className="slot-actions">
                         <span className="slot-status">
                           {slot.status === "pending"
@@ -628,14 +661,14 @@ function CustomerScheduleView(props: {
                           onClick={() => {
                             setPendingAction({ key: slot.key, type: "cancel" });
                             setActionMessage("");
-                          void cancel.mutate(slot.savedBooking!)
+                            void cancel.mutate(slot.booking!)
                             .then(() => {
                               setActionMessage("Booking canceled.");
                             })
                               .catch((error) => {
                                 logAppError("cancel booking failed", error, {
                                   scheduleId: props.schedule.id,
-                                  savedBookingId: slot.savedBooking?.id ?? null,
+                                  bookingId: slot.booking?.id ?? null,
                                 });
                                 setActionMessage(getErrorMessage(error, "Could not cancel booking."));
                               })
@@ -662,7 +695,7 @@ function CustomerScheduleView(props: {
       )}
       {actionMessage ? <p className={actionMessage.includes("Could not") ? "error" : "muted"}>{actionMessage}</p> : null}
       {sharedBookingsError ? <p className="error">{getErrorMessage(sharedBookingsError, "Could not load bookings.")}</p> : null}
-      {savedBookingsError ? <p className="error">{getErrorMessage(savedBookingsError, "Could not load your saved bookings.")}</p> : null}
+      {customerBookingsError ? <p className="error">{getErrorMessage(customerBookingsError, "Could not load your bookings.")}</p> : null}
     </section>
   );
 }

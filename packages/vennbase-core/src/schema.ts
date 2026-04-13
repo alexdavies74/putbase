@@ -534,7 +534,7 @@ export function applyDefaults<
 export function assertCreateParents(
   collection: string,
   collectionSpec: AnyDbCollectionDefinition,
-  parents: RowRef[],
+  parents: Array<Pick<RowRef, "collection">>,
 ): void {
   const allowedParents = collectionSpec.in ?? [];
   if (allowedParents.length === 0 && parents.length > 0) {

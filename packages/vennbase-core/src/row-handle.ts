@@ -16,7 +16,6 @@ export interface RowHandleBackend<Schema extends DbSchema = DbSchema> {
   addParent(child: RowInput, parent: RowInput): MutationReceipt<void>;
   removeParent(child: RowInput, parent: RowInput): MutationReceipt<void>;
   listParents<TParentCollection extends string>(child: RowInput): Promise<Array<RowRef<TParentCollection>>>;
-  addMember(row: RowInput, username: string, role: MemberRole): MutationReceipt<void>;
   removeMember(row: RowInput, username: string): MutationReceipt<void>;
   listDirectMembers(row: RowInput): Promise<Array<{ username: string; role: MemberRole }>>;
   listEffectiveMembers(row: RowInput): Promise<Array<DbMemberInfo<Schema>>>;
@@ -52,7 +51,6 @@ export class RowHandle<
   };
 
   readonly members: {
-    add: (username: string, role: MemberRole) => MutationReceipt<void>;
     remove: (username: string) => MutationReceipt<void>;
     list: () => Promise<Array<{ username: string; role: MemberRole }>>;
     effective: () => Promise<Array<DbMemberInfo<TSchema>>>;
@@ -78,7 +76,6 @@ export class RowHandle<
     };
 
     this.members = {
-      add: (username: string, role: MemberRole) => this.backend.addMember(this.ref, username, role),
       remove: (username: string) => this.backend.removeMember(this.ref, username),
       list: async () => this.backend.listDirectMembers(this.ref),
       effective: async () => this.backend.listEffectiveMembers(this.ref),

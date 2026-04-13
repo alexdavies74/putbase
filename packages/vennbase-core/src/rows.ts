@@ -13,9 +13,9 @@ import type {
   RowInput,
   RowFields,
 } from "./schema.js";
-import { applyDefaults, assertCreateParents, assertValidFieldValues, getCollectionSpec, pickIndexKeyFieldValues } from "./schema.js";
+import { BUILTIN_USER_SCOPE as USER_SCOPE_COLLECTION, applyDefaults, assertCreateParents, assertValidFieldValues, getCollectionSpec, pickIndexKeyFieldValues } from "./schema.js";
 import type { Transport } from "./transport.js";
-import { normalizeParentRefs, normalizeRowRef, rowRefKey } from "./row-reference.js";
+import { normalizeParentInputWithCurrentUser, normalizeParentRefs, normalizeRowRef, rowRefKey } from "./row-reference.js";
 import type { JsonValue } from "./types.js";
 
 interface GetFieldsResponse {
@@ -38,6 +38,7 @@ export class Rows<Schema extends DbSchema> {
       owner: string,
       fields: RowFields<Schema, TCollection>,
     ) => RowHandle<Schema, TCollection>,
+    private readonly ensureCurrentUserParentRef: () => Promise<RowRef<typeof USER_SCOPE_COLLECTION>>,
     private readonly addParentRemote: (child: RowInput, parent: RowInput) => Promise<void>,
     private readonly notifyLocalMutation: () => void,
   ) {}
@@ -48,8 +49,11 @@ export class Rows<Schema extends DbSchema> {
     options?: DbCreateOptions<Schema, TCollection>,
   ): MutationReceipt<RowHandle<Schema, TCollection>> {
     const collectionSpec = getCollectionSpec(this.schema, collection);
-    const parentRefs = normalizeParentRefs(options?.in);
-    assertCreateParents(collection, collectionSpec, parentRefs);
+    const { rowRefs: parentRefs, includesCurrentUser } = normalizeParentInputWithCurrentUser(options?.in);
+    assertCreateParents(collection, collectionSpec, [
+      ...parentRefs,
+      ...(includesCurrentUser ? [{ collection: USER_SCOPE_COLLECTION }] : []),
+    ]);
     assertValidFieldValues(collection, collectionSpec, fields as Record<string, unknown>);
 
     const plan = this.rowRuntime.planRow(options?.name ?? `${collection}-${crypto.randomUUID().slice(0, 8)}`);
@@ -78,6 +82,7 @@ export class Rows<Schema extends DbSchema> {
       collection,
       fields: payload,
       parents: parentRefs,
+      currentUserParent: includesCurrentUser,
       receipt,
     });
     this.notifyLocalMutation();
@@ -90,13 +95,21 @@ export class Rows<Schema extends DbSchema> {
       `row:${rowRefKey(rowRef)}`,
       async () => {
         try {
+          const committedParentRefs: RowRef[] = [...parentRefs];
+          if (includesCurrentUser) {
+            const currentUserParent = await this.ensureCurrentUserParentRef();
+            committedParentRefs.push(currentUserParent);
+            this.optimisticStore.materializeCurrentUserParent(rowRef, currentUserParent);
+            this.notifyLocalMutation();
+          }
+
           await this.rowRuntime.commitPlannedRow(plan);
           await this.transport.row(rowRef).request("fields/set", {
             fields: payload,
             collection,
           });
 
-          for (const parent of parentRefs) {
+          for (const parent of committedParentRefs) {
             await this.addParentRemote(rowRef, parent);
           }
 

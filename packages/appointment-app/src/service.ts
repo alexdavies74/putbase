@@ -26,8 +26,8 @@ import type {
   BookingIndexKeyProjection,
   BookingRootRef,
   RecentScheduleHandle,
-  SavedBookingHandle,
   ScheduleHandle,
+  ScheduleUserHandle,
 } from "./schema";
 
 type AppointmentDbPort = Pick<
@@ -52,7 +52,7 @@ export interface SlotOccurrence {
 
 export interface CustomerSlot extends SlotOccurrence {
   status: "available" | "pending" | "confirmed" | "superseded";
-  savedBooking: SavedBookingHandle | null;
+  booking: BookingHandle | null;
 }
 
 export interface SlotDay {
@@ -63,11 +63,12 @@ export interface SlotDay {
 
 export interface OwnerBookingEntry {
   id: string;
-  owner: string;
+  customerUsername: string;
   dayKey: string;
   dayLabel: string;
   label: string;
   status: "pending" | "confirmed";
+  booking: BookingHandle;
 }
 
 export interface OwnerBookingDay {
@@ -77,6 +78,7 @@ export interface OwnerBookingDay {
 }
 
 export const BOOKING_COOLOFF_MS = 5_000;
+const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1_000;
 
 function slotKey(startMs: number, endMs: number): string {
   return `${startMs}:${endMs}`;
@@ -242,29 +244,29 @@ export function generateSlotOccurrences(
 export function buildCustomerSlotDays(
   schedule: Pick<ScheduleHandle, "fields"> | { fields: Record<string, unknown> },
   sharedBookings: Array<Pick<BookingIndexKeyProjection, "id" | "fields">>,
-  savedBookings: Array<Pick<SavedBookingHandle, "fields" | "id" | "ref">>,
+  customerBookings: Array<Pick<BookingHandle, "fields" | "id" | "ref">>,
   nowMs = Date.now(),
 ): SlotDay[] {
-  const activeOwnedBookings = new Map<string, Array<Pick<SavedBookingHandle, "fields" | "id" | "ref">>>();
-  for (const saved of savedBookings) {
-    if (saved.fields.status !== "active") {
-      continue;
-    }
+  const ownedBookingsBySlot = new Map<string, Array<Pick<BookingHandle, "fields" | "id" | "ref">>>();
+  for (const booking of customerBookings) {
+    const key = slotKey(booking.fields.slotStartMs, booking.fields.slotEndMs);
+    const claims = ownedBookingsBySlot.get(key) ?? [];
+    claims.push(booking);
+    ownedBookingsBySlot.set(key, claims);
+  }
 
-    const key = slotKey(saved.fields.slotStartMs, saved.fields.slotEndMs);
-    const claims = activeOwnedBookings.get(key) ?? [];
-    claims.push(saved);
-    activeOwnedBookings.set(key, claims);
+  for (const claims of ownedBookingsBySlot.values()) {
+    claims.sort((left, right) => compareBookingClaims(readBookingClaim(left), readBookingClaim(right)));
   }
 
   const sharedClaimsBySlot = groupBookingClaims(sharedBookings);
 
   const grouped = new Map<string, SlotDay>();
   for (const occurrence of generateSlotOccurrences(schedule, nowMs)) {
-    const ownedClaims = activeOwnedBookings.get(occurrence.key) ?? [];
+    const ownedClaims = ownedBookingsBySlot.get(occurrence.key) ?? [];
     const winningClaim = sharedClaimsBySlot.get(occurrence.key)?.[0] ?? null;
     const matchingOwnedWinner = winningClaim
-      ? ownedClaims.find((saved) => saved.fields.bookingRef.id === winningClaim.id) ?? null
+      ? ownedClaims.find((booking) => booking.id === winningClaim.id) ?? null
       : null;
     const representativeOwnedClaim = matchingOwnedWinner ?? ownedClaims[0] ?? null;
     const status: CustomerSlot["status"] = !winningClaim
@@ -288,7 +290,7 @@ export function buildCustomerSlotDays(
     existingDay.slots.push({
       ...occurrence,
       status,
-      savedBooking: representativeOwnedClaim as SavedBookingHandle | null,
+      booking: representativeOwnedClaim as BookingHandle | null,
     });
     grouped.set(occurrence.dayKey, existingDay);
   }
@@ -298,7 +300,7 @@ export function buildCustomerSlotDays(
 
 export function buildOwnerBookingDays(
   schedule: Pick<ScheduleHandle, "fields"> | { fields: Record<string, unknown> },
-  bookings: Array<Pick<BookingHandle, "id" | "owner" | "fields">>,
+  bookings: Array<Pick<BookingHandle, "id" | "fields">>,
   nowMs = Date.now(),
 ): OwnerBookingDay[] {
   const timeZone = String(schedule.fields.timezone ?? "UTC");
@@ -330,11 +332,12 @@ export function buildOwnerBookingDays(
 
     existing.entries.push({
       id: booking.id,
-      owner: booking.owner,
+      customerUsername: booking.fields.customerUsername,
       dayKey,
       dayLabel,
       label,
       status: winningClaim.claimedAtMs + BOOKING_COOLOFF_MS > nowMs ? "pending" : "confirmed",
+      booking: booking as BookingHandle,
     });
     grouped.set(dayKey, existing);
   }
@@ -444,9 +447,27 @@ export class AppointmentService {
     return joined.ref as BookingRootRef;
   }
 
+  async ensureScheduleUserRow(schedule: ScheduleHandle): Promise<ScheduleUserHandle> {
+    const [existing] = await this.db.query("scheduleUsers", {
+      in: CURRENT_USER,
+      where: { scheduleRef: schedule.ref },
+      limit: 1,
+    });
+    if (existing) {
+      return existing;
+    }
+
+    return this.db.create("scheduleUsers", {
+      scheduleRef: schedule.ref,
+      createdAt: Date.now(),
+    }, {
+      in: [schedule.ref, CURRENT_USER],
+    }).committed;
+  }
+
   async bookSlot(args: {
-    schedule: ScheduleHandle;
     bookingRootRef: BookingRootRef;
+    scheduleUser: ScheduleUserHandle;
     slotStartMs: number;
     slotEndMs: number;
   }): Promise<BookingHandle> {
@@ -454,39 +475,37 @@ export class AppointmentService {
       slotStartMs: args.slotStartMs,
       slotEndMs: args.slotEndMs,
       claimedAtMs: Date.now(),
+      scheduleUserRef: toRowRef(args.scheduleUser),
+      customerUsername: args.scheduleUser.owner,
     }, {
-      in: args.bookingRootRef,
+      in: [args.bookingRootRef, args.scheduleUser.ref],
     });
-    const booking = bookingWrite.value;
-    await bookingWrite.committed;
-
-    const scheduleRef = toRowRef(args.schedule);
-    const bookingRef = toRowRef(booking);
-    // Submitters cannot later rediscover full booking rows from the blind inbox,
-    // so each customer keeps their own readable pointer for cancel/status flows.
-    await this.db.create("savedBookings", {
-      scheduleRef,
-      bookingRef,
-      status: "active",
-      slotStartMs: args.slotStartMs,
-      slotEndMs: args.slotEndMs,
-    }, {
-      in: CURRENT_USER,
-    }).committed;
-
-    return booking;
+    return bookingWrite.committed;
   }
 
-  async cancelSavedBooking(args: {
-    savedBooking: SavedBookingHandle;
+  async cancelBooking(args: {
+    booking: BookingHandle;
     bookingRootRef: BookingRootRef;
+    scheduleUser: ScheduleUserHandle;
   }): Promise<void> {
-    const booking = await this.db.getRow(args.savedBooking.fields.bookingRef);
-    if (booking.collection !== "bookings") {
-      throw new Error(`Expected bookings row, got ${booking.collection}`);
-    }
+    await Promise.all([
+      args.booking.in.remove(args.bookingRootRef).committed,
+      args.booking.in.remove(args.scheduleUser.ref).committed,
+    ]);
+  }
 
-    await booking.in.remove(args.bookingRootRef).committed;
-    await this.db.update("savedBookings", args.savedBooking, { status: "canceled" }).committed;
+  async repeatBookingOneWeekLater(args: {
+    booking: BookingHandle;
+    bookingRootRef: BookingRootRef;
+  }): Promise<BookingHandle> {
+    return this.db.create("bookings", {
+      slotStartMs: args.booking.fields.slotStartMs + ONE_WEEK_MS,
+      slotEndMs: args.booking.fields.slotEndMs + ONE_WEEK_MS,
+      claimedAtMs: Date.now(),
+      scheduleUserRef: args.booking.fields.scheduleUserRef,
+      customerUsername: args.booking.fields.customerUsername,
+    }, {
+      in: [args.bookingRootRef, args.booking.fields.scheduleUserRef],
+    }).committed;
   }
 }

@@ -77,6 +77,10 @@ async function settle<T>(receipt: { committed: Promise<T> }): Promise<T> {
   return receipt.committed;
 }
 
+async function waitForMutationBootstrap<Schema extends Record<string, unknown>>(db: Vennbase<Schema>): Promise<void> {
+  await (db as unknown as { awaitSharedReadiness(): Promise<void> }).awaitSharedReadiness();
+}
+
 const MINIMAL_SCHEMA = defineSchema({
   rows: collection({
     fields: {
@@ -511,8 +515,12 @@ describe("Vennbase", () => {
       } as BackendClient,
     });
 
-    await expect(db.getSession()).rejects.toThrow("default Puter browser client");
-    await expect(db.getSession()).rejects.toThrow("workers.create");
+    await expect(db.getSession()).resolves.toEqual({
+      signedIn: true,
+      user: { username: "owner" },
+    });
+    await expect(waitForMutationBootstrap(db)).rejects.toThrow("default Puter browser client");
+    await expect(waitForMutationBootstrap(db)).rejects.toThrow("workers.create");
   });
 
   it("waits for ambient backend availability once getSession is called", async () => {
@@ -553,6 +561,7 @@ describe("Vennbase", () => {
       user: { username: "owner" },
     });
     await createStarted.promise;
+    await waitForMutationBootstrap(db);
 
     expect(createCalls).toBe(1);
     await expect(kv.get(workerMetadataKey("url", hostHash))).resolves.toBe(deployedWorkerBase);
@@ -833,6 +842,7 @@ describe("Vennbase", () => {
     });
 
     await Promise.all([firstDb.getSession(), secondDb.getSession()]);
+    await Promise.all([waitForMutationBootstrap(firstDb), waitForMutationBootstrap(secondDb)]);
 
     expect(createdNames).toEqual(expect.arrayContaining([
       scopedWorkerName(firstHash),
@@ -928,6 +938,7 @@ describe("Vennbase", () => {
     });
 
     await db.getSession();
+    await waitForMutationBootstrap(db);
     const row = await settle(db.create("rows", { name: "Rex" }));
 
     expect(row.ref.baseUrl).toBe(deployedWorkerBase);
@@ -1029,6 +1040,7 @@ describe("Vennbase", () => {
 
     releaseCreate.resolve({ url: deployedWorkerBase });
     await sessionPromise;
+    await waitForMutationBootstrap(db);
     const row = await settle(db.create("rows", { name: "Rex" }));
 
     expect(deployCalls).toBe(1);
@@ -1080,6 +1092,7 @@ describe("Vennbase", () => {
     });
 
     await Promise.all([firstDb.getSession(), secondDb.getSession()]);
+    await Promise.all([waitForMutationBootstrap(firstDb), waitForMutationBootstrap(secondDb)]);
     const firstRow = await settle(firstDb.create("rows", { name: "Rex" }));
     const secondRow = await settle(secondDb.create("rows", { name: "Spot" }));
 
@@ -1131,6 +1144,7 @@ describe("Vennbase", () => {
     });
 
     await db.getSession();
+    await waitForMutationBootstrap(db);
     const row = await settle(db.create("rows", { name: "Rex" }));
 
     expect(getCalls).toBeGreaterThan(0);
@@ -1204,6 +1218,7 @@ describe("Vennbase", () => {
       signedIn: true,
       user: { username: "owner" },
     });
+    await waitForMutationBootstrap(db);
 
     releaseCreate.resolve({ url: upgradedWorkerBase });
     await flushMicrotasks();
@@ -1230,6 +1245,7 @@ describe("Vennbase", () => {
     });
 
     await freshDb.getSession();
+    await waitForMutationBootstrap(freshDb);
     const freshSessionRow = await settle(freshDb.create("rows", { name: "Spot" }));
     expect(freshSessionRow.ref.baseUrl).toBe(upgradedWorkerBase);
     expect(consoleInfo).toHaveBeenCalledWith(
@@ -1261,7 +1277,11 @@ describe("Vennbase", () => {
       fetchFn: (() => Promise.reject(new Error("fetch should not be used"))) as typeof fetch,
     });
 
-    await expect(db.getSession()).rejects.toThrow("Federation worker name collision");
+    await expect(db.getSession()).resolves.toEqual({
+      signedIn: true,
+      user: { username: "owner" },
+    });
+    await expect(waitForMutationBootstrap(db)).rejects.toThrow("Federation worker name collision");
   });
 
   it("surfaces prewarm failures through getSession and retries on a later call", async () => {
@@ -1295,13 +1315,18 @@ describe("Vennbase", () => {
     await firstAttemptStarted.promise;
     await flushMicrotasks();
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    await expect(db.getSession()).rejects.toThrow("Federation worker name collision");
+    await expect(db.getSession()).resolves.toEqual({
+      signedIn: true,
+      user: { username: "owner" },
+    });
+    await expect(waitForMutationBootstrap(db)).rejects.toThrow("Federation worker name collision");
     expect(deployCalls).toBe(1);
 
     await expect(db.getSession()).resolves.toEqual({
       signedIn: true,
       user: { username: "owner" },
     });
+    await expect(waitForMutationBootstrap(db)).resolves.toBeUndefined();
     expect(deployCalls).toBe(2);
   });
 

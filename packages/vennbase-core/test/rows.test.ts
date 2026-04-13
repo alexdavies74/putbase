@@ -7,6 +7,7 @@ import { VennbaseError } from "../src/errors";
 import { Vennbase } from "../src/vennbase";
 import { Query } from "../src/query";
 import { CURRENT_USER, collection, defineSchema, field } from "../src/schema";
+import type { MemberRole, RowRef } from "../src/schema";
 import type { BackendClient } from "../src/types";
 import { InMemoryKv } from "../src/worker/in-memory-kv";
 import { RowWorker } from "../src/worker/core";
@@ -132,6 +133,10 @@ function buildDb(args: {
   });
 }
 
+async function waitForMutationBootstrap(db: Vennbase<typeof schema>): Promise<void> {
+  await (db as unknown as { awaitSharedReadiness(): Promise<void> }).awaitSharedReadiness();
+}
+
 async function buildReadyDb(args: {
   username: string;
   network: TestWorkerNetwork;
@@ -139,7 +144,23 @@ async function buildReadyDb(args: {
 }): Promise<Vennbase<typeof schema>> {
   const db = buildDb(args);
   await db.getSession();
+  await waitForMutationBootstrap(db);
   return db;
+}
+
+async function shareRole(
+  inviterDb: Vennbase<typeof schema>,
+  inviteeDb: Vennbase<typeof schema>,
+  row: RowRef,
+  role: MemberRole,
+): Promise<void> {
+  const inviteUrl = await inviterDb.createShareLink(row, role).committed;
+  if (role.startsWith("index-")) {
+    await inviteeDb.joinInvite(inviteUrl);
+    return;
+  }
+
+  await inviteeDb.acceptInvite(inviteUrl);
 }
 
 function buildQueryForWatchTests(): Query<typeof schema> {
@@ -402,7 +423,7 @@ describe("Vennbase rows", () => {
     const bobDb = await buildReadyDb({ username: "bob", network });
 
     const aliceProject = await settle(aliceDb.create("projects", { name: "Roadmap" }));
-    await aliceProject.members.add("bob", "content-submitter").committed;
+    await shareRole(aliceDb, bobDb, aliceProject.ref, "content-submitter");
 
     const bobProject = await settle(bobDb.create("projects", { name: "Bob scope" }));
     const bobTask = await settle(bobDb.create("tasks", { title: "Review" }, { in: bobProject.ref }));
@@ -419,7 +440,7 @@ describe("Vennbase rows", () => {
     const bobDb = await buildReadyDb({ username: "bob", network });
 
     const aliceProject = await settle(aliceDb.create("projects", { name: "Roadmap" }));
-    await aliceProject.members.add("bob", "content-submitter").committed;
+    await shareRole(aliceDb, bobDb, aliceProject.ref, "content-submitter");
 
     const bobProject = await settle(bobDb.create("projects", { name: "Bob scope" }));
     const bobTask = await settle(bobDb.create("tasks", { title: "Review" }, { in: bobProject.ref }));
@@ -453,7 +474,7 @@ describe("Vennbase rows", () => {
     const bobDb = await buildReadyDb({ username: "bob", network });
 
     const aliceProject = await settle(aliceDb.create("projects", { name: "Roadmap" }));
-    await aliceProject.members.add("bob", "content-submitter").committed;
+    await shareRole(aliceDb, bobDb, aliceProject.ref, "content-submitter");
 
     const bobProject = await settle(bobDb.create("projects", { name: "Bob scope" }));
     const bobTask = await settle(bobDb.create("tasks", { title: "Review" }, { in: bobProject.ref }));
@@ -481,7 +502,7 @@ describe("Vennbase rows", () => {
     const bobDb = await buildReadyDb({ username: "bob", network });
 
     const project = await settle(aliceDb.create("projects", { name: "Roadmap" }));
-    await project.members.add("bob", "all-editor").committed;
+    await shareRole(aliceDb, bobDb, project.ref, "all-editor");
     const task = await settle(aliceDb.create("tasks", { title: "Review" }, { in: project.ref }));
     const shareToken = aliceDb.createShareToken(task.ref, "all-editor");
     await shareToken.committed;
@@ -581,7 +602,7 @@ describe("Vennbase rows", () => {
     const bobDb = await buildReadyDb({ username: "bob", network });
 
     const project = await settle(aliceDb.create("projects", { name: "Roadmap" }));
-    await project.members.add("bob", "content-viewer").committed;
+    await shareRole(aliceDb, bobDb, project.ref, "content-viewer");
 
     const inviteWrite = bobDb.createShareLink(project.ref, "all-editor");
     await expect(inviteWrite.committed).rejects.toBeInstanceOf(VennbaseError);
@@ -621,7 +642,7 @@ describe("Vennbase rows", () => {
     const danaDb = await buildReadyDb({ username: "dana", network });
 
     const project = await settle(aliceDb.create("projects", { name: "Roadmap" }));
-    await project.members.add("bob", "content-submitter").committed;
+    await shareRole(aliceDb, bobDb, project.ref, "content-submitter");
 
     const viewerUrl = await bobDb.createShareLink(project.ref, "content-viewer").committed;
     const submitterUrl = await bobDb.createShareLink(project.ref, "index-submitter").committed;
@@ -663,7 +684,7 @@ describe("Vennbase rows", () => {
     const bobDb = await buildReadyDb({ username: "bob", network });
 
     const aliceProject = await settle(aliceDb.create("projects", { name: "Roadmap" }));
-    await aliceProject.members.add("bob", "content-viewer").committed;
+    await shareRole(aliceDb, bobDb, aliceProject.ref, "content-viewer");
 
     const bobProject = await settle(bobDb.create("projects", { name: "Bob scope" }));
     const bobTask = await settle(bobDb.create("tasks", { title: "Review" }, { in: bobProject.ref }));

@@ -21,7 +21,7 @@ describe("renderStaticPage", () => {
     const html = renderTemplate("/");
 
     expect(html).toContain("Build multi-user apps without writing a single access rule.");
-    expect(html).toContain("Zero backend");
+    expect(html).toContain("User brings standardized backend");
     expect(html).toContain('<section class="hero">');
     expect(html).toContain("For coding agents");
     expect(html).toContain("Copy prompt");

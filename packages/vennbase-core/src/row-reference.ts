@@ -28,6 +28,36 @@ export function normalizeParentRefs<TCollection extends string>(
   });
 }
 
+export function normalizeParentInputWithCurrentUser<TCollection extends string>(
+  input: RowInput<TCollection> | CurrentUser | Array<RowInput<TCollection> | CurrentUser> | undefined,
+): {
+  rowRefs: RowRef<TCollection>[];
+  includesCurrentUser: boolean;
+} {
+  if (!input) {
+    return {
+      rowRefs: [],
+      includesCurrentUser: false,
+    };
+  }
+
+  const rowRefs: RowRef<TCollection>[] = [];
+  let includesCurrentUser = false;
+  for (const row of Array.isArray(input) ? input : [input]) {
+    if (isCurrentUser(row)) {
+      includesCurrentUser = true;
+      continue;
+    }
+
+    rowRefs.push(normalizeRowRef(row));
+  }
+
+  return {
+    rowRefs,
+    includesCurrentUser,
+  };
+}
+
 export function sameRowRef(
   left: Pick<RowRef, "id" | "collection" | "baseUrl">,
   right: Pick<RowRef, "id" | "collection" | "baseUrl">,

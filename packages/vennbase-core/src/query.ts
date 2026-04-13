@@ -1,7 +1,7 @@
 import { createAdaptivePoller } from "./polling.js";
 import { OptimisticStore } from "./optimistic-store.js";
 import { RowHandle } from "./row-handle.js";
-import { normalizeParentRefs, normalizeRowRef, sameRowRef } from "./row-reference.js";
+import { normalizeParentInputWithCurrentUser, normalizeParentRefs, normalizeRowRef, sameRowRef } from "./row-reference.js";
 import type {
   CollectionName,
   DbIndexKeyProjection,
@@ -199,8 +199,8 @@ export class Query<Schema extends DbSchema> {
     const resolvedOptions = this.resolveOptionsSync
       ? this.resolveOptionsSync(collection, options)
       : options;
-    const parentRefs = normalizeParentRefs(resolvedOptions.in);
-    if (parentRefs.length === 0) {
+    const { rowRefs: parentRefs, includesCurrentUser } = normalizeParentInputWithCurrentUser(resolvedOptions.in);
+    if (parentRefs.length === 0 && !includesCurrentUser) {
       throw new Error(
         (collectionSpec.in ?? []).length === 0
           ? `Collection ${String(collection)} cannot be queried because queries always require in and this collection has no parent scope.`
@@ -217,6 +217,7 @@ export class Query<Schema extends DbSchema> {
     );
 
     return this.peekFullQuery(collection, parentRefs, {
+      includeCurrentUser: includesCurrentUser,
       orderBy,
       order: resolvedOptions.order ?? "asc",
       limit: Math.max(1, Math.min(200, resolvedOptions.limit ?? 50)),
@@ -386,6 +387,7 @@ export class Query<Schema extends DbSchema> {
     collection: TCollection,
     parentRefs: RowRef[],
     options: {
+      includeCurrentUser: boolean;
       orderBy: string | undefined;
       order: "asc" | "desc";
       limit: number;
@@ -397,7 +399,7 @@ export class Query<Schema extends DbSchema> {
     }
 
     const deduped = new Map<string, DbFullQueryRow>();
-    for (const record of this.optimisticStore.getOptimisticQueryRows(collection, parentRefs)) {
+    for (const record of this.optimisticStore.getOptimisticQueryRows(collection, parentRefs, options.includeCurrentUser)) {
       const fields = this.optimisticStore.getLogicalFields(record.row);
       const owner = this.optimisticStore.getOwner(record.row);
       if (!fields || !owner) {

@@ -9,7 +9,7 @@ import {
   createInitialDraft,
   generateSlotOccurrences,
 } from "../src/service";
-import type { BookingIndexKeyProjection, BookingHandle, SavedBookingHandle, ScheduleHandle } from "../src/schema";
+import type { BookingIndexKeyProjection, BookingHandle, ScheduleHandle, ScheduleUserHandle } from "../src/schema";
 
 function settledReceipt<T>(value: T) {
   return {
@@ -85,7 +85,6 @@ function makeSchedule(fields: Partial<ScheduleHandle["fields"]> = {}): ScheduleH
       list: vi.fn(),
     },
     members: {
-      add: vi.fn(),
       remove: vi.fn(),
       list: vi.fn(),
       effective: vi.fn(),
@@ -108,6 +107,54 @@ function makeBookingKeyRow(args: {
       slotStartMs: args.slotStartMs,
       slotEndMs: args.slotEndMs,
       claimedAtMs: args.claimedAtMs,
+    },
+  };
+}
+
+function makeScheduleUser(owner = "bob"): ScheduleUserHandle {
+  return {
+    id: `schedule_user_${owner}`,
+    collection: "scheduleUsers",
+    owner,
+    ref: makeRef(`schedule_user_${owner}`, "scheduleUsers"),
+    fields: {
+      scheduleRef: makeSchedule().ref,
+      createdAt: 1,
+    },
+    in: {
+      add: vi.fn(),
+      remove: vi.fn(),
+      list: vi.fn(),
+    },
+    members: {
+      remove: vi.fn(),
+      list: vi.fn(),
+      effective: vi.fn(),
+      listAll: vi.fn(),
+    },
+    connectCrdt: vi.fn(),
+    refresh: vi.fn(),
+  } as unknown as ScheduleUserHandle;
+}
+
+function makeBookingRow(args: {
+  id: string;
+  owner?: string;
+  customerUsername?: string;
+  scheduleUserRef?: ReturnType<typeof makeRef<"scheduleUsers">>;
+  slotStartMs: number;
+  slotEndMs: number;
+  claimedAtMs: number;
+}): Pick<BookingHandle, "id" | "fields" | "ref"> {
+  return {
+    id: args.id,
+    ref: makeRef(args.id, "bookings"),
+    fields: {
+      slotStartMs: args.slotStartMs,
+      slotEndMs: args.slotEndMs,
+      claimedAtMs: args.claimedAtMs,
+      scheduleUserRef: args.scheduleUserRef ?? makeRef("schedule_user_bob", "scheduleUsers"),
+      customerUsername: args.customerUsername ?? args.owner ?? "bob",
     },
   };
 }
@@ -193,18 +240,13 @@ describe("booking state", () => {
         }),
       ],
       [
-        {
-          id: "saved_2",
-          ref: makeRef("saved_2", "savedBookings"),
-          fields: {
-            scheduleRef: schedule.ref,
-            bookingRef: makeRef("booking_2", "bookings"),
-            status: "active",
-            slotStartMs: slot.startMs,
-            slotEndMs: slot.endMs,
-          },
-        },
-      ] as Array<Pick<SavedBookingHandle, "fields" | "id" | "ref">>,
+        makeBookingRow({
+          id: "booking_2",
+          slotStartMs: slot.startMs,
+          slotEndMs: slot.endMs,
+          claimedAtMs,
+        }),
+      ],
       nowMs,
     );
 
@@ -230,18 +272,13 @@ describe("booking state", () => {
         }),
       ],
       [
-        {
-          id: "saved_2",
-          ref: makeRef("saved_2", "savedBookings"),
-          fields: {
-            scheduleRef: schedule.ref,
-            bookingRef: makeRef("booking_2", "bookings"),
-            status: "active",
-            slotStartMs: slot.startMs,
-            slotEndMs: slot.endMs,
-          },
-        },
-      ] as Array<Pick<SavedBookingHandle, "fields" | "id" | "ref">>,
+        makeBookingRow({
+          id: "booking_2",
+          slotStartMs: slot.startMs,
+          slotEndMs: slot.endMs,
+          claimedAtMs,
+        }),
+      ],
       nowMs,
     );
 
@@ -259,23 +296,25 @@ describe("owner booking state", () => {
     const bookings = [
       {
         id: "booking_1",
-        owner: "alice",
         fields: {
           slotStartMs: slot.startMs,
           slotEndMs: slot.endMs,
           claimedAtMs: nowMs,
+          scheduleUserRef: makeRef("schedule_user_alice", "scheduleUsers"),
+          customerUsername: "alice",
         },
       },
       {
         id: "booking_2",
-        owner: "bob",
         fields: {
           slotStartMs: slot.startMs,
           slotEndMs: slot.endMs,
           claimedAtMs: nowMs + 1,
+          scheduleUserRef: makeRef("schedule_user_bob", "scheduleUsers"),
+          customerUsername: "bob",
         },
       },
-    ] as Array<Pick<BookingHandle, "id" | "owner" | "fields">>;
+    ] as Array<Pick<BookingHandle, "id" | "fields">>;
 
     const days = buildOwnerBookingDays(schedule, bookings, nowMs);
 
@@ -283,7 +322,7 @@ describe("owner booking state", () => {
     expect(days[0]?.entries).toHaveLength(1);
     expect(days[0]?.entries[0]).toMatchObject({
       id: "booking_1",
-      owner: "alice",
+      customerUsername: "alice",
       status: "pending",
     });
   });
@@ -327,7 +366,7 @@ describe("service flows", () => {
         });
       }),
       createShareLink: vi.fn(() => {
-        events.push("submission-link");
+        events.push("booking-submission-link");
         return settledReceipt("invite://booking-root");
       }),
       getRow: vi.fn(),
@@ -335,13 +374,14 @@ describe("service flows", () => {
       parseInvite: vi.fn(),
       query,
       update: vi.fn(),
+      whoAmI: vi.fn(),
     } as never);
 
     await service.createSchedule(createInitialDraft("UTC"));
 
     expect(events).toEqual([
       "create:bookingRoots",
-      "submission-link",
+      "booking-submission-link",
       "create:schedules",
       "query:recentSchedules",
       "create:recentSchedules",
@@ -393,6 +433,7 @@ describe("service flows", () => {
       parseInvite: vi.fn(),
       query,
       update: vi.fn(),
+      whoAmI: vi.fn(),
     } as never);
 
     let resolved = false;
@@ -413,7 +454,7 @@ describe("service flows", () => {
     expect(query).toHaveBeenCalledOnce();
   });
 
-  it("creates both shared and private booking records when reserving a slot", async () => {
+  it("creates a booking linked to both the booking root and schedule user", async () => {
     const booking = {
       id: "booking_1",
       ref: makeRef("booking_1", "bookings"),
@@ -423,21 +464,12 @@ describe("service flows", () => {
         slotStartMs: 1,
         slotEndMs: 2,
         claimedAtMs: 3,
+        scheduleUserRef: makeRef("schedule_user_bob", "scheduleUsers"),
+        customerUsername: "bob",
       },
     } as unknown as BookingHandle;
-    const create = vi.fn((collection: string) => {
-      if (collection === "bookings") {
-        return settledReceipt(booking);
-      }
-
-      return settledReceipt({
-        id: "saved_1",
-        ref: makeRef("saved_1", "savedBookings"),
-        collection: "savedBookings",
-        owner: "bob",
-        fields: {},
-      });
-    });
+    const create = vi.fn(() => settledReceipt(booking));
+    const scheduleUser = makeScheduleUser("bob");
     const service = new AppointmentService({
       create,
       createShareLink: vi.fn(),
@@ -449,8 +481,8 @@ describe("service flows", () => {
     } as never);
 
     await service.bookSlot({
-      schedule: makeSchedule(),
       bookingRootRef: makeRef("root_1", "bookingRoots"),
+      scheduleUser,
       slotStartMs: 1,
       slotEndMs: 2,
     });
@@ -459,86 +491,156 @@ describe("service flows", () => {
       slotStartMs: 1,
       slotEndMs: 2,
       claimedAtMs: expect.any(Number),
+      scheduleUserRef: scheduleUser.ref,
+      customerUsername: "bob",
     }), {
-      in: makeRef("root_1", "bookingRoots"),
-    });
-    expect(create).toHaveBeenNthCalledWith(2, "savedBookings", expect.objectContaining({
-      slotStartMs: 1,
-      slotEndMs: 2,
-      status: "active",
-    }), {
-      in: CURRENT_USER,
+      in: [makeRef("root_1", "bookingRoots"), scheduleUser.ref],
     });
   });
 
-  it("unlinks the shared booking and marks the private record canceled", async () => {
+  it("reuses the current user's existing schedule-user row", async () => {
+    const scheduleUser = makeScheduleUser("bob");
+    const create = vi.fn();
+    const joinInvite = vi.fn();
+    const query = vi.fn(async () => [scheduleUser]);
+    const service = new AppointmentService({
+      create,
+      createShareLink: vi.fn(),
+      getRow: vi.fn(),
+      joinInvite,
+      parseInvite: vi.fn(),
+      query,
+      update: vi.fn(),
+    } as never);
+
+    await expect(service.ensureScheduleUserRow(makeSchedule())).resolves.toBe(scheduleUser);
+    expect(query).toHaveBeenCalledWith("scheduleUsers", {
+      in: CURRENT_USER,
+      where: { scheduleRef: makeSchedule().ref },
+      limit: 1,
+    });
+    expect(joinInvite).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("creates a schedule-user row indexed by the current user ref when none exists", async () => {
+    const schedule = makeSchedule();
+    const scheduleUser = makeScheduleUser("bob");
+    const create = vi.fn(() => settledReceipt(scheduleUser));
+    const query = vi.fn(async () => []);
+    const service = new AppointmentService({
+      create,
+      createShareLink: vi.fn(),
+      getRow: vi.fn(),
+      joinInvite: vi.fn(),
+      parseInvite: vi.fn(),
+      query,
+      update: vi.fn(),
+    } as never);
+
+    await expect(service.ensureScheduleUserRow(schedule)).resolves.toBe(scheduleUser);
+    expect(create).toHaveBeenCalledWith("scheduleUsers", {
+      scheduleRef: schedule.ref,
+      createdAt: expect.any(Number),
+    }, {
+      in: [schedule.ref, CURRENT_USER],
+    });
+  });
+
+  it("unlinks a booking from both parents when canceling", async () => {
     const removeReceipt = settledReceipt(undefined);
     const remove = vi.fn(() => removeReceipt);
-    const update = vi.fn(() => settledReceipt({
-      id: "saved_1",
-      ref: makeRef("saved_1", "savedBookings"),
-      collection: "savedBookings",
+    const scheduleUser = makeScheduleUser("bob");
+    const booking = {
+      id: "booking_1",
+      ref: makeRef("booking_1", "bookings"),
+      collection: "bookings",
       owner: "bob",
       fields: {
-        status: "canceled",
+        slotStartMs: 1,
+        slotEndMs: 2,
+        claimedAtMs: 3,
+        scheduleUserRef: scheduleUser.ref,
+        customerUsername: "bob",
       },
-    }));
+      in: {
+        add: vi.fn(),
+        remove,
+        list: vi.fn(),
+      },
+      members: {
+        remove: vi.fn(),
+        list: vi.fn(),
+        effective: vi.fn(),
+        listAll: vi.fn(),
+      },
+      connectCrdt: vi.fn(),
+      refresh: vi.fn(),
+    } as unknown as BookingHandle;
     const service = new AppointmentService({
       create: vi.fn(),
       createShareLink: vi.fn(),
-      getRow: vi.fn(async () => ({
-        id: "booking_1",
-        ref: makeRef("booking_1", "bookings"),
-        collection: "bookings",
-        owner: "bob",
-        fields: {
-          slotStartMs: 1,
-          slotEndMs: 2,
-          claimedAtMs: 3,
-        },
-        in: {
-          add: vi.fn(),
-          remove,
-          list: vi.fn(),
-        },
-        members: {
-          add: vi.fn(),
-          remove: vi.fn(),
-          list: vi.fn(),
-          effective: vi.fn(),
-          listAll: vi.fn(),
-        },
-        connectCrdt: vi.fn(),
-        refresh: vi.fn(),
-      }) as unknown as BookingHandle),
+      getRow: vi.fn(),
       joinInvite: vi.fn(),
       parseInvite: vi.fn(),
       query: vi.fn(),
-      update,
+      update: vi.fn(),
     } as never);
 
-    const savedBooking = {
-      id: "saved_1",
-      ref: makeRef("saved_1", "savedBookings"),
-      collection: "savedBookings",
-      owner: "bob",
-      fields: {
-        scheduleRef: makeRef("schedule_1", "schedules"),
-        bookingRef: makeRef("booking_1", "bookings"),
-        status: "active",
-        slotStartMs: 1,
-        slotEndMs: 2,
-      },
-    } as unknown as SavedBookingHandle;
-
-    await service.cancelSavedBooking({
-      savedBooking,
+    await service.cancelBooking({
+      booking,
       bookingRootRef: makeRef("root_1", "bookingRoots"),
+      scheduleUser,
     });
 
     expect(remove).toHaveBeenCalledWith(makeRef("root_1", "bookingRoots"));
-    expect(update).toHaveBeenCalledWith("savedBookings", savedBooking, {
-      status: "canceled",
+    expect(remove).toHaveBeenCalledWith(scheduleUser.ref);
+  });
+
+  it("repeats a booking one week later under both parents", async () => {
+    const create = vi.fn(() => settledReceipt({
+      id: "booking_2",
+      ref: makeRef("booking_2", "bookings"),
+      collection: "bookings",
+      owner: "alice",
+      fields: {},
+    }));
+    const service = new AppointmentService({
+      create,
+      createShareLink: vi.fn(),
+      getRow: vi.fn(),
+      joinInvite: vi.fn(),
+      parseInvite: vi.fn(),
+      query: vi.fn(),
+      update: vi.fn(),
+    } as never);
+    const booking = {
+      id: "booking_1",
+      ref: makeRef("booking_1", "bookings"),
+      collection: "bookings",
+      owner: "bob",
+      fields: {
+        slotStartMs: 1,
+        slotEndMs: 2,
+        claimedAtMs: 3,
+        scheduleUserRef: makeRef("schedule_user_bob", "scheduleUsers"),
+        customerUsername: "bob",
+      },
+    } as unknown as BookingHandle;
+
+    await service.repeatBookingOneWeekLater({
+      booking,
+      bookingRootRef: makeRef("root_1", "bookingRoots"),
+    });
+
+    expect(create).toHaveBeenCalledWith("bookings", expect.objectContaining({
+      slotStartMs: 1 + 7 * 24 * 60 * 60 * 1_000,
+      slotEndMs: 2 + 7 * 24 * 60 * 60 * 1_000,
+      claimedAtMs: expect.any(Number),
+      scheduleUserRef: booking.fields.scheduleUserRef,
+      customerUsername: "bob",
+    }), {
+      in: [makeRef("root_1", "bookingRoots"), booking.fields.scheduleUserRef],
     });
   });
 });

@@ -103,19 +103,19 @@ async function joinRow(worker: RowWorker, rowId: string, username: string, invit
   );
 }
 
-async function addMember(worker: RowWorker, rowId: string, username: string, role: MemberRole): Promise<Response> {
-  return worker.handle(
-    await authedRequest({
-      url: rowEndpoint(rowId, "members/add"),
-      action: "members/add",
-      rowId,
-      username: "owner",
-      body: {
-        username,
-        role,
-      },
-    }),
-  );
+async function addMember(
+  worker: RowWorker,
+  rowId: string,
+  username: string,
+  role: MemberRole,
+  invitedBy = "owner",
+): Promise<Response> {
+  const token = `invite_${rowId}_${username}_${role}`;
+  const inviteResponse = await createInviteTokenRequest(worker, rowId, invitedBy, role, token);
+  if (inviteResponse.status !== 200) {
+    return inviteResponse;
+  }
+  return joinRow(worker, rowId, username, token);
 }
 
 async function createInviteTokenRequest(
@@ -722,30 +722,8 @@ describe("RowWorker", () => {
       }),
     );
 
-    await worker.handle(
-      await authedRequest({
-        url: rowEndpoint("project_contributor", "members/add"),
-        action: "members/add",
-        rowId: "project_contributor",
-        username: "owner",
-        body: {
-          username: "contributor",
-          role: "content-submitter",
-        },
-      }),
-    );
-    await worker.handle(
-      await authedRequest({
-        url: rowEndpoint("task_foreign", "members/add"),
-        action: "members/add",
-        rowId: "task_foreign",
-        username: "owner",
-        body: {
-          username: "contributor",
-          role: "all-editor",
-        },
-      }),
-    );
+    await addMember(worker, "project_contributor", "contributor", "content-submitter");
+    await addMember(worker, "task_foreign", "contributor", "all-editor");
 
     const contributorRole = await worker.handle(
       await authedRequest({
@@ -1037,18 +1015,7 @@ describe("RowWorker", () => {
         body: { username: "owner" },
       }),
     );
-    await worker.handle(
-      await authedRequest({
-        url: rowEndpoint("project_viewer", "members/add"),
-        action: "members/add",
-        rowId: "project_viewer",
-        username: "owner",
-        body: {
-          username: "viewer",
-          role: "content-viewer",
-        },
-      }),
-    );
+    await addMember(worker, "project_viewer", "viewer", "content-viewer");
 
     const registerChild = await worker.handle(
       await authedRequest({
@@ -1244,16 +1211,7 @@ describe("RowWorker", () => {
       },
     });
 
-    await run({
-      url: rowEndpoint("project_contributor_parent", "members/add"),
-      action: "members/add",
-      rowId: "project_contributor_parent",
-      username: "owner",
-      body: {
-        username: "contributor",
-        role: "content-submitter",
-      },
-    });
+    await addMember(worker, "project_contributor_parent", "contributor", "content-submitter");
 
     const inheritedRole = await run({
       url: rowEndpoint("task_contributor_child", "members/role"),
@@ -1637,18 +1595,7 @@ describe("RowWorker", () => {
       }),
     );
 
-    await worker.handle(
-      await authedRequest({
-        url: rowEndpoint("row_reader", "members/add"),
-        action: "members/add",
-        rowId: "row_reader",
-        username: "owner",
-        body: {
-          username: "viewer",
-          role: "content-viewer",
-        },
-      }),
-    );
+    await addMember(worker, "row_reader", "viewer", "content-viewer");
 
     const post = await worker.handle(
       await authedRequest({
@@ -1690,44 +1637,23 @@ describe("RowWorker", () => {
       }),
     );
 
-    await worker.handle(
-      await authedRequest({
-        url: rowEndpoint("row_writer_manage", "members/add"),
-        action: "members/add",
-        rowId: "row_writer_manage",
-        username: "owner",
-        body: {
-          username: "editor",
-          role: "all-editor",
-        },
-      }),
-    );
-
-    await worker.handle(
-      await authedRequest({
-        url: rowEndpoint("row_writer_manage", "row/join"),
-        action: "row/join",
-        rowId: "row_writer_manage",
-        username: "editor",
-        body: { username: "editor" },
-      }),
-    );
+    await addMember(worker, "row_writer_manage", "editor", "all-editor");
+    await addMember(worker, "row_writer_manage", "viewer", "all-viewer");
 
     const response = await worker.handle(
       await authedRequest({
-        url: rowEndpoint("row_writer_manage", "members/add"),
-        action: "members/add",
+        url: rowEndpoint("row_writer_manage", "members/remove"),
+        action: "members/remove",
         rowId: "row_writer_manage",
         username: "editor",
         body: {
           username: "viewer",
-          role: "all-viewer",
         },
       }),
     );
 
     expect(response.status).toBe(200);
-    expect((await jsonBody(response)).members).toEqual(expect.arrayContaining(["owner", "editor", "viewer"]));
+    expect((await jsonBody(response)).members).toEqual(expect.arrayContaining(["owner", "editor"]));
   });
 
   it("blocks viewer members from managing membership", async () => {
@@ -1751,38 +1677,17 @@ describe("RowWorker", () => {
       }),
     );
 
-    await worker.handle(
-      await authedRequest({
-        url: rowEndpoint("row_reader_manage", "members/add"),
-        action: "members/add",
-        rowId: "row_reader_manage",
-        username: "owner",
-        body: {
-          username: "viewer",
-          role: "all-viewer",
-        },
-      }),
-    );
-
-    await worker.handle(
-      await authedRequest({
-        url: rowEndpoint("row_reader_manage", "row/join"),
-        action: "row/join",
-        rowId: "row_reader_manage",
-        username: "viewer",
-        body: { username: "viewer" },
-      }),
-    );
+    await addMember(worker, "row_reader_manage", "viewer", "all-viewer");
+    await addMember(worker, "row_reader_manage", "guest", "all-viewer");
 
     const response = await worker.handle(
       await authedRequest({
-        url: rowEndpoint("row_reader_manage", "members/add"),
-        action: "members/add",
+        url: rowEndpoint("row_reader_manage", "members/remove"),
+        action: "members/remove",
         rowId: "row_reader_manage",
         username: "viewer",
         body: {
           username: "guest",
-          role: "all-viewer",
         },
       }),
     );
@@ -1791,7 +1696,7 @@ describe("RowWorker", () => {
     expect((await jsonBody(response)).code).toBe("UNAUTHORIZED");
   });
 
-  it("rejects admin as a member role", async () => {
+  it("rejects admin as an invite role", async () => {
     const worker = new RowWorker(
       {
         owner: "owner",
@@ -1814,12 +1719,15 @@ describe("RowWorker", () => {
 
     const response = await worker.handle(
       await authedRequest({
-        url: rowEndpoint("row_invalid_role", "members/add"),
-        action: "members/add",
+        url: rowEndpoint("row_invalid_role", "invite-token/create"),
+        action: "invite-token/create",
         rowId: "row_invalid_role",
         username: "owner",
         body: {
-          username: "editor",
+          token: "invite_invalid",
+          rowId: "row_invalid_role",
+          invitedBy: "owner",
+          createdAt: 10,
           role: "admin",
         },
       }),
@@ -1851,28 +1759,7 @@ describe("RowWorker", () => {
       }),
     );
 
-    await worker.handle(
-      await authedRequest({
-        url: rowEndpoint("row_legacy_role", "members/add"),
-        action: "members/add",
-        rowId: "row_legacy_role",
-        username: "owner",
-        body: {
-          username: "guest",
-          role: "all-editor",
-        },
-      }),
-    );
-
-    await worker.handle(
-      await authedRequest({
-        url: rowEndpoint("row_legacy_role", "row/join"),
-        action: "row/join",
-        rowId: "row_legacy_role",
-        username: "guest",
-        body: { username: "guest" },
-      }),
-    );
+    await addMember(worker, "row_legacy_role", "guest", "all-editor");
 
     await kv.set(rowMemberRolesStorageKey("row_legacy_role"), { guest: "admin" });
 
@@ -1905,7 +1792,7 @@ describe("RowWorker", () => {
 
     expect(membersResponse.status).toBe(200);
     expect((await jsonBody(membersResponse)).members).toEqual(expect.arrayContaining([
-      expect.objectContaining({ username: "guest", role: "all-viewer" }),
+      expect.objectContaining({ username: "guest" }),
     ]));
     await expect(kv.get(rowMemberRolesStorageKey("row_legacy_role"))).resolves.toEqual({ guest: "admin" });
   });

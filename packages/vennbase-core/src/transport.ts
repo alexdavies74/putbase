@@ -12,7 +12,6 @@ type RowAction =
   | "fields/set"
   | "invite-token/create"
   | "invite-token/get"
-  | "members/add"
   | "members/direct"
   | "members/effective"
   | "members/remove"

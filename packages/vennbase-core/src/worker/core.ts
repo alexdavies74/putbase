@@ -626,10 +626,6 @@ export class RowWorker {
         return await this.unlinkParent(request, rowRoute.rowId, ctx);
       }
 
-      if (request.method === "POST" && rowRoute.endpoint === "members/add") {
-        return await this.membersAdd(request, rowRoute.rowId, ctx);
-      }
-
       if (request.method === "POST" && rowRoute.endpoint === "members/remove") {
         return await this.membersRemove(request, rowRoute.rowId, ctx);
       }
@@ -871,6 +867,7 @@ export class RowWorker {
       if (!role) {
         error(401, "UNAUTHORIZED", "Members only");
       }
+
       return jsonResponse(200, { role });
     }
 
@@ -1336,38 +1333,6 @@ export class RowWorker {
 
     return jsonResponse(200, {
       parentRefs: next,
-    });
-  }
-
-  private async membersAdd(
-    request: Request,
-    rowId: string,
-    ctx: WorkerRequestContext,
-  ): Promise<Response> {
-    const { payload: body, principal } = await this.requireProtectedPayload<MemberMutationRequest>(request, {
-      action: "members/add",
-      rowId,
-    });
-    await this.assertMemberManager(rowId, principal, ctx);
-    const username = body.username?.trim();
-    const normalizedRole = normalizeStoredMemberRole(body.role);
-    if (!username || !normalizedRole) {
-      error(400, "BAD_REQUEST", "username and valid role are required");
-    }
-
-    const members = await this.getMembers(rowId);
-    if (!members.includes(username)) {
-      members.push(username);
-      await this.kv.set(rowMembersKey(rowId), members);
-    }
-
-    const roles = await this.getMemberRoles(rowId);
-    roles[username] = normalizedRole;
-    await this.kv.set(rowMemberRolesKey(rowId), roles);
-
-    return jsonResponse(200, {
-      members,
-      roles,
     });
   }
 

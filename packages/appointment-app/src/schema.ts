@@ -28,12 +28,21 @@ export const schema = defineSchema({
       createdAt: field.number().indexKey(),
     },
   }),
+  scheduleUsers: collection({
+    in: ["schedules", "user"],
+    fields: {
+      scheduleRef: field.ref("schedules").indexKey(),
+      createdAt: field.number().indexKey(),
+    },
+  }),
   bookings: collection({
-    in: ["bookingRoots"],
+    in: ["bookingRoots", "scheduleUsers"],
     fields: {
       slotStartMs: field.number().indexKey(),
       slotEndMs: field.number().indexKey(),
       claimedAtMs: field.number().indexKey(),
+      scheduleUserRef: field.ref("scheduleUsers"),
+      customerUsername: field.string(),
     },
   }),
   recentSchedules: collection({
@@ -43,26 +52,17 @@ export const schema = defineSchema({
       openedAt: field.number().indexKey(),
     },
   }),
-  savedBookings: collection({
-    in: ["user"],
-    fields: {
-      scheduleRef: field.ref("schedules").indexKey(),
-      bookingRef: field.ref("bookings"),
-      status: field.string().indexKey(),
-      slotStartMs: field.number().indexKey(),
-      slotEndMs: field.number().indexKey(),
-    },
-  }),
 });
 
 export type Schema = typeof schema;
 export type AppointmentDb = Vennbase<Schema>;
 export type ScheduleHandle = RowHandle<Schema, "schedules">;
 export type BookingRootHandle = RowHandle<Schema, "bookingRoots">;
+export type ScheduleUserHandle = RowHandle<Schema, "scheduleUsers">;
 export type BookingHandle = RowHandle<Schema, "bookings">;
 export type RecentScheduleHandle = RowHandle<Schema, "recentSchedules">;
-export type SavedBookingHandle = RowHandle<Schema, "savedBookings">;
 export type BookingIndexKeyProjection = DbQueryRow<Schema, "bookings", "indexKeys">;
 export type BookingRootRef = RowRef<"bookingRoots">;
+export type ScheduleUserRef = RowRef<"scheduleUsers">;
 export type ScheduleInsertFields = InsertFields<Schema, "schedules">;
 export type EditableScheduleFields = Omit<ScheduleInsertFields, "bookingSubmitterLink">;
