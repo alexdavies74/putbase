@@ -10,6 +10,46 @@ pnpm --filter appointment-app dev
 
 This doc mirrors `packages/appointment-app/src/schema.ts`, `src/service.ts`, and the owner/customer views in `src/App.tsx`.
 
+## Relevant schema
+
+This is the subset of the appointment-app schema that the patterns below rely on:
+
+```ts
+export const schema = defineSchema({
+  schedules: collection({
+    fields: {
+      title: field.string(),
+      timezone: field.string(),
+      slotDurationMinutes: field.number(),
+      bookingSubmitterLink: field.string(),
+      // [... other fields ...]
+    },
+  }),
+  bookingRoots: collection({
+    fields: {
+      createdAt: field.number().indexKey(),
+    },
+  }),
+  scheduleUsers: collection({
+    in: ["schedules", "user"],
+    fields: {
+      scheduleRef: field.ref("schedules").indexKey(),
+      createdAt: field.number().indexKey(),
+    },
+  }),
+  bookings: collection({
+    in: ["bookingRoots", "scheduleUsers"],
+    fields: {
+      slotStartMs: field.number().indexKey(),
+      slotEndMs: field.number().indexKey(),
+      claimedAtMs: field.number().indexKey(),
+      scheduleUserRef: field.ref("scheduleUsers"),
+      customerUsername: field.string(),
+    },
+  }),
+});
+```
+
 ---
 
 ## Pattern 1: Blind booking inbox
