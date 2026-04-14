@@ -329,19 +329,19 @@ await flush();
 
 ## Example apps
 
-`packages/todo-app` is the working version of this README — boards, recent boards, cards, and share links. Start with `src/schema.ts`, `src/db.ts`, and `src/App.tsx`. Run it with:
+`packages/todo-app` is the working version of this README — boards, recent boards, cards, and share links. Start with `src/schema.ts`, `src/db.ts`, and `src/App.tsx`. [Try it live](https://vennbase-todo.pages.dev/), or run it with:
 
 ```bash
 pnpm --filter todo-app dev
 ```
 
-For a fuller picture of how the pieces fit together in a real app, read `packages/woof-app`. It uses CRDT-backed live chat, user-scoped history rows for room restore, child rows with per-user metadata, and role-aware UI — the patterns you'll reach for once basic reads and writes are working.
+For a fuller picture of how the pieces fit together in a real app, read `packages/woof-app`. It uses CRDT-backed live chat, user-scoped history rows for room restore, child rows with per-user metadata, and role-aware UI — the patterns you'll reach for once basic reads and writes are working. [Try it live.](https://robodog.pages.dev/)
 
 ```bash
 pnpm --filter woof-app dev
 ```
 
-`packages/appointment-app` is the clearest example of the Vennbase access-control philosophy in a full app: explicit grants, a blind booking inbox, and minimal anonymous sibling visibility via `select: "indexKeys"`. It demonstrates convergent client-side claim resolution, not hard capacity enforcement. Read [`PATTERNS.md`](./PATTERNS.md) for a recipe-style walkthrough of each pattern.
+`packages/appointment-app` is the clearest example of the Vennbase access-control philosophy in a full app: explicit grants, a blind booking inbox, and minimal anonymous sibling visibility via `select: "indexKeys"`. It demonstrates convergent client-side claim resolution, not hard capacity enforcement. Read [`PATTERNS.md`](./PATTERNS.md) for a recipe-style walkthrough of each pattern. [Try it live.](https://vennbase-appointment.pages.dev/)
 
 ```bash
 pnpm --filter appointment-app dev
