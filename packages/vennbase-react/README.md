@@ -257,25 +257,16 @@ function AvailabilityGrid({ availability }: { availability: RowRef<"availability
 }
 ```
 
-## Mutations
+## Writes
 
-`useMutation` wraps any async call with `loading` / `success` / `error` state:
+Use the `Vennbase` instance directly for writes, no react-specific helper. `create` and `update` are synchronous optimistic writes, so most React code can call them inline and queries will re-render immediately:
 
 ```tsx
-import { useMutation } from "@vennbase/react";
+db.create("cards", { text: trimmed, done: false, createdAt: Date.now() }, { in: board });
+```
 
-function AddCard({ board }: { board: BoardHandle }) {
-  const { mutate: addCard, status } = useMutation(async (text: string) => {
-    const write = db.create("cards", { text, done: false, createdAt: Date.now() }, { in: board });
-    return write.value;
-  });
-
-  return (
-    <button disabled={status === "loading"} onClick={() => addCard("New card")}>
-      Add card
-    </button>
-  );
-}
+```tsx
+db.update("cards", card, { done: !card.fields.done });
 ```
 
 ## Hook reference
@@ -447,4 +438,4 @@ function useMutation<TArgs extends unknown[], TResult>(
   reset(): void;
 }
 ```
-- Use it to wrap writes like `db.create(...)`, `db.update(...)`, or any other async workflow you want to expose as a React action state.
+- Use it for async workflows where the UI needs action state, such as awaiting `.committed`, opening rows, or combining several async steps behind one button.

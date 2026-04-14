@@ -221,10 +221,6 @@ function BoardView({ board, onLeave }: { board: BoardHandle; onLeave: () => void
 
   const { shareLink } = useShareLink(db, board, "all-editor");
 
-  const toggleDone = useMutation(async (card: CardHandle) => {
-    db.update("cards", card, { done: !card.fields.done });
-  });
-
   return (
     <main>
       <div className="toolbar">
@@ -264,7 +260,13 @@ function BoardView({ board, onLeave }: { board: BoardHandle; onLeave: () => void
             <li key={card.id} className={card.fields.done ? "done" : ""}>
               <button
                 className="secondary small"
-                onClick={() => toggleDone.mutate(card).catch(console.error)}
+                onClick={() => {
+                  try {
+                    db.update("cards", card, { done: !card.fields.done });
+                  } catch (error) {
+                    console.error(error);
+                  }
+                }}
               >
                 {card.fields.done ? "✓" : "○"}
               </button>

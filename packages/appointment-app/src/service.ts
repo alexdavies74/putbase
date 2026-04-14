@@ -415,7 +415,7 @@ export class AppointmentService {
     return schedule;
   }
 
-  async updateSchedule(schedule: ScheduleHandle, draft: ScheduleDraft): Promise<ScheduleHandle> {
+  updateSchedule(schedule: ScheduleHandle, draft: ScheduleDraft): ScheduleHandle {
     const validationError = validateScheduleDraft(draft);
     if (validationError) {
       throw new Error(validationError);
@@ -460,12 +460,12 @@ export class AppointmentService {
     }).value;
   }
 
-  async bookSlot(args: {
+  bookSlot(args: {
     bookingRootRef: BookingRootRef;
     scheduleUser: ScheduleUserHandle;
     slotStartMs: number;
     slotEndMs: number;
-  }): Promise<BookingHandle> {
+  }): BookingHandle {
     return this.db.create("bookings", {
       slotStartMs: args.slotStartMs,
       slotEndMs: args.slotEndMs,
@@ -477,21 +477,19 @@ export class AppointmentService {
     }).value;
   }
 
-  async cancelBooking(args: {
+  cancelBooking(args: {
     booking: BookingHandle;
     bookingRootRef: BookingRootRef;
     scheduleUser: ScheduleUserHandle;
-  }): Promise<void> {
-    await Promise.all([
-      args.booking.in.remove(args.bookingRootRef).committed,
-      args.booking.in.remove(args.scheduleUser.ref).committed,
-    ]);
+  }): void {
+    args.booking.in.remove(args.bookingRootRef);
+    args.booking.in.remove(args.scheduleUser.ref);
   }
 
-  async repeatBookingOneWeekLater(args: {
+  repeatBookingOneWeekLater(args: {
     booking: BookingHandle;
     bookingRootRef: BookingRootRef;
-  }): Promise<BookingHandle> {
+  }): BookingHandle {
     return this.db.create("bookings", {
       slotStartMs: args.booking.fields.slotStartMs + ONE_WEEK_MS,
       slotEndMs: args.booking.fields.slotEndMs + ONE_WEEK_MS,

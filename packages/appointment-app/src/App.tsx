@@ -395,13 +395,8 @@ function OwnerScheduleView(props: {
   const nowMs = useNow();
   const [draft, setDraft] = useState(() => service.createDraftFromSchedule(props.schedule));
   const [copyStatus, setCopyStatus] = useState("");
+  const [updateError, setUpdateError] = useState("");
   const [repeatStatus, setRepeatStatus] = useState("");
-  const [pendingRepeatId, setPendingRepeatId] = useState<string | null>(null);
-  const updateSchedule = useMutation(async (nextDraft: ScheduleDraft) => service.updateSchedule(props.schedule, nextDraft));
-  const repeatBooking = useMutation(async (booking: BookingHandle) => service.repeatBookingOneWeekLater({
-    booking,
-    bookingRootRef: props.bookingRootRef,
-  }));
   const shareLink = useShareLink(db, props.schedule, "content-submitter");
   const {
     rows: bookings = [],
@@ -431,20 +426,21 @@ function OwnerScheduleView(props: {
         </div>
         <ScheduleEditor
           draft={draft}
-          disabled={updateSchedule.status === "loading"}
-          submitLabel={updateSchedule.status === "loading" ? "Saving..." : "Save schedule"}
-          errorMessage={updateSchedule.error ? getErrorMessage(updateSchedule.error, "Could not save schedule.") : ""}
+          disabled={false}
+          submitLabel="Save schedule"
+          errorMessage={updateError}
           onChange={setDraft}
           onSubmit={() => {
-            void updateSchedule.mutate(draft)
-              .then(() => {
-                setCopyStatus("");
-              })
-              .catch((error) => {
-                logAppError("update schedule failed", error, {
-                  scheduleId: props.schedule.id,
-                });
+            try {
+              service.updateSchedule(props.schedule, draft);
+              setUpdateError("");
+              setCopyStatus("");
+            } catch (error) {
+              logAppError("update schedule failed", error, {
+                scheduleId: props.schedule.id,
               });
+              setUpdateError(getErrorMessage(error, "Could not save schedule."));
+            }
           }}
         />
       </section>
@@ -511,27 +507,24 @@ function OwnerScheduleView(props: {
                       <button
                         className="secondary small"
                         type="button"
-                        disabled={pendingRepeatId === entry.id}
                         onClick={() => {
-                          setPendingRepeatId(entry.id);
                           setRepeatStatus("");
-                          void repeatBooking.mutate(entry.booking)
-                            .then(() => {
-                              setRepeatStatus(`Repeated ${entry.label} for next week.`);
-                            })
-                            .catch((error) => {
-                              logAppError("repeat booking failed", error, {
-                                bookingId: entry.booking.id,
-                                scheduleId: props.schedule.id,
-                              });
-                              setRepeatStatus(getErrorMessage(error, "Could not repeat booking."));
-                            })
-                            .finally(() => {
-                              setPendingRepeatId((current) => current === entry.id ? null : current);
+                          try {
+                            service.repeatBookingOneWeekLater({
+                              booking: entry.booking,
+                              bookingRootRef: props.bookingRootRef,
                             });
+                            setRepeatStatus(`Repeated ${entry.label} for next week.`);
+                          } catch (error) {
+                            logAppError("repeat booking failed", error, {
+                              bookingId: entry.booking.id,
+                              scheduleId: props.schedule.id,
+                            });
+                            setRepeatStatus(getErrorMessage(error, "Could not repeat booking."));
+                          }
                         }}
                       >
-                        {pendingRepeatId === entry.id ? "Repeating..." : "Repeat next week"}
+                        Repeat next week
                       </button>
                     </li>
                   ))}
@@ -554,7 +547,6 @@ function CustomerScheduleView(props: {
 }) {
   const db = useVennbase<Schema>();
   const nowMs = useNow();
-  const [pendingAction, setPendingAction] = useState<{ key: string; type: "book" | "cancel" } | null>(null);
   const [actionMessage, setActionMessage] = useState("");
   const {
     rows: sharedBookings = [],
@@ -570,22 +562,6 @@ function CustomerScheduleView(props: {
   } = useQuery(db, "bookings", {
     in: props.scheduleUser,
     limit: 500,
-  });
-
-  const reserve = useMutation(async (slot: { key: string; startMs: number; endMs: number }) => {
-    await service.bookSlot({
-      bookingRootRef: props.bookingRootRef,
-      scheduleUser: props.scheduleUser,
-      slotStartMs: slot.startMs,
-      slotEndMs: slot.endMs,
-    });
-  });
-  const cancel = useMutation(async (booking: BookingHandle) => {
-    await service.cancelBooking({
-      booking,
-      bookingRootRef: props.bookingRootRef,
-      scheduleUser: props.scheduleUser,
-    });
   });
 
   const slotDays = useMemo(
@@ -619,31 +595,27 @@ function CustomerScheduleView(props: {
                       <button
                         className="primary small"
                         type="button"
-                        disabled={pendingAction?.key === slot.key}
                         onClick={() => {
-                          setPendingAction({ key: slot.key, type: "book" });
                           setActionMessage("");
-                          void reserve.mutate(slot)
-                            .then(() => {
-                              setActionMessage("Claim submitted. Waiting for confirmation.");
-                            })
-                            .catch((error) => {
-                              logAppError("book slot failed", error, {
-                                scheduleId: props.schedule.id,
-                                slotStartMs: slot.startMs,
-                                slotEndMs: slot.endMs,
-                              });
-                              setActionMessage(getErrorMessage(error, "Could not book slot."));
-                            })
-                            .finally(() => {
-                              setPendingAction((current) =>
-                                current?.key === slot.key && current.type === "book"
-                                  ? null
-                                  : current);
+                          try {
+                            service.bookSlot({
+                              bookingRootRef: props.bookingRootRef,
+                              scheduleUser: props.scheduleUser,
+                              slotStartMs: slot.startMs,
+                              slotEndMs: slot.endMs,
                             });
+                            setActionMessage("Claim submitted. Waiting for confirmation.");
+                          } catch (error) {
+                            logAppError("book slot failed", error, {
+                              scheduleId: props.schedule.id,
+                              slotStartMs: slot.startMs,
+                              slotEndMs: slot.endMs,
+                            });
+                            setActionMessage(getErrorMessage(error, "Could not book slot."));
+                          }
                         }}
                       >
-                        {pendingAction?.key === slot.key && pendingAction.type === "book" ? "Booking..." : "Book"}
+                        Book
                       </button>
                     ) : slot.booking ? (
                       <div className="slot-actions">
@@ -657,30 +629,25 @@ function CustomerScheduleView(props: {
                         <button
                           className="secondary small"
                           type="button"
-                          disabled={pendingAction?.key === slot.key}
                           onClick={() => {
-                            setPendingAction({ key: slot.key, type: "cancel" });
                             setActionMessage("");
-                            void cancel.mutate(slot.booking!)
-                            .then(() => {
-                              setActionMessage("Booking canceled.");
-                            })
-                              .catch((error) => {
-                                logAppError("cancel booking failed", error, {
-                                  scheduleId: props.schedule.id,
-                                  bookingId: slot.booking?.id ?? null,
-                                });
-                                setActionMessage(getErrorMessage(error, "Could not cancel booking."));
-                              })
-                              .finally(() => {
-                                setPendingAction((current) =>
-                                  current?.key === slot.key && current.type === "cancel"
-                                    ? null
-                                    : current);
+                            try {
+                              service.cancelBooking({
+                                booking: slot.booking!,
+                                bookingRootRef: props.bookingRootRef,
+                                scheduleUser: props.scheduleUser,
                               });
+                              setActionMessage("Booking canceled.");
+                            } catch (error) {
+                              logAppError("cancel booking failed", error, {
+                                scheduleId: props.schedule.id,
+                                bookingId: slot.booking?.id ?? null,
+                              });
+                              setActionMessage(getErrorMessage(error, "Could not cancel booking."));
+                            }
                           }}
                         >
-                          {pendingAction?.key === slot.key && pendingAction.type === "cancel" ? "Canceling..." : "Cancel"}
+                          Cancel
                         </button>
                       </div>
                     ) : (

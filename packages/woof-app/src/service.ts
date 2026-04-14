@@ -123,8 +123,7 @@ export class WoofService {
     }
 
     const createdBy = options?.createdBy?.trim() || (await this.db.whoAmI()).username;
-    const rowRef = toRowRef(row);
-    const tagWrite = this.db.create(
+    this.db.create(
       "tags",
       {
         label: trimmed,
@@ -135,13 +134,6 @@ export class WoofService {
         in: row,
       },
     );
-    void tagWrite.committed.catch((error) => {
-      console.error("[woof-app] createTag commit failed", {
-        error,
-        rowRef,
-        label: trimmed,
-      });
-    });
   }
 
   async relinquish(): Promise<void> {

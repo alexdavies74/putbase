@@ -50,14 +50,12 @@ export function TagsPanel({ row, onCreateTag }: TagsPanelProps) {
   });
   const createTag = useMutation(async (label: string) => {
     await onCreateTag(label);
-    void tagsQuery.refresh();
   });
   const tags = mapDogTags(tagsQuery.rows);
 
   const errorMessage = validationError
     || (createTag.error ? getErrorMessage(createTag.error, "Failed to add tag.") : "")
-    || (tagsQuery.error ? getErrorMessage(tagsQuery.error, "Failed to load tags.") : "")
-    || (tagsQuery.refreshError ? getErrorMessage(tagsQuery.refreshError, "Failed to refresh tags.") : "");
+    || (tagsQuery.error ? getErrorMessage(tagsQuery.error, "Failed to load tags.") : "");
 
   return (
     <section className="tag-section">
